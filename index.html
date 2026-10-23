@@ -1,0 +1,2748 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#1c1c1e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Glass Notes — Голосовые напоминания</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icon-192.png" sizes="192x192">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        :root {
+            --bg-start: rgba(25, 35, 55, 0.95);
+            --bg-end: rgba(10, 12, 18, 1);
+            --glass-bg: rgba(30, 32, 44, 0.55);
+            --glass-border: rgba(255, 255, 255, 0.2);
+            --text-primary: white;
+            --text-secondary: rgba(230, 235, 255, 0.7);
+            --footer-color: rgba(200, 210, 240, 0.3);
+            --input-bg: rgba(255, 255, 255, 0.06);
+            --input-text: white;
+            --input-placeholder: rgba(255,255,255,0.35);
+            --tab-inactive: rgba(255,255,255,0.2);
+            --tab-active: #007aff;
+            --tab-done-color: #34c759;
+            --voice-btn-small: 54px;
+            --voice-icon-small: 24px;
+            --voice-fab-bottom: 24px;
+            --voice-fab-right: 24px;
+            --header-title: 1.6rem;
+            --result-text: 1.2rem;
+            --result-padding: 1rem 1.5rem;
+        }
+        body.light {
+            --bg-start: #e8edf5; --bg-end: #d0d8e8;
+            --glass-bg: rgba(245, 248, 255, 0.75);
+            --glass-border: rgba(0, 0, 0, 0.12);
+            --text-primary: #1a1c2c;
+            --text-secondary: #2c3e66;
+            --footer-color: rgba(60, 70, 100, 0.35);
+            --input-bg: rgba(0, 0, 0, 0.04);
+            --input-text: #1a1c2c;
+            --input-placeholder: rgba(60, 70, 100, 0.4);
+            --tab-inactive: rgba(0,0,0,0.15);
+            --tab-active: #007aff; --tab-done-color: #34c759;
+        }
+        body.dark {
+            --bg-start: rgba(25, 35, 55, 0.95); --bg-end: rgba(10, 12, 18, 1);
+            --glass-bg: rgba(30, 32, 44, 0.55);
+            --glass-border: rgba(255, 255, 255, 0.2);
+            --text-primary: white;
+            --text-secondary: rgba(230, 235, 255, 0.7);
+            --footer-color: rgba(200, 210, 240, 0.3);
+            --input-bg: rgba(255, 255, 255, 0.06);
+            --input-text: white;
+            --input-placeholder: rgba(255,255,255,0.35);
+            --tab-inactive: rgba(255,255,255,0.15);
+            --tab-active: #007aff; --tab-done-color: #34c759;
+        }
+
+        body {
+            min-height: 100vh; height: 100vh;
+            background: radial-gradient(circle at 20% 30%, var(--bg-start), var(--bg-end));
+            font-family: system-ui, -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+            padding: 0.8rem; display: flex; justify-content: center; align-items: center;
+            transition: background 0.2s; overflow: hidden; margin: 0;
+        }
+        .glass-app {
+            max-width: 800px; width: 100%; height: 100vh; max-height: 96vh;
+            margin: 0 auto; background: var(--glass-bg);
+            backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+            border-radius: 48px; border: 1px solid var(--glass-border);
+            box-shadow: 0 25px 45px -12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+            padding: 1.5rem 0.8rem 1rem; transition: background 0.2s;
+            position: relative; display: flex; flex-direction: column; overflow: hidden;
+        }
+        .header {
+            display: flex; align-items: center; justify-content: space-between;
+            flex-wrap: wrap; gap: 8px; margin-bottom: 0.8rem;
+            flex-shrink: 0; padding: 0 0.4rem;
+        }
+        .title {
+            font-size: var(--header-title); font-weight: 700; letter-spacing: -0.3px;
+            color: var(--text-primary); text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            user-select: none; display: flex; align-items: center; gap: 10px;
+        }
+        .title .badge {
+            font-size: 0.6rem; background: rgba(0,122,255,0.2);
+            padding: 2px 10px; border-radius: 20px; color: rgba(255,255,255,0.5); font-weight: 400;
+        }
+        body.light .title .badge { color: rgba(0,0,0,0.4); background: rgba(0,122,255,0.08); }
+        .header-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+        .header-btn {
+            width: 38px; height: 38px; border-radius: 30px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.06); color: var(--text-primary);
+            cursor: pointer; transition: 0.15s;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .header-btn:active { transform: scale(0.92); }
+        .header-btn.active { background: rgba(0,122,255,0.15); border-color: rgba(0,122,255,0.3); color: #007aff; }
+        .header-btn svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+        .filter-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .filter-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 5px 6px 5px 12px;
+            border-radius: 20px;
+            border: 1px solid var(--glass-border);
+            background: rgba(255,255,255,0.06);
+            color: var(--text-primary);
+            font-size: 0.75rem; font-weight: 600;
+            cursor: pointer; user-select: none;
+            transition: 0.15s; max-width: 160px;
+        }
+        .filter-chip:active { transform: scale(0.96); }
+        .filter-chip .chip-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .filter-chip .chip-close {
+            width: 20px; height: 20px; border-radius: 50%;
+            background: rgba(255,70,70,0.18); color: #ff6b6b;
+            border: none; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; flex-shrink: 0; padding: 0; transition: 0.15s;
+        }
+        .filter-chip .chip-close:active { transform: scale(0.85); }
+        .filter-chip .chip-close svg { width: 10px; height: 10px; stroke: currentColor; stroke-width: 2.5; fill: none; stroke-linecap: round; }
+        .filter-chip.chip-date { background: rgba(0,122,255,0.12); border-color: rgba(0,122,255,0.3); color: #fff; }
+        .filter-chip.chip-cat { background: rgba(255,159,67,0.14); border-color: rgba(255,159,67,0.35); color: #fff; }
+        body.light .filter-chip { color: #1a1c2c; }
+        body.light .filter-chip.chip-date { background: rgba(0,122,255,0.1); color: #1a1c2c; }
+        body.light .filter-chip.chip-cat { background: rgba(255,159,67,0.14); color: #1a1c2c; }
+
+        .search-container { flex-shrink: 0; margin-bottom: 0.6rem; padding: 0 0.4rem; transition: all 0.3s ease; }
+        .search-container.hidden { display: none; }
+        .input-wrapper { position: relative; display: flex; align-items: center; }
+        .search-input {
+            width: 100%; background: var(--input-bg); border: 1px solid var(--glass-border);
+            border-radius: 40px; padding: 0 3.5rem 0 2.8rem; font-size: 0.9rem;
+            color: var(--input-text); outline: none; transition: all 0.3s ease;
+            height: 44px; line-height: 44px; font-family: system-ui;
+            backdrop-filter: blur(8px);
+        }
+        .search-input:focus { border-color: rgba(0,122,255,0.3); box-shadow: 0 0 0 3px rgba(0,122,255,0.08); }
+        .search-input::placeholder { color: var(--input-placeholder); font-size: 0.8rem; }
+        .search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--input-placeholder); pointer-events: none; }
+        .search-icon svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+        .search-clear {
+            position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+            background: rgba(200, 50, 40, 0.3); border: none; width: 26px; height: 26px;
+            border-radius: 50%; display: none; align-items: center; justify-content: center;
+            cursor: pointer; color: #ff6b6b; transition: 0.1s;
+        }
+        .search-clear svg { width: 12px; height: 12px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; }
+        .search-clear.visible { display: flex; }
+        .search-clear:active { transform: translateY(-50%) scale(0.9); }
+
+        .tabs {
+            display: flex; gap: 8px; flex-shrink: 0;
+            margin: 0 0.4rem 0.8rem 0.4rem;
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border-radius: 30px; padding: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 4px 16px rgba(0, 0, 0, 0.08);
+        }
+        body.light .tabs { background: rgba(255, 255, 255, 0.4); border-color: rgba(0, 0, 0, 0.08); }
+        .tab {
+            flex: 1; padding: 8px 16px; border-radius: 26px; border: none;
+            background: transparent; color: var(--tab-inactive);
+            font-size: 0.85rem; font-weight: 600; cursor: pointer;
+            transition: all 0.3s ease; font-family: inherit;
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+        }
+        .tab svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+        .tab.active { background: var(--tab-active); color: white; box-shadow: 0 4px 16px rgba(0,122,255,0.2); }
+        .tab.active[data-tab="done"] { color: var(--tab-done-color); }
+        .tab.active[data-tab="done"] svg { stroke: #fff; }
+        .tab.active[data-tab="done"] .count { color: #fff; }
+        .tab:active { transform: scale(0.96); }
+        .tab .count { font-weight: 400; opacity: 0.6; font-size: 0.7rem; }
+        .tab.active .count { opacity: 0.85; }
+
+        .list-container { flex: 1; position: relative; overflow: hidden; min-height: 0; touch-action: pan-y; }
+        .list-scroll {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            overflow-y: auto; overflow-x: hidden;
+            -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+            scroll-behavior: smooth; touch-action: pan-y;
+            padding: 20px 12px 140px 12px; margin: -10px -2px;
+        }
+        .list-scroll::-webkit-scrollbar { width: 3px; }
+        .list-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 10px; }
+        body.light .list-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); }
+
+        .section-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--text-secondary);
+            letter-spacing: 0.5px;
+            padding: 12px 8px 6px 8px;
+            text-transform: uppercase;
+            opacity: 0.7;
+            user-select: none;
+        }
+        .section-label:first-child { padding-top: 0; }
+
+        .result-card-wrapper {
+            position: relative; margin-top: 6px; overflow: visible;
+            border-radius: 28px; user-select: none; -webkit-user-select: none;
+            width: 100%; transform: translateZ(0); padding: 2px 0;
+            margin-left: -2px; margin-right: -2px; touch-action: pan-y;
+        }
+        .result-card {
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border-radius: 28px; padding: var(--result-padding);
+            display: flex; justify-content: space-between; align-items: center;
+            gap: 12px; position: relative;
+            background: rgba(255,255,255,0.04);
+            border: 2px solid rgba(255,255,255,0.08);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+            transform: translate3d(0, 0, 0); will-change: transform, opacity;
+            touch-action: pan-y;
+            transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.4, 1), opacity 0.35s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+            width: 100%;
+        }
+        .result-card.holding { transform: scale(0.98) !important; box-shadow: 0 0 30px rgba(0,122,255,0.25), 0 4px 16px rgba(0,0,0,0.1); }
+        .result-card.copied { border-color: #34c759 !important; box-shadow: 0 0 40px rgba(52,199,89,0.5), inset 0 0 30px rgba(52,199,89,0.15) !important; }
+
+        .result-card.color-1 { border-color: #FF6B6B; background: rgba(255,107,107,0.10); }
+        .result-card.color-2 { border-color: #FF9F43; background: rgba(255,159,67,0.10); }
+        .result-card.color-3 { border-color: #FECA57; background: rgba(254,202,87,0.10); }
+        .result-card.color-4 { border-color: #48DBFB; background: rgba(72,219,251,0.10); }
+        .result-card.color-5 { border-color: #0ABDE3; background: rgba(10,189,227,0.10); }
+        .result-card.color-6 { border-color: #10AC84; background: rgba(16,172,132,0.10); }
+        .result-card.color-7 { border-color: #EE5A24; background: rgba(238,90,36,0.10); }
+        .result-card.color-8 { border-color: #5F27CD; background: rgba(95,39,205,0.10); }
+        .result-card.color-9 { border-color: #FF9FF3; background: rgba(255,159,243,0.10); }
+        .result-card.color-10 { border-color: #54A0FF; background: rgba(84,160,255,0.10); }
+        .result-card.color-11 { border-color: #5F6DEC; background: rgba(95,109,236,0.10); }
+        .result-card.color-12 { border-color: #FF6B81; background: rgba(255,107,129,0.10); }
+
+        body.light .result-card { background: rgba(255,255,255,0.3); }
+
+        .result-card.status-done {
+            opacity: 0.7 !important; border-color: #34c759 !important;
+            background: rgba(52,199,89,0.06) !important;
+        }
+        .result-card.status-done .result-text {
+            opacity: 0.5; text-decoration: line-through;
+            text-decoration-color: rgba(255,255,255,0.2);
+        }
+        body.light .result-card.status-done .result-text { text-decoration-color: rgba(0,0,0,0.15); }
+        .result-card.status-done .result-meta { opacity: 0.4; }
+        .result-card.swiping { transition: none !important; }
+
+        .result-card.important-pulse { animation: cardImportantPulse 2.4s ease-in-out infinite; }
+        @keyframes cardImportantPulse {
+            0%, 100% { box-shadow: 0 4px 16px rgba(0,0,0,0.06), 0 0 0 0 rgba(255,59,48,0); }
+            50% { box-shadow: 0 4px 16px rgba(0,0,0,0.06), 0 0 24px 4px rgba(255,59,48,0.45); }
+        }
+
+        .result-content { flex: 1; min-width: 0; cursor: pointer; padding: 2px 0; z-index: 2; position: relative; pointer-events: auto; }
+        .result-text { font-size: var(--result-text); font-weight: 500; color: var(--text-primary); word-break: break-word; line-height: 1.3; user-select: none; -webkit-user-select: none; }
+        .result-meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+        .result-time { color: var(--text-secondary); font-size: 0.65rem; opacity: 0.4; }
+        .result-datetime {
+            font-size: 0.7rem; font-weight: 600; padding: 2px 10px; border-radius: 20px;
+            display: inline-flex; align-items: center; gap: 4px;
+            color: var(--text-secondary); background: rgba(255,255,255,0.05);
+        }
+        .status-done .result-datetime { color: #34c759; background: rgba(52,199,89,0.1); }
+        .status-label {
+            font-size: 0.6rem; opacity: 0.6; padding: 2px 8px; border-radius: 12px;
+            color: var(--text-secondary); background: rgba(255,255,255,0.05);
+        }
+        .status-done .status-label { color: #34c759; background: rgba(52,199,89,0.1); opacity: 0.8; }
+        .category-label {
+            font-size: 0.65rem; font-weight: 600; padding: 2px 10px; border-radius: 20px;
+            display: inline-flex; align-items: center; gap: 4px;
+            color: #fff; background: rgba(255,255,255,0.12);
+        }
+
+        .empty-state {
+            color: var(--text-secondary); text-align: center; padding: 50px 20px;
+            font-size: 1rem; opacity: 0.6;
+            display: flex; flex-direction: column; align-items: center; gap: 16px;
+        }
+        .empty-circle {
+            width: 120px; height: 120px; border-radius: 50%;
+            background: rgba(255,255,255,0.04);
+            border: 1.5px solid rgba(255,255,255,0.12);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            display: flex; align-items: center; justify-content: center;
+            color: var(--text-secondary);
+            animation: emptyPulse 2.5s ease-in-out infinite;
+            box-shadow: 0 0 40px rgba(0,122,255,0.08), inset 0 1px 0 rgba(255,255,255,0.06);
+        }
+        body.light .empty-circle { background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.08); }
+        .empty-circle svg { width: 48px; height: 48px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+        @keyframes emptyPulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 40px rgba(0,122,255,0.08); }
+            50% { transform: scale(1.05); box-shadow: 0 0 60px rgba(0,122,255,0.18); }
+        }
+        .empty-title { font-size: 1.1rem; font-weight: 600; color: var(--text-primary); opacity: 0.7; }
+        .empty-sub { font-size: 0.85rem; opacity: 0.5; }
+
+        .edit-overlay {
+            position: fixed; inset: 0; z-index: 500;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            display: none; align-items: center; justify-content: center;
+            padding: 1.5rem; animation: fadeIn 0.3s ease; overflow-y: auto;
+        }
+        .edit-overlay.active { display: flex; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .edit-card {
+            max-width: 600px; width: 100%;
+            background: var(--glass-bg);
+            backdrop-filter: blur(32px); -webkit-backdrop-filter: blur(32px);
+            border-radius: 40px; border: 2px solid var(--glass-border);
+            padding: 1.5rem; box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+            transform: scale(0.9);
+            animation: cardPop 0.35s cubic-bezier(0.2, 0.9, 0.4, 1) forwards;
+            max-height: 90vh; overflow-y: auto;
+        }
+        @keyframes cardPop { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .edit-card::-webkit-scrollbar { width: 3px; }
+        .edit-card::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+
+        .edit-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        .edit-header .edit-title { color: var(--text-primary); font-size: 1rem; font-weight: 600; opacity: 0.5; }
+        .edit-close {
+            background: rgba(255,255,255,0.06); border: none;
+            width: 40px; height: 40px; border-radius: 50%;
+            color: var(--text-primary); cursor: pointer; transition: 0.15s;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .edit-close svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; }
+        .edit-close:active { transform: scale(0.9); }
+
+        .edit-section { margin-bottom: 1rem; }
+        .edit-label {
+            font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px;
+            color: var(--text-secondary); opacity: 0.6; font-weight: 600; margin-bottom: 8px;
+        }
+        .edit-textarea {
+            width: 100%; background: rgba(255,255,255,0.04);
+            border: 2px solid var(--glass-border); border-radius: 20px;
+            padding: 1rem 1.2rem; font-size: var(--result-text); font-weight: 500;
+            color: var(--text-primary); font-family: inherit; outline: none;
+            resize: none; min-height: 80px; line-height: 1.4;
+            transition: border-color 0.2s ease;
+        }
+        .edit-textarea:focus { border-color: rgba(0,122,255,0.3); box-shadow: 0 0 0 3px rgba(0,122,255,0.08); }
+        .edit-textarea::placeholder { color: var(--input-placeholder); }
+
+        .edit-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+        .edit-tile {
+            padding: 10px 6px; border-radius: 14px;
+            border: 1px solid var(--glass-border);
+            background: rgba(255,255,255,0.03);
+            color: var(--text-secondary); font-size: 0.8rem;
+            cursor: pointer; transition: 0.15s;
+            text-align: center; font-family: inherit; font-weight: 500;
+            user-select: none;
+        }
+        .edit-tile:active { transform: scale(0.95); }
+        .edit-tile.active {
+            background: rgba(0,122,255,0.15);
+            border-color: rgba(0,122,255,0.4);
+            color: var(--text-primary);
+        }
+        .edit-tile.danger { color: #ff6b6b; border-color: rgba(255,70,70,0.2); }
+        .edit-tile.danger:active { background: rgba(255,70,70,0.1); }
+        .edit-tile.cat-active { color: #fff; }
+
+        .edit-actions { display: flex; gap: 10px; margin-top: 1.2rem; }
+        .edit-actions button {
+            flex: 1; padding: 14px 0; border-radius: 40px;
+            border: 1px solid var(--glass-border);
+            background: rgba(255,255,255,0.04);
+            backdrop-filter: blur(12px);
+            color: var(--text-secondary); font-size: 1rem; font-weight: 500;
+            cursor: pointer; transition: 0.15s; font-family: inherit;
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+        }
+        .edit-actions button svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+        .edit-actions button:active { transform: scale(0.97); }
+        .edit-actions .save-btn { color: #34c759; border-color: rgba(52,199,89,0.15); background: rgba(52,199,89,0.06); }
+        .edit-actions .cancel-btn { color: #ff6b6b; border-color: rgba(255,70,70,0.15); background: rgba(255,70,70,0.06); }
+
+        .edit-collapsible-header {
+            display: flex; align-items: center; justify-content: space-between;
+            cursor: pointer; user-select: none; padding: 10px 14px;
+            border-radius: 14px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--glass-border);
+            transition: 0.15s;
+        }
+        .edit-collapsible-header:active { opacity: 0.7; }
+        .edit-collapsible-header .edit-collapsible-title {
+            font-size: 0.85rem; font-weight: 600; color: var(--text-primary);
+        }
+        .edit-collapsible-header .edit-collapsible-value {
+            font-size: 0.75rem; color: var(--text-secondary); opacity: 0.7;
+            flex: 1; text-align: right; margin-right: 10px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .edit-collapsible-header .edit-collapse-icon {
+            width: 18px; height: 18px; stroke: currentColor;
+            stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round;
+            color: var(--text-secondary); opacity: 0.5;
+            transition: transform 0.3s ease; flex-shrink: 0;
+        }
+        .edit-collapsible-header.expanded .edit-collapse-icon { transform: rotate(90deg); }
+        .edit-collapsible-body {
+            max-height: 0; overflow: hidden;
+            transition: max-height 0.35s ease, padding-top 0.35s ease, padding-bottom 0.35s ease;
+            padding-top: 0; padding-bottom: 0;
+        }
+        .edit-collapsible-body.expanded {
+            max-height: 500px;
+            padding-top: 10px; padding-bottom: 4px;
+        }
+
+        .undo-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+            z-index: 70; opacity: 0; pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .undo-overlay.visible { opacity: 1; pointer-events: auto; }
+
+        .voice-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.65);
+            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+            z-index: 90; opacity: 0; pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .voice-overlay.visible { opacity: 1; pointer-events: auto; }
+
+        .cancel-fab {
+            position: fixed; width: 130px; height: 130px;
+            border-radius: 50%; z-index: 100;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.3s ease;
+            transform: translate(-50%, -50%);
+            padding: 0; margin: 0;
+        }
+        .cancel-fab.visible { opacity: 1; pointer-events: auto; }
+        .cancel-fab .cancel-btn {
+            width: 100%; height: 100%; border-radius: 50%;
+            border: 2px solid rgba(255,59,48,0.4);
+            background: rgba(255,59,48,0.15);
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            color: #ff3b30; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            position: relative;
+            box-shadow: 0 8px 48px rgba(255,59,48,0.3), inset 0 1px 0 rgba(255,255,255,0.1);
+            transition: transform 0.2s;
+            padding: 0; font-family: inherit;
+        }
+        .cancel-fab .cancel-btn:active { transform: scale(0.94); }
+        .cancel-fab .cancel-icon {
+            position: relative; z-index: 2; display: block;
+            width: 52px; height: 52px; stroke: currentColor;
+            stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round;
+        }
+        .cancel-fab .timer-ring {
+            position: absolute; top: -6px; left: -6px;
+            width: calc(100% + 12px); height: calc(100% + 12px);
+            z-index: 1; transform: rotate(-90deg); pointer-events: none;
+        }
+        .cancel-fab .timer-ring circle {
+            fill: none; stroke: #ff6b6b; stroke-width: 3;
+            stroke-linecap: round; transition: stroke-dashoffset 0.3s ease;
+        }
+        .cancel-fab .timer-ring .bg { stroke: rgba(255,255,255,0.06); }
+        .cancel-fab .timer-text {
+            position: absolute; bottom: -40px; left: 50%;
+            transform: translateX(-50%);
+            font-size: 1rem; font-weight: 600;
+            color: var(--text-primary); opacity: 0.8; white-space: nowrap;
+        }
+        .cancel-fab.recording .cancel-btn { animation: voicePulse 1.2s ease-in-out infinite; }
+        .cancel-fab.recording .recording-ring {
+            position: absolute; top: -6px; left: -6px;
+            width: calc(100% + 12px); height: calc(100% + 12px);
+            border-radius: 50%; border: 3px solid rgba(255,59,48,0.3);
+            animation: ringPulse 1.5s ease-in-out infinite;
+            pointer-events: none;
+        }
+        @keyframes voicePulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 60px rgba(255,59,48,0.4); }
+            50% { transform: scale(1.06); box-shadow: 0 0 80px rgba(255,59,48,0.6); }
+        }
+        @keyframes ringPulse {
+            0% { transform: scale(1); opacity: 0.6; }
+            100% { transform: scale(1.4); opacity: 0; }
+        }
+        .cancel-fab .fab-text-top {
+            position: absolute; top: -50px; left: 50%;
+            transform: translateX(-50%);
+            font-size: 1.1rem; font-weight: 600; color: #fff;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+            white-space: nowrap;
+            display: flex; align-items: center; gap: 8px;
+            pointer-events: none;
+        }
+        .cancel-fab .fab-text-top svg {
+            width: 20px; height: 20px; stroke: currentColor;
+            stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round;
+        }
+
+        .voice-fab {
+            position: absolute;
+            bottom: calc(var(--voice-fab-bottom) + env(safe-area-inset-bottom, 0px));
+            right: calc(var(--voice-fab-right) + env(safe-area-inset-right, 0px));
+            z-index: 50;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 1; transform: scale(1); pointer-events: auto;
+            padding: 6px; margin: -6px;
+        }
+        .voice-fab.compact .fab-btn { width: var(--voice-btn-small); height: var(--voice-btn-small); }
+        .voice-fab.compact .fab-btn svg { width: var(--voice-icon-small); height: var(--voice-icon-small); }
+        .voice-fab .fab-btn {
+            width: var(--voice-btn-small); height: var(--voice-btn-small);
+            border-radius: 50%; border: 1px solid var(--glass-border);
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            color: var(--text-primary); cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 0 0 4px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.1);
+            position: relative; user-select: none; -webkit-user-select: none;
+            touch-action: manipulation; padding: 0;
+        }
+        .voice-fab .fab-btn:active { transform: scale(0.92); }
+        .voice-fab .fab-btn svg {
+            width: var(--voice-icon-small); height: var(--voice-icon-small);
+            stroke: currentColor; stroke-width: 1.5; fill: none;
+            stroke-linecap: round; stroke-linejoin: round;
+            transition: all 0.3s ease;
+        }
+
+        .footer {
+            text-align: center; margin-top: 8px; font-size: 0.7rem;
+            color: var(--footer-color);
+            border-top: 1px solid var(--glass-border);
+            padding-top: 10px; flex-shrink: 0;
+            cursor: pointer; user-select: none; opacity: 0.5;
+        }
+        .footer:active { transform: scale(0.98); }
+
+        #toastMessage {
+            position: fixed;
+            bottom: calc(130px + env(safe-area-inset-bottom, 0px));
+            left: 50%; transform: translateX(-50%) translateY(20px);
+            background: rgba(30, 32, 44, 0.85);
+            backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+            padding: 12px 28px; border-radius: 40px;
+            color: #ffffff; font-size: 0.95rem; font-weight: 500;
+            z-index: 200; text-align: center;
+            border: 1px solid rgba(255,255,255,0.06);
+            box-shadow: 0 8px 40px rgba(0,0,0,0.25);
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: none; max-width: 90%;
+        }
+        #toastMessage.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        body.light #toastMessage {
+            background: rgba(245, 248, 255, 0.9);
+            color: #1a1c2c;
+            border: 1px solid rgba(0, 0, 0, 0.06);
+        }
+
+        .modal-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(6px);
+            display: none; align-items: center; justify-content: center;
+            z-index: 1000; padding: 1rem;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-glass {
+            background: rgba(30, 32, 44, 0.92);
+            backdrop-filter: blur(32px); -webkit-backdrop-filter: blur(32px);
+            border-radius: 40px; max-width: 420px; width: 100%;
+            padding: 1.8rem 1.5rem;
+            border: 1px solid rgba(255,255,255,0.06);
+            box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+            transform: scale(0.92);
+            transition: transform 0.3s ease;
+            max-height: 90vh;
+            display: flex; flex-direction: column;
+        }
+        .modal-overlay.active .modal-glass { transform: scale(1); }
+        body.light .modal-glass { background: rgba(245, 248, 255, 0.95); border-color: rgba(0,0,0,0.04); }
+        .modal-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 1rem; padding-bottom: 0.6rem;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            flex-shrink: 0;
+        }
+        body.light .modal-header { border-color: rgba(0,0,0,0.04); }
+        .modal-header h3 { color: #fff; font-size: 1.1rem; font-weight: 600; }
+        body.light .modal-header h3 { color: #1a1c2c; }
+        .modal-close {
+            background: rgba(255,255,255,0.04); border: none;
+            width: 36px; height: 36px; border-radius: 50%;
+            color: rgba(255,255,255,0.3); cursor: pointer;
+            transition: 0.15s;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .modal-close svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; }
+        body.light .modal-close { color: rgba(0,0,0,0.3); background: rgba(0,0,0,0.02); }
+        .modal-content {
+            display: flex; flex-direction: column; gap: 14px;
+            overflow-y: auto; min-height: 0;
+        }
+        .modal-content::-webkit-scrollbar { width: 3px; }
+        .modal-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+
+        .group-title {
+            font-size: 0.7rem; text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: rgba(255,255,255,0.3); font-weight: 600;
+            margin-bottom: 6px;
+        }
+        body.light .group-title { color: rgba(0,0,0,0.3); }
+
+        .collapsible-header {
+            display: flex; align-items: center; justify-content: space-between;
+            cursor: pointer; user-select: none;
+            padding: 10px 14px; border-radius: 14px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--glass-border);
+            transition: 0.15s;
+        }
+        .collapsible-header:active { opacity: 0.7; }
+        .collapsible-header .group-title { margin-bottom: 0; }
+        .collapsible-header .collapse-value {
+            font-size: 0.75rem; color: var(--text-secondary);
+            opacity: 0.7; flex: 1; text-align: right;
+            margin-right: 10px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .collapsible-header .collapse-icon {
+            width: 18px; height: 18px;
+            stroke: currentColor; stroke-width: 2;
+            fill: none; stroke-linecap: round; stroke-linejoin: round;
+            color: var(--text-secondary); opacity: 0.5;
+            transition: transform 0.3s ease;
+            flex-shrink: 0;
+        }
+        .collapsible-header.expanded .collapse-icon { transform: rotate(90deg); }
+        .collapsible-body {
+            max-height: 0; overflow: hidden;
+            transition: max-height 0.35s ease, padding-top 0.35s ease, padding-bottom 0.35s ease;
+            padding-top: 0; padding-bottom: 0;
+        }
+        .collapsible-body.expanded {
+            max-height: 600px;
+            padding-top: 10px; padding-bottom: 4px;
+        }
+
+        .tiles-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+        .tile {
+            padding: 12px 8px; border-radius: 16px;
+            border: 1px solid rgba(255,255,255,0.04);
+            background: rgba(255,255,255,0.02);
+            color: rgba(255,255,255,0.3); font-size: 0.9rem;
+            cursor: pointer; transition: 0.15s;
+            text-align: center; font-family: inherit;
+            display: flex; flex-direction: column;
+            align-items: center; gap: 4px;
+        }
+        .tile .tile-icon { font-size: 1.3rem; }
+        body.light .tile { border-color: rgba(0,0,0,0.04); background: rgba(0,0,0,0.01); color: rgba(0,0,0,0.3); }
+        .tile.active { background: rgba(0,122,255,0.12); border-color: rgba(0,122,255,0.25); color: #fff; }
+        body.light .tile.active { background: rgba(0,122,255,0.08); border-color: rgba(0,122,255,0.15); color: #1a1c2c; }
+        .tile.active.pulse { animation: pulse-glow 1.8s ease-in-out infinite; }
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(0,122,255,0); }
+            50% { box-shadow: 0 0 20px 4px rgba(0,122,255,0.12); }
+        }
+
+        .slider-card {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.04);
+            border-radius: 16px;
+            padding: 12px 14px;
+        }
+        body.light .slider-card { background: rgba(0,0,0,0.01); border-color: rgba(0,0,0,0.04); }
+        .slider-row { display: flex; align-items: center; gap: 14px; }
+        .slider-row input[type="range"] {
+            -webkit-appearance: none; appearance: none;
+            flex: 1; height: 3px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px; outline: none;
+        }
+        body.light .slider-row input[type="range"] { background: rgba(0,0,0,0.1); }
+        .slider-row input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 20px; height: 20px; border-radius: 50%;
+            background: #007aff; cursor: pointer;
+            border: 2px solid rgba(255,255,255,0.1);
+            box-shadow: 0 0 24px rgba(0,122,255,0.2);
+        }
+        .slider-row .slider-value {
+            color: #fff; font-size: 1.1rem; font-weight: 700;
+            min-width: 50px; text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+        body.light .slider-row .slider-value { color: #1a1c2c; }
+        .slider-label {
+            font-size: 0.85rem; color: var(--text-primary);
+            opacity: 0.85; margin-bottom: 8px; font-weight: 500;
+        }
+
+        .time-defaults {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.04);
+            border-radius: 16px;
+            padding: 4px 0; max-height: 240px; overflow-y: auto;
+        }
+        body.light .time-defaults { background: rgba(0,0,0,0.01); border-color: rgba(0,0,0,0.04); }
+        .time-defaults::-webkit-scrollbar { width: 3px; }
+        .time-defaults::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+        .time-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 14px;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+        body.light .time-row { border-bottom-color: rgba(0,0,0,0.03); }
+        .time-row:last-child { border-bottom: none; }
+        .time-row .time-label {
+            color: var(--text-primary); font-size: 0.9rem; font-weight: 500;
+            display: flex; align-items: center; gap: 8px; opacity: 0.85;
+        }
+        .time-row input[type="time"] {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 10px;
+            padding: 4px 8px; color: var(--text-primary);
+            font-family: inherit; font-size: 0.9rem; font-weight: 600;
+            outline: none; cursor: pointer;
+        }
+        body.light .time-row input[type="time"] { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.06); }
+        .time-row input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+        body.light .time-row input[type="time"]::-webkit-calendar-picker-indicator { filter: none; }
+
+        .backup-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .backup-btn {
+            padding: 12px 8px; border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.06);
+            background: rgba(255,255,255,0.03);
+            color: var(--text-primary); font-size: 0.9rem;
+            font-weight: 500; font-family: inherit;
+            cursor: pointer; transition: 0.15s;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .backup-btn svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+        .backup-btn:active { transform: scale(0.96); }
+        .backup-btn.export { color: #34c759; border-color: rgba(52,199,89,0.2); background: rgba(52,199,89,0.06); }
+        .backup-btn.import { color: #007aff; border-color: rgba(0,122,255,0.2); background: rgba(0,122,255,0.06); }
+
+        .reset-btn {
+            padding: 12px 14px; border-radius: 14px;
+            border: 1px solid rgba(255,70,70,0.2);
+            background: rgba(255,70,70,0.05);
+            color: #ff6b6b; font-size: 0.9rem; font-weight: 500;
+            font-family: inherit; cursor: pointer; transition: 0.15s;
+            display: flex; align-items: center; justify-content: flex-start;
+            gap: 10px; text-align: left; width: 100%;
+        }
+        .reset-btn svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+        .reset-btn:active { transform: scale(0.97); }
+
+        .apply-btn {
+            margin-top: 4px; padding: 14px 0; border-radius: 60px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.04);
+            backdrop-filter: blur(12px);
+            color: #fff; font-size: 1.1rem; font-weight: 600;
+            cursor: pointer; transition: 0.2s; font-family: inherit;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .apply-btn svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+        .apply-btn:active { transform: scale(0.98); }
+        body.light .apply-btn { border-color: rgba(0,0,0,0.06); background: rgba(0,0,0,0.02); color: #1a1c2c; }
+
+        .confirm-body {
+            color: var(--text-secondary); font-size: 0.95rem; line-height: 1.5;
+            padding: 4px 0 8px;
+        }
+        .confirm-actions { display: flex; gap: 10px; margin-top: 8px; }
+        .confirm-actions button {
+            flex: 1; padding: 14px 0; border-radius: 40px;
+            border: 1px solid var(--glass-border);
+            background: rgba(255,255,255,0.04);
+            color: var(--text-secondary); font-size: 1rem; font-weight: 500;
+            cursor: pointer; transition: 0.15s; font-family: inherit;
+        }
+        .confirm-actions button:active { transform: scale(0.97); }
+        .confirm-actions .confirm-ok { color: #ff6b6b; border-color: rgba(255,70,70,0.2); background: rgba(255,70,70,0.06); }
+
+        .import-choice { display: flex; flex-direction: column; gap: 8px; margin-top: 1rem; }
+        .import-choice button {
+            padding: 14px 16px; border-radius: 16px;
+            border: 1px solid var(--glass-border);
+            background: rgba(255,255,255,0.03);
+            color: var(--text-primary); font-size: 0.95rem; font-weight: 500;
+            font-family: inherit; cursor: pointer; transition: 0.15s;
+            text-align: left;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .import-choice button svg { width: 20px; height: 20px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+        .import-choice button:active { transform: scale(0.98); }
+        .import-choice .replace-btn { color: #ff6b6b; border-color: rgba(255,70,70,0.2); background: rgba(255,70,70,0.05); }
+        .import-choice .add-btn { color: #34c759; border-color: rgba(52,199,89,0.2); background: rgba(52,199,89,0.05); }
+
+        .info-row {
+            display: flex; justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.9rem;
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-label { color: rgba(255,255,255,0.5); }
+        .info-value { color: var(--text-primary); font-weight: 500; }
+        body.light .info-row { border-bottom-color: rgba(0,0,0,0.05); }
+        body.light .info-label { color: rgba(0,0,0,0.5); }
+
+        .hidden-picker {
+            position: absolute; opacity: 0; pointer-events: none;
+            width: 1px; height: 1px; left: -9999px;
+        }
+
+        .cat-sheet-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+            z-index: 900; opacity: 0; pointer-events: none;
+            transition: opacity 0.3s ease;
+            display: flex; align-items: flex-end; justify-content: center;
+            padding: 0;
+        }
+        .cat-sheet-overlay.visible { opacity: 1; pointer-events: auto; }
+        .cat-sheet {
+            width: 100%; max-width: 800px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(32px); -webkit-backdrop-filter: blur(32px);
+            border-radius: 40px 40px 0 0;
+            border: 1px solid var(--glass-border);
+            border-bottom: none;
+            padding: 1.2rem 1rem calc(1.2rem + env(safe-area-inset-bottom, 0px));
+            box-shadow: 0 -20px 60px rgba(0,0,0,0.5);
+            transform: translateY(100%);
+            transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.4, 1);
+        }
+        .cat-sheet-overlay.visible .cat-sheet { transform: translateY(0); }
+        .cat-sheet-handle {
+            width: 40px; height: 4px; border-radius: 4px;
+            background: rgba(255,255,255,0.2);
+            margin: 0 auto 12px;
+        }
+        body.light .cat-sheet-handle { background: rgba(0,0,0,0.15); }
+        .cat-sheet-title {
+            font-size: 1.05rem; font-weight: 700;
+            color: var(--text-primary); margin-bottom: 4px;
+        }
+        .cat-sheet-text {
+            font-size: 0.8rem; color: var(--text-secondary);
+            opacity: 0.6; margin-bottom: 14px;
+            word-break: break-word; line-height: 1.3;
+            max-height: 2.6em; overflow: hidden;
+        }
+        .cat-sheet-tiles {
+            display: grid; grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px; margin-bottom: 14px;
+        }
+        .cat-tile {
+            padding: 14px 8px; border-radius: 18px;
+            border: 2px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.04);
+            color: var(--text-primary); font-size: 0.9rem; font-weight: 600;
+            font-family: inherit; cursor: pointer; transition: 0.15s;
+            text-align: center;
+            user-select: none;
+        }
+        .cat-tile:active { transform: scale(0.95); }
+        .cat-tile.selected {
+            border-color: #fff !important;
+            box-shadow: 0 0 0 2px #fff, 0 0 24px rgba(255,255,255,0.3);
+            transform: scale(1.02);
+        }
+        .cat-skip-btn {
+            width: 100%; padding: 14px 50px 14px 20px; border-radius: 40px;
+            border: 1px solid var(--glass-border);
+            background: rgba(255,255,255,0.04);
+            color: var(--text-secondary); font-size: 1rem; font-weight: 500;
+            font-family: inherit; cursor: pointer; transition: 0.15s;
+            position: relative;
+            text-align: center;
+        }
+        .cat-skip-btn:active { transform: scale(0.97); }
+        .cat-skip-btn.has-selection {
+            color: #34c759;
+            border-color: rgba(52,199,89,0.4);
+            background: rgba(52,199,89,0.08);
+        }
+        .cat-timer-wrap {
+            position: absolute; top: 50%; right: 16px;
+            transform: translateY(-50%);
+            width: 28px; height: 28px;
+            pointer-events: none;
+            display: none;
+        }
+        .cat-timer-wrap.visible { display: block; }
+        .cat-timer-svg {
+            width: 100%; height: 100%;
+            transform: rotate(-90deg);
+        }
+        .cat-timer-svg circle {
+            fill: none; stroke: #ff6b6b;
+            stroke-width: 3; stroke-linecap: round;
+            transition: stroke-dashoffset 0.1s linear;
+        }
+        .cat-timer-svg .bg { stroke: rgba(255,255,255,0.12); }
+        .cat-timer-text {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 0.65rem; font-weight: 700;
+            color: #ff6b6b;
+            pointer-events: none;
+        }
+
+        @media (max-width: 440px) {
+            body { padding: 0.5rem; }
+            .glass-app { padding: 1rem 0.5rem 0.8rem; border-radius: 32px; }
+            .title { font-size: 1.2rem; }
+            .result-card { padding: 0.9rem 1.2rem; }
+            .result-text { font-size: 0.95rem; }
+            .list-scroll { padding: 20px 8px 120px 8px; }
+            #toastMessage { font-size: 0.85rem; padding: 10px 20px; bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
+            .cancel-fab { width: 116px; height: 116px; }
+            .cancel-fab .cancel-icon { width: 46px; height: 46px; }
+            .cancel-fab .fab-text-top { font-size: 1rem; }
+        }
+        @media (max-width: 400px) {
+            .result-text { font-size: 0.85rem; }
+            #toastMessage { bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
+            .cancel-fab { width: 104px; height: 104px; }
+            .cancel-fab .cancel-icon { width: 40px; height: 40px; }
+            .cancel-fab .fab-text-top { font-size: 0.95rem; }
+            .edit-tile { font-size: 0.75rem; padding: 8px 4px; }
+        }
+        @media (max-height: 700px) {
+            #toastMessage { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+            .result-card { padding: 0.7rem 1rem; }
+            .result-text { font-size: 0.85rem; }
+            .cancel-fab { width: 96px; height: 96px; }
+            .cancel-fab .cancel-icon { width: 36px; height: 36px; }
+        }
+    </style>
+</head>
+<body>
+<div class="glass-app" id="appContainer">
+    <div class="header">
+        <div class="title">
+            🎙️ Glass Notes
+            <span class="badge" id="countBadge">0</span>
+        </div>
+        <div class="header-right">
+            <div class="filter-chips" id="filterChips"></div>
+            <button class="header-btn" id="filterBtn" title="Фильтр">
+                <svg viewBox="0 0 24 24"><polygon points="22 3 2 3 10 13 10 21 14 18 14 13 22 3"/></svg>
+            </button>
+            <button class="header-btn" id="searchToggleBtn" title="Поиск">
+                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </button>
+            <button class="header-btn" id="settingsBtn" title="Настройки">
+                <svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <div class="search-container hidden" id="searchContainer">
+        <div class="input-wrapper">
+            <span class="search-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+            <input type="text" id="searchInput" class="search-input" placeholder="Поиск по напоминаниям..." autocomplete="off">
+            <button id="searchClearBtn" class="search-clear" aria-label="Очистить">
+                <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <div class="tabs" id="tabsContainer">
+        <button class="tab active" data-tab="active">
+            <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg>
+            Активные <span class="count" id="activeCount">0</span>
+        </button>
+        <button class="tab" data-tab="done">
+            <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            Выполнено <span class="count" id="doneCount">0</span>
+        </button>
+    </div>
+
+    <div class="list-container" id="listContainer">
+        <div class="list-scroll" id="listScroll">
+            <div id="resultsContainer">
+                <div class="empty-state">
+                    <div class="empty-circle">
+                        <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                    </div>
+                    <div class="empty-title">Пока пусто</div>
+                    <div class="empty-sub">нажмите на микрофон и скажите напоминание</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="voice-fab compact" id="voiceFab">
+        <button class="fab-btn" id="voiceBtn" aria-label="Голосовой ввод">
+            <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+        </button>
+    </div>
+
+    <div class="footer" id="footer">
+        голосовые напоминания · v5.10.3
+    </div>
+</div>
+
+<div class="undo-overlay" id="undoOverlay"></div>
+<div class="voice-overlay" id="voiceOverlay"></div>
+
+<div class="cancel-fab" id="cancelFab">
+    <button class="cancel-btn" id="cancelBtn">
+        <span class="fab-text-top" id="cancelFabText" style="display:none;"></span>
+        <svg class="cancel-icon" id="cancelIcon" viewBox="0 0 24 24">
+            <polyline points="1 4 1 10 7 10"/>
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+        </svg>
+        <span class="recording-ring" id="cancelRecordingRing" style="display:none;"></span>
+        <svg class="timer-ring" id="cancelTimerRing" viewBox="0 0 100 100" style="display:none;">
+            <circle class="bg" cx="50" cy="50" r="45"/>
+            <circle id="cancelTimerCircle" cx="50" cy="50" r="45" stroke-dasharray="282.7" stroke-dashoffset="0"/>
+        </svg>
+        <span class="timer-text" id="cancelTimerText" style="display:none;">3с</span>
+    </button>
+</div>
+
+<div class="cat-sheet-overlay" id="catSheetOverlay">
+    <div class="cat-sheet" id="catSheet">
+        <div class="cat-sheet-handle"></div>
+        <div class="cat-sheet-title">Категории?</div>
+        <div class="cat-sheet-text" id="catSheetText"></div>
+        <div class="cat-sheet-tiles" id="catSheetTiles"></div>
+        <button class="cat-skip-btn" id="catSkipBtn">
+            <span id="catSkipBtnText">Пропустить</span>
+            <span class="cat-timer-wrap" id="catTimerWrap">
+                <svg class="cat-timer-svg" viewBox="0 0 100 100">
+                    <circle class="bg" cx="50" cy="50" r="45"/>
+                    <circle id="catTimerCircle" cx="50" cy="50" r="45" stroke-dasharray="282.7" stroke-dashoffset="0"/>
+                </svg>
+                <span class="cat-timer-text" id="catTimerText">3</span>
+            </span>
+        </button>
+    </div>
+</div>
+
+<div class="edit-overlay" id="editOverlay">
+    <div class="edit-card" id="editCard">
+        <div class="edit-header">
+            <span class="edit-title">✏️ Редактирование</span>
+            <button class="edit-close" id="editCloseBtn">
+                <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+
+        <div class="edit-section">
+            <div class="edit-label">📝 Текст</div>
+            <textarea class="edit-textarea" id="editTextarea" placeholder="Введите текст заметки..."></textarea>
+        </div>
+
+        <div class="edit-section">
+            <div class="edit-label">🏷 Категории</div>
+            <div class="edit-tiles" id="categoryTiles"></div>
+        </div>
+
+        <div class="edit-section">
+            <div class="edit-collapsible-header" id="dateCollapsibleHeader">
+                <span class="edit-collapsible-title">📅 Дата</span>
+                <span class="edit-collapsible-value" id="dateCollapsibleValue">Не задано</span>
+                <svg class="edit-collapse-icon" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+            <div class="edit-collapsible-body" id="dateCollapsibleBody">
+                <div class="edit-tiles" id="dateTiles">
+                    <button class="edit-tile" data-date="today">Сегодня</button>
+                    <button class="edit-tile" data-date="tomorrow">Завтра</button>
+                    <button class="edit-tile" data-date="after">Послезавтра</button>
+                    <button class="edit-tile" id="datePickBtn">📅 Выбрать</button>
+                    <button class="edit-tile danger" id="dateClearBtn">🗑 Очистить</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="edit-section">
+            <div class="edit-collapsible-header" id="timeCollapsibleHeader">
+                <span class="edit-collapsible-title">⏰ Время</span>
+                <span class="edit-collapsible-value" id="timeCollapsibleValue">Не задано</span>
+                <svg class="edit-collapse-icon" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+            <div class="edit-collapsible-body" id="timeCollapsibleBody">
+                <div class="edit-tiles" id="timeTiles">
+                    <button class="edit-tile" data-time="morning" id="timeMorning">🌅 09:00</button>
+                    <button class="edit-tile" data-time="beforeNoon" id="timeBeforeNoon">☀️ 11:00</button>
+                    <button class="edit-tile" data-time="noon" id="timeNoon">🍽 13:00</button>
+                    <button class="edit-tile" data-time="afterNoon" id="timeAfterNoon">🌇 15:00</button>
+                    <button class="edit-tile" data-time="evening" id="timeEvening">🌆 18:00</button>
+                    <button class="edit-tile" data-time="night" id="timeNight">🌙 21:00</button>
+                    <button class="edit-tile" id="timePickBtn">🕐 Выбрать</button>
+                    <button class="edit-tile danger" id="timeClearBtn">🗑 Очистить</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="edit-actions">
+            <button class="cancel-btn" id="editCancelBtn">
+                <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                Отмена
+            </button>
+            <button class="save-btn" id="editSaveBtn">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                Сохранить
+            </button>
+        </div>
+    </div>
+</div>
+
+<input type="date" id="hiddenDatePicker" class="hidden-picker">
+<input type="time" id="hiddenTimePicker" class="hidden-picker">
+<input type="file" id="hiddenFileInput" accept=".json" class="hidden-picker">
+
+<div id="toastMessage"></div>
+
+<div id="settingsModal" class="modal-overlay">
+    <div class="modal-glass">
+        <div class="modal-header">
+            <h3>⚙️ Настройки</h3>
+            <button class="modal-close" id="settingsCloseBtn">
+                <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-content">
+            <div>
+                <div class="group-title">🎨 Тема</div>
+                <div class="tiles-3" id="themeTiles">
+                    <div class="tile active pulse" data-theme="auto"><span class="tile-icon">🌓</span> Авто</div>
+                    <div class="tile" data-theme="dark"><span class="tile-icon">🌙</span> Тёмная</div>
+                    <div class="tile" data-theme="light"><span class="tile-icon">☀️</span> Светлая</div>
+                </div>
+            </div>
+
+            <div>
+                <div class="collapsible-header" id="timersHeader">
+                    <div class="group-title">⏱ Таймеры</div>
+                    <span class="collapse-value" id="timersValue">отмена 3с · сплэш 3с</span>
+                    <svg class="collapse-icon" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+                <div class="collapsible-body" id="timersBody">
+                    <div style="display:flex;flex-direction:column;gap:10px;padding-top:10px;">
+                        <div class="slider-card">
+                            <div class="slider-label">Таймер отмены удаления</div>
+                            <div class="slider-row">
+                                <input type="range" id="undoTimerSlider" min="0" max="15" step="1" value="3">
+                                <span class="slider-value" id="undoTimerValue">3с</span>
+                            </div>
+                        </div>
+                        <div class="slider-card">
+                            <div class="slider-label">Таймер сплэша категорий</div>
+                            <div class="slider-row">
+                                <input type="range" id="catSheetTimerSlider" min="0" max="15" step="1" value="3">
+                                <span class="slider-value" id="catSheetTimerValue">3с</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div class="collapsible-header" id="categoriesSettingsHeader">
+                    <div class="group-title">🏷 Категории</div>
+                    <span class="collapse-value" id="categoriesSettingsValue">Спрашивать · Голос</span>
+                    <svg class="collapse-icon" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+                <div class="collapsible-body" id="categoriesSettingsBody">
+                    <div style="display:flex;flex-direction:column;gap:10px;padding-top:10px;">
+                        <div class="slider-card" style="display:flex;flex-direction:column;gap:10px;">
+                            <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
+                                <span style="font-size:0.9rem;color:var(--text-primary);opacity:0.85;">Спрашивать категорию после записи</span>
+                                <input type="checkbox" id="askCategoryToggle" checked style="width:20px;height:20px;accent-color:#007aff;cursor:pointer;">
+                            </label>
+                            <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
+                                <span style="font-size:0.9rem;color:var(--text-primary);opacity:0.85;">Распознавать категории голосом</span>
+                                <input type="checkbox" id="voiceCategoryToggle" checked style="width:20px;height:20px;accent-color:#007aff;cursor:pointer;">
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div class="collapsible-header" id="timeDefaultsHeader">
+                    <div class="group-title">⏰ Время по умолчанию</div>
+                    <span class="collapse-value" id="timeDefaultsValue">09:00 · 11:00 · …</span>
+                    <svg class="collapse-icon" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+                <div class="collapsible-body" id="timeDefaultsBody">
+                    <div class="time-defaults" id="timeDefaultsContainer" style="margin-top:10px;">
+                        <div class="time-row"><span class="time-label">🌅 Утро</span><input type="time" data-default="morning" value="09:00"></div>
+                        <div class="time-row"><span class="time-label">☀️ До обеда</span><input type="time" data-default="beforeNoon" value="11:00"></div>
+                        <div class="time-row"><span class="time-label">🍽 Обед</span><input type="time" data-default="noon" value="13:00"></div>
+                        <div class="time-row"><span class="time-label">🌇 После обеда</span><input type="time" data-default="afterNoon" value="15:00"></div>
+                        <div class="time-row"><span class="time-label">🌆 Вечер</span><input type="time" data-default="evening" value="18:00"></div>
+                        <div class="time-row"><span class="time-label">🌙 Ночь</span><input type="time" data-default="night" value="21:00"></div>
+                        <div class="time-row"><span class="time-label">📅 Сегодня (без вр.)</span><input type="time" data-default="today" value="12:00"></div>
+                        <div class="time-row"><span class="time-label">📅 Завтра (без вр.)</span><input type="time" data-default="tomorrow" value="09:00"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div class="group-title">💾 Бэкап данных</div>
+                <div class="backup-actions">
+                    <button class="backup-btn export" id="exportBackupBtn">
+                        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Сохранить
+                    </button>
+                    <button class="backup-btn import" id="importBackupBtn">
+                        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Загрузить
+                    </button>
+                </div>
+            </div>
+
+            <div>
+                <div class="group-title">↺ Сброс</div>
+                <button class="reset-btn" id="resetAllBtn">
+                    <svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    Сбросить все настройки
+                </button>
+            </div>
+
+            <button class="apply-btn" id="applySettingsBtn">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                Применить
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="confirmResetModal" class="modal-overlay">
+    <div class="modal-glass">
+        <div class="modal-header">
+            <h3>⚠️ Сброс настроек</h3>
+            <button class="modal-close" id="confirmResetCloseBtn">
+                <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-content">
+            <div class="confirm-body">
+                Все настройки вернутся к значениям по умолчанию. Заметки не будут удалены.
+            </div>
+            <div class="confirm-actions">
+                <button id="confirmResetCancelBtn">Отмена</button>
+                <button class="confirm-ok" id="confirmResetOkBtn">Сбросить</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="filterModal" class="modal-overlay">
+    <div class="modal-glass">
+        <div class="modal-header">
+            <h3>🔍 Фильтр</h3>
+            <button class="modal-close" id="filterCloseBtn">
+                <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-content">
+            <div>
+                <div class="group-title">🏷 По категории</div>
+                <div class="tiles-3" id="filterCategoryTiles"></div>
+            </div>
+            <div>
+                <div class="group-title">📅 По дате</div>
+                <div class="tiles-3" id="filterTiles">
+                    <div class="tile active pulse" data-filter="all"><span class="tile-icon">📋</span> Все</div>
+                    <div class="tile" data-filter="today"><span class="tile-icon">📅</span> Сегодня</div>
+                    <div class="tile" data-filter="tomorrow"><span class="tile-icon">📆</span> Завтра</div>
+                    <div class="tile" data-filter="with_date"><span class="tile-icon">🕐</span> С датой</div>
+                    <div class="tile" data-filter="no_date"><span class="tile-icon">📝</span> Без даты</div>
+                    <div class="tile" data-filter="past"><span class="tile-icon">⏰</span> Просрочено</div>
+                </div>
+            </div>
+            <button class="apply-btn" id="filterOkBtn">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                ОК
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="importModal" class="modal-overlay">
+    <div class="modal-glass">
+        <div class="modal-header">
+            <h3>📥 Импорт бэкапа</h3>
+            <button class="modal-close" id="importCloseBtn">
+                <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-content">
+            <div style="color: var(--text-secondary); font-size: 0.9rem; opacity: 0.7; margin-bottom: 4px;">
+                Выберите, как применить данные из файла:
+            </div>
+            <div class="import-choice">
+                <button class="add-btn" id="importAddBtn">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                    <span>Добавить к существующим</span>
+                </button>
+                <button class="replace-btn" id="importReplaceBtn">
+                    <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+                    <span>Заменить всё (включая настройки)</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="infoModal" class="modal-overlay">
+    <div class="modal-glass">
+        <div class="modal-header">
+            <h3>📋 О приложении</h3>
+            <button class="modal-close" id="infoCloseBtn">
+                <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-content">
+            <div class="info-row"><span class="info-label">📱 Приложение</span><span class="info-value">Glass Notes</span></div>
+            <div class="info-row"><span class="info-label">🏷️ Версия</span><span class="info-value">5.10.3</span></div>
+            <div class="info-row"><span class="info-label">📅 Сборка</span><span class="info-value">25.09.2026</span></div>
+            <div class="info-row"><span class="info-label">💾 Хранилище</span><span class="info-value">IndexedDB</span></div>
+            <div class="info-row"><span class="info-label">👆 Свайп</span><span class="info-value" style="color:#34c759;">вправо ✅ / влево 🗑️</span></div>
+            <div class="info-row"><span class="info-label">📋 Копирование</span><span class="info-value" style="color:#34c759;">долгое нажатие</span></div>
+            <div class="info-row"><span class="info-label">📡 Интернет</span><span class="info-value" style="color:#34c759;">не требуется</span></div>
+            <div class="info-row"><span class="info-label">📧 Контакт</span><span class="info-value">drts@bk.ru</span></div>
+            <div style="margin-top:1rem;text-align:center;font-size:0.7rem;color:rgba(255,255,255,0.2);">© 2026 drts</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const COLORS = ['color-1','color-2','color-3','color-4','color-5','color-6','color-7','color-8','color-9','color-10','color-11','color-12'];
+    const DEFAULT_TIME_SETTINGS = { morning:'09:00', beforeNoon:'11:00', noon:'13:00', afterNoon:'15:00', evening:'18:00', night:'21:00', today:'12:00', tomorrow:'09:00' };
+    const FAB_POSITION = { x: 50, y: 75 };
+    const FILTER_LABELS = {
+        all: 'Все', today: 'Сегодня', tomorrow: 'Завтра',
+        with_date: 'С датой', no_date: 'Без даты', past: 'Просрочено'
+    };
+    const FILTER_ICONS = {
+        all: '📋', today: '📅', tomorrow: '📆',
+        with_date: '🕐', no_date: '📝', past: '⏰'
+    };
+
+    const DEFAULT_CATEGORIES = [
+        { id: 'important', name: 'Важно',      color: '#FF3B30', important: true },
+        { id: 'work',      name: 'Работа',     color: '#54A0FF' },
+        { id: 'personal',  name: 'Личное',     color: '#FF6B81' },
+        { id: 'shopping',  name: 'Покупки',    color: '#FF9F43' },
+        { id: 'other',     name: 'Другое',     color: '#888ea8' },
+        { id: 'dev',       name: 'Разработка', color: '#4D6BFE' }
+    ];
+    const REMOVED_CATEGORY_IDS = ['calls', 'home'];
+
+    let timeDefaults = { ...DEFAULT_TIME_SETTINGS };
+    try { const s = localStorage.getItem('timeDefaults'); if (s) timeDefaults = { ...DEFAULT_TIME_SETTINGS, ...JSON.parse(s) }; } catch (_) {}
+
+    let askCategoryAfterRecord = localStorage.getItem('askCategory') !== 'false';
+    let voiceCategoryEnabled   = localStorage.getItem('voiceCategory') !== 'false';
+    let catSheetTimerSec       = parseInt(localStorage.getItem('catSheetTimer'));
+    if (isNaN(catSheetTimerSec)) catSheetTimerSec = 3;
+    let undoTime = parseInt(localStorage.getItem('undoTime'));
+    if (isNaN(undoTime)) undoTime = 3;
+
+    let currentCategoryFilter = null;
+
+    function parseTimeStr(str) { const [h,m] = str.split(':').map(Number); return { hours: h, minutes: m }; }
+    function getCategoryById(id) { return DEFAULT_CATEGORIES.find(c => c.id === id) || null; }
+    function isImportant(catIds) { if (!catIds || !catIds.length) return false; return catIds.some(id => id === 'important'); }
+
+    function hexToRgba(hex, alpha) {
+        const h = hex.replace('#','');
+        const r = parseInt(h.substring(0,2),16);
+        const g = parseInt(h.substring(2,4),16);
+        const b = parseInt(h.substring(4,6),16);
+        return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    // === NLU ===
+    function parseDateNLU(text, voiceCatEnabled) {
+        const lower = text.toLowerCase().trim();
+        const now = new Date();
+        let result = null;
+        let cleanText = text;
+        let categoryId = null;
+
+        if (voiceCatEnabled) {
+            const catMatch = text.match(/\s*категория\s+([а-яёa-z]+)\s*[.!?]?\s*$/i);
+            if (catMatch) {
+                const word = catMatch[1].toLowerCase();
+                const found = DEFAULT_CATEGORIES.find(c => c.name.toLowerCase() === word || c.id === word);
+                if (found) {
+                    categoryId = found.id;
+                    cleanText = text.replace(catMatch[0], '').trim();
+                }
+            }
+        }
+
+        const datePatterns = [
+            { re: /(\d{1,2})\s*(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s*(\d{4}|\d{2})/i,
+              parse: (m) => { const d = parseInt(m[1]); const mm = {'января':0,'февраля':1,'марта':2,'апреля':3,'мая':4,'июня':5,'июля':6,'августа':7,'сентября':8,'октября':9,'ноября':10,'декабря':11}; const mo = mm[m[2].toLowerCase()]; let y = parseInt(m[3]); if (y<100) y+=2000; return new Date(y,mo,d); } },
+            { re: /(\d{1,2})[\/\.](\d{1,2})[\/\.](\d{4}|\d{2})/, parse: (m) => { let d=parseInt(m[1]),mo=parseInt(m[2])-1,y=parseInt(m[3]); if(y<100)y+=2000; return new Date(y,mo,d); } },
+            { re: /(\d{4})[-.](\d{1,2})[-.](\d{1,2})/, parse: (m) => new Date(parseInt(m[1]),parseInt(m[2])-1,parseInt(m[3])) }
+        ];
+        for (const p of datePatterns) {
+            const match = cleanText.match(p.re);
+            if (match) { try { const date = p.parse(match); if (!isNaN(date.getTime())) { result = date; cleanText = cleanText.replace(match[0],'').trim(); break; } } catch(_) {} }
+        }
+        if (!result) {
+            const tm = lower.match(/через\s*(\d+)\s*(мин(?:ут(?:ы|)?)?|час(?:ов|а)?|дн(?:я|ей|ь)?|недел(?:ю|и|ь)?)/);
+            if (tm) { const num = parseInt(tm[1]), u = tm[2], d = new Date(now);
+                if (u.startsWith('мин')) d.setMinutes(d.getMinutes()+num);
+                else if (u.startsWith('час')) d.setHours(d.getHours()+num);
+                else if (u.startsWith('дн')) d.setDate(d.getDate()+num);
+                else if (u.startsWith('недел')) d.setDate(d.getDate()+num*7);
+                result = d; cleanText = cleanText.replace(tm[0],'').trim();
+            }
+        }
+        if (!result) {
+            if (lower.includes('послезавтра')) { const d = new Date(now); d.setDate(d.getDate()+2); result = d; cleanText = cleanText.replace(/послезавтра/g,'').trim(); }
+            else if (lower.includes('завтра')) { const d = new Date(now); d.setDate(d.getDate()+1); result = d; cleanText = cleanText.replace(/завтра/g,'').trim(); }
+            else if (lower.includes('сегодня')) { result = new Date(now); cleanText = cleanText.replace(/сегодня/g,'').trim(); }
+        }
+        if (!result) {
+            const wd = ['понедельник','вторник','среда','четверг','пятница','суббота','воскресенье'];
+            const wg = ['понедельник','вторник','среду','четверг','пятницу','субботу','воскресенье'];
+            for (let i = 0; i < wd.length; i++) {
+                const re = new RegExp(`(?:в\\s*)?(следующую\\s*)?(${wd[i]}|${wg[i]})`, 'i');
+                const match = cleanText.match(re);
+                if (match) { const td = i+1; let cd = now.getDay(); if (cd===0) cd=7; let diff = td-cd; if (diff<0) diff+=7; if (diff===0) diff=7; if (match[1]) diff+=7; const d = new Date(now); d.setDate(d.getDate()+diff); result = d; cleanText = cleanText.replace(match[0],'').trim(); break; }
+            }
+        }
+        let timeResult = null;
+        let timeCleanText = cleanText;
+        let timeMatch = cleanText.match(/(?:в\s*)?(\d{1,2})\s*[:.]\s*(\d{2})/);
+        if (timeMatch) { const h = parseInt(timeMatch[1]), m = parseInt(timeMatch[2]); if (h>=0&&h<24&&m>=0&&m<60) { timeResult = {hours:h,minutes:m}; timeCleanText = cleanText.replace(timeMatch[0],'').trim(); } }
+        else { timeMatch = cleanText.match(/(?:в\s*)?(\d{1,2})\s*час(?:ов|а)?(?:\s*(\d{1,2})\s*минут(?:ы|)?)?/);
+            if (timeMatch) { let h = parseInt(timeMatch[1]), m = timeMatch[2]?parseInt(timeMatch[2]):0; if (h>=1&&h<=23&&m>=0&&m<60) { timeResult = {hours:h,minutes:m}; timeCleanText = cleanText.replace(timeMatch[0],'').trim(); } } }
+        if (!timeResult) {
+            const periods = [
+                { re: /(?:^|\s)(утром|с утра|утра)(?:\s|$)/, key: 'morning' },
+                { re: /(?:^|\s)(до обеда|перед обедом)(?:\s|$)/, key: 'beforeNoon' },
+                { re: /(?:^|\s)(в обед|днём|днем|обед)(?:\s|$)/, key: 'noon' },
+                { re: /(?:^|\s)(после обеда|послеобеденное)(?:\s|$)/, key: 'afterNoon' },
+                { re: /(?:^|\s)(вечером|под вечер|вечера)(?:\s|$)/, key: 'evening' },
+                { re: /(?:^|\s)(ночью|ночи)(?:\s|$)/, key: 'night' }
+            ];
+            for (const p of periods) {
+                const match = lower.match(p.re);
+                if (match) { timeResult = parseTimeStr(timeDefaults[p.key]); timeCleanText = cleanText.replace(new RegExp(match[0],'i'),' ').replace(/\s+/g,' ').trim(); cleanText = timeCleanText; break; }
+            }
+        }
+        if (timeResult && result) { result.setHours(timeResult.hours, timeResult.minutes, 0, 0); cleanText = timeCleanText; }
+        else if (timeResult && !result) { const d = new Date(now); d.setHours(timeResult.hours, timeResult.minutes, 0, 0); if (d <= now) d.setDate(d.getDate()+1); result = d; cleanText = timeCleanText; }
+        if (result && !timeResult) { const isToday = result.toDateString() === now.toDateString(); const def = isToday ? parseTimeStr(timeDefaults.today) : parseTimeStr(timeDefaults.tomorrow); result.setHours(def.hours, def.minutes, 0, 0); }
+        if (timeResult && result) { const d = new Date(result); if (d <= now && d.toDateString() === now.toDateString()) { d.setDate(d.getDate()+1); result = d; } }
+
+        return { parsed: result, cleanText, categoryId };
+    }
+
+    // === INDEXEDDB ===
+    const DB_NAME = 'glass_notes_db', STORE_NAME = 'notes', DB_VERSION = 4;
+    let db = null;
+    function openDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onupgradeneeded = (event) => {
+                const d = event.target.result;
+                if (!d.objectStoreNames.contains(STORE_NAME)) {
+                    const store = d.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+                    store.createIndex('status', 'status', { unique: false });
+                    store.createIndex('datetime', 'datetime', { unique: false });
+                    store.createIndex('timestamp', 'timestamp', { unique: false });
+                }
+            };
+            request.onsuccess = (e) => { db = e.target.result; resolve(db); };
+            request.onerror = (e) => reject(e.target.error);
+        });
+    }
+    async function getAllNotes() { return new Promise((res, rej) => { if (!db) { rej('no db'); return; } const tx = db.transaction(STORE_NAME, 'readonly'); const r = tx.objectStore(STORE_NAME).getAll(); r.onsuccess = () => res(r.result || []); r.onerror = () => rej(r.error); }); }
+    async function addNote(n) { return new Promise((res, rej) => { if (!db) { rej('no db'); return; } const tx = db.transaction(STORE_NAME, 'readwrite'); const r = tx.objectStore(STORE_NAME).add(n); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+    async function deleteNote(id) { return new Promise((res, rej) => { if (!db) { rej('no db'); return; } const tx = db.transaction(STORE_NAME, 'readwrite'); const r = tx.objectStore(STORE_NAME).delete(id); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }); }
+    async function updateNote(id, data) { return new Promise((res, rej) => { if (!db) { rej('no db'); return; } const tx = db.transaction(STORE_NAME, 'readwrite'); const s = tx.objectStore(STORE_NAME); const r = s.get(id); r.onsuccess = () => { const note = r.result; if (!note) { rej('not found'); return; } Object.assign(note, data); const ur = s.put(note); ur.onsuccess = () => res(); ur.onerror = () => rej(ur.error); }; r.onerror = () => rej(r.error); }); }
+    async function clearAllNotes() { return new Promise((res, rej) => { if (!db) { rej('no db'); return; } const tx = db.transaction(STORE_NAME, 'readwrite'); const r = tx.objectStore(STORE_NAME).clear(); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }); }
+
+    function migrateNote(n) {
+        const out = { ...n };
+        if (out.categoryId && !out.categoryIds) { out.categoryIds = [out.categoryId]; delete out.categoryId; }
+        if (!Array.isArray(out.categoryIds)) out.categoryIds = [];
+        out.categoryIds = out.categoryIds.filter(id => !REMOVED_CATEGORY_IDS.includes(id));
+        if ('contact' in out) delete out.contact;
+        return out;
+    }
+
+    let reminderInterval = null;
+    let scheduledReminders = new Set();
+    function checkReminders(notes) {
+        if (!notes || notes.length === 0) return;
+        const now = new Date(), nowTime = now.getTime();
+        for (const note of notes) {
+            if (!note.datetime) continue;
+            if (scheduledReminders.has(note.id)) continue;
+            if (note.notified) continue;
+            if (note.status === 'done') continue;
+            const rt = new Date(note.datetime).getTime();
+            if (rt <= nowTime && rt > nowTime - 120000) {
+                scheduledReminders.add(note.id);
+                showLocalNotification(note.text, note.datetime);
+                updateNote(note.id, { notified: true }).then(() => { note.notified = true; renderTodos(); updateCounts(); }).catch(e => console.warn(e));
+            }
+        }
+    }
+    function showLocalNotification(text, dt) {
+        const title = '🔔 Напоминание', body = `${text}\n${formatDateTimeDisplay(dt)}`;
+        if ('Notification' in window && Notification.permission === 'granted') {
+            try { const n = new Notification(title, { body, icon:'icon-192.png', vibrate:[200,100,200], badge:'icon-192.png', requireInteraction: true, tag:`r-${Date.now()}` }); n.onclick = function() { window.focus(); this.close(); }; } catch(e) {}
+        }
+        showToast(`🔔 ${text}`, 8000); vibrate(200);
+    }
+    function startReminderChecker() {
+        if (reminderInterval) clearInterval(reminderInterval);
+        reminderInterval = setInterval(async () => { try { const n = await getAllNotes(); checkReminders(n); } catch(e) {} }, 5000);
+    }
+
+    // === СОСТОЯНИЕ ===
+    let todos = [];
+    let currentTab = 'active', currentFilter = 'all', searchQuery = '';
+    let pendingUndo = null, undoInterval = null, undoCountdown = 0;
+    let isProcessingVoice = false, voiceTimerInterval = null, voiceTimerSeconds = 0;
+    let cancelMode = null;
+
+    let catSheetQueue = [];
+    let catSheetTimerTick = null;
+    let catSheetRemainingTenths = 0;
+    let catSheetCurrentSelection = new Set();
+
+    const appContainer = document.getElementById('appContainer');
+    const resultsContainer = document.getElementById('resultsContainer');
+    const listScroll = document.getElementById('listScroll');
+    const voiceFab = document.getElementById('voiceFab');
+    const voiceBtn = document.getElementById('voiceBtn');
+    const voiceOverlay = document.getElementById('voiceOverlay');
+    const cancelFab = document.getElementById('cancelFab');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const cancelIcon = document.getElementById('cancelIcon');
+    const cancelFabText = document.getElementById('cancelFabText');
+    const cancelRecordingRing = document.getElementById('cancelRecordingRing');
+    const cancelTimerRing = document.getElementById('cancelTimerRing');
+    const cancelTimerCircle = document.getElementById('cancelTimerCircle');
+    const cancelTimerText = document.getElementById('cancelTimerText');
+    const undoOverlay = document.getElementById('undoOverlay');
+    const searchToggleBtn = document.getElementById('searchToggleBtn');
+    const searchContainer = document.getElementById('searchContainer');
+    const searchInput = document.getElementById('searchInput');
+    const searchClearBtn = document.getElementById('searchClearBtn');
+    const filterBtn = document.getElementById('filterBtn');
+    const filterModal = document.getElementById('filterModal');
+    const filterCloseBtn = document.getElementById('filterCloseBtn');
+    const filterTiles = document.getElementById('filterTiles');
+    const filterCategoryTiles = document.getElementById('filterCategoryTiles');
+    const filterOkBtn = document.getElementById('filterOkBtn');
+    const filterChips = document.getElementById('filterChips');
+    const countBadge = document.getElementById('countBadge');
+    const activeCount = document.getElementById('activeCount');
+    const doneCount = document.getElementById('doneCount');
+    const tabsContainer = document.getElementById('tabsContainer');
+    const footerEl = document.getElementById('footer');
+    const settingsBtn = document.getElementById('settingsBtn');
+    const settingsModal = document.getElementById('settingsModal');
+    const settingsCloseBtn = document.getElementById('settingsCloseBtn');
+    const themeTiles = document.getElementById('themeTiles');
+    const applySettingsBtn = document.getElementById('applySettingsBtn');
+    const undoTimerSlider = document.getElementById('undoTimerSlider');
+    const undoTimerValue = document.getElementById('undoTimerValue');
+    const catSheetTimerSlider = document.getElementById('catSheetTimerSlider');
+    const catSheetTimerValue = document.getElementById('catSheetTimerValue');
+    const timeDefaultsContainer = document.getElementById('timeDefaultsContainer');
+    const timersHeader = document.getElementById('timersHeader');
+    const timersBody = document.getElementById('timersBody');
+    const timersValue = document.getElementById('timersValue');
+    const categoriesSettingsHeader = document.getElementById('categoriesSettingsHeader');
+    const categoriesSettingsBody = document.getElementById('categoriesSettingsBody');
+    const categoriesSettingsValue = document.getElementById('categoriesSettingsValue');
+    const timeDefaultsHeader = document.getElementById('timeDefaultsHeader');
+    const timeDefaultsBody = document.getElementById('timeDefaultsBody');
+    const timeDefaultsValue = document.getElementById('timeDefaultsValue');
+    const resetAllBtn = document.getElementById('resetAllBtn');
+    const confirmResetModal = document.getElementById('confirmResetModal');
+    const confirmResetCloseBtn = document.getElementById('confirmResetCloseBtn');
+    const confirmResetCancelBtn = document.getElementById('confirmResetCancelBtn');
+    const confirmResetOkBtn = document.getElementById('confirmResetOkBtn');
+    const infoModal = document.getElementById('infoModal');
+    const infoCloseBtn = document.getElementById('infoCloseBtn');
+    const toast = document.getElementById('toastMessage');
+    const editOverlay = document.getElementById('editOverlay');
+    const editTextarea = document.getElementById('editTextarea');
+    const editCloseBtn = document.getElementById('editCloseBtn');
+    const editCancelBtn = document.getElementById('editCancelBtn');
+    const editSaveBtn = document.getElementById('editSaveBtn');
+    const dateTiles = document.getElementById('dateTiles');
+    const timeTiles = document.getElementById('timeTiles');
+    const categoryTiles = document.getElementById('categoryTiles');
+    const dateCollapsibleHeader = document.getElementById('dateCollapsibleHeader');
+    const dateCollapsibleBody = document.getElementById('dateCollapsibleBody');
+    const dateCollapsibleValue = document.getElementById('dateCollapsibleValue');
+    const timeCollapsibleHeader = document.getElementById('timeCollapsibleHeader');
+    const timeCollapsibleBody = document.getElementById('timeCollapsibleBody');
+    const timeCollapsibleValue = document.getElementById('timeCollapsibleValue');
+    const datePickBtn = document.getElementById('datePickBtn');
+    const dateClearBtn = document.getElementById('dateClearBtn');
+    const timePickBtn = document.getElementById('timePickBtn');
+    const timeClearBtn = document.getElementById('timeClearBtn');
+    const hiddenDatePicker = document.getElementById('hiddenDatePicker');
+    const hiddenTimePicker = document.getElementById('hiddenTimePicker');
+    const hiddenFileInput = document.getElementById('hiddenFileInput');
+    const exportBackupBtn = document.getElementById('exportBackupBtn');
+    const importBackupBtn = document.getElementById('importBackupBtn');
+    const importModal = document.getElementById('importModal');
+    const importCloseBtn = document.getElementById('importCloseBtn');
+    const importAddBtn = document.getElementById('importAddBtn');
+    const importReplaceBtn = document.getElementById('importReplaceBtn');
+    const askCategoryToggle = document.getElementById('askCategoryToggle');
+    const voiceCategoryToggle = document.getElementById('voiceCategoryToggle');
+    const catSheetOverlay = document.getElementById('catSheetOverlay');
+    const catSheetText = document.getElementById('catSheetText');
+    const catSheetTiles = document.getElementById('catSheetTiles');
+    const catSkipBtn = document.getElementById('catSkipBtn');
+    const catSkipBtnText = document.getElementById('catSkipBtnText');
+    const catTimerWrap = document.getElementById('catTimerWrap');
+    const catTimerCircle = document.getElementById('catTimerCircle');
+    const catTimerText = document.getElementById('catTimerText');
+
+    function escapeHtml(s) { if (!s) return ''; return s.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;'); }
+    let toastTimeout = null;
+    function showToast(text, duration = 2000) { toast.textContent = text; toast.classList.add('show'); clearTimeout(toastTimeout); toastTimeout = setTimeout(() => toast.classList.remove('show'), duration); }
+    function vibrate(ms = 30) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (_) {} }
+    function getRandomColor() { return COLORS[Math.floor(Math.random() * COLORS.length)]; }
+
+    function formatDateTimeDisplay(s) {
+        if (!s) return '';
+        const d = new Date(s), now = new Date();
+        const t = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const tm = new Date(t); tm.setDate(tm.getDate()+1);
+        const af = new Date(t); af.setDate(af.getDate()+2);
+        const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        let l = '';
+        if (dd.getTime() === t.getTime()) l = 'Сегодня';
+        else if (dd.getTime() === tm.getTime()) l = 'Завтра';
+        else if (dd.getTime() === af.getTime()) l = 'Послезавтра';
+        else l = d.toLocaleDateString('ru-RU', { day:'numeric', month:'short', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+        const ts = d.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' });
+        return `${l} ${ts}`;
+    }
+    function isDateToday(s) { if (!s) return false; const d = new Date(s), n = new Date(); return d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate(); }
+    function isDateTomorrow(s) { if (!s) return false; const d = new Date(s), t = new Date(); t.setDate(t.getDate()+1); return d.getFullYear()===t.getFullYear()&&d.getMonth()===t.getMonth()&&d.getDate()===t.getDate(); }
+    function isDatePast(s) { if (!s) return false; return new Date(s) < new Date(); }
+    function getCardType(item) { if (item.status === 'done') return 'done'; if (!item.datetime) return 'no-date'; if (new Date(item.datetime) < new Date()) return 'past'; return 'active'; }
+    function toLocalInputValue(date) { const d = new Date(date); const p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
+
+    async function copyText(text) {
+        try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text); return true; } } catch (_) {}
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'; ta.style.left = '-9999px';
+            document.body.appendChild(ta); ta.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            return ok;
+        } catch (_) { return false; }
+    }
+
+    function applyFabPosition() {
+        const vw = window.innerWidth, vh = window.innerHeight;
+        cancelFab.style.left = (vw * FAB_POSITION.x / 100) + 'px';
+        cancelFab.style.top  = (vh * FAB_POSITION.y / 100) + 'px';
+    }
+
+    const UNDO_ICON_SVG = '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>';
+    const STOP_ICON_SVG = '<rect x="6" y="6" width="12" height="12" rx="2"/>';
+
+    function showCancelFab(mode) {
+        cancelMode = mode;
+        cancelFab.classList.add('visible');
+        if (mode === 'voice') {
+            cancelFab.classList.add('recording');
+            cancelIcon.innerHTML = STOP_ICON_SVG;
+            cancelFabText.style.display = 'flex';
+            cancelFabText.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg> Слушаю...';
+            cancelRecordingRing.style.display = 'block';
+            cancelTimerRing.style.display = 'none';
+            cancelTimerText.style.display = 'block';
+            cancelTimerText.textContent = '0:00';
+        } else if (mode === 'undo') {
+            cancelFab.classList.remove('recording');
+            cancelIcon.innerHTML = UNDO_ICON_SVG;
+            cancelFabText.style.display = 'none';
+            cancelRecordingRing.style.display = 'none';
+            cancelTimerRing.style.display = 'block';
+            cancelTimerText.style.display = 'block';
+        }
+    }
+    function hideCancelFab() {
+        cancelFab.classList.remove('visible', 'recording');
+        cancelFabText.style.display = 'none';
+        cancelRecordingRing.style.display = 'none';
+        cancelTimerRing.style.display = 'none';
+        cancelTimerText.style.display = 'none';
+        cancelMode = null;
+    }
+
+    cancelBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (cancelMode === 'voice') { if (recognition && isListening) recognition.stop(); }
+        else if (cancelMode === 'undo') { undoLastDelete(); }
+    });
+
+    // === ДАННЫЕ ===
+    async function loadTodos() {
+        try {
+            const raw = await getAllNotes();
+            let changed = false;
+            for (const n of raw) {
+                const m = migrateNote(n);
+                if (JSON.stringify(m) !== JSON.stringify(n)) {
+                    await updateNote(n.id, m);
+                    changed = true;
+                }
+            }
+            todos = changed ? await getAllNotes() : raw;
+            renderTodos(); updateCounts(); updateBadge(); checkReminders(todos);
+        } catch (e) { console.error(e); todos = []; renderTodos(); updateCounts(); updateBadge(); }
+    }
+
+    // === СПЛЭШ КАТЕГОРИЙ ===
+    function queueCategorySheet(noteId, text) {
+        catSheetQueue.push({ noteId, text });
+        if (!catSheetOverlay.classList.contains('visible')) openNextCategorySheet();
+    }
+
+    function openNextCategorySheet() {
+        if (catSheetQueue.length === 0) return;
+        const item = catSheetQueue[0];
+        catSheetText.textContent = item.text;
+        catSheetCurrentSelection = new Set();
+        renderCatSheetTiles();
+        updateCatSheetButton();
+        catSheetOverlay.classList.add('visible');
+        startCatSheetTimer();
+    }
+
+    function renderCatSheetTiles() {
+        catSheetTiles.innerHTML = DEFAULT_CATEGORIES.map(c => {
+            const sel = catSheetCurrentSelection.has(c.id) ? ' selected' : '';
+            return `<button class="cat-tile${sel}" data-cat="${c.id}" style="border-color:${c.color};background:${hexToRgba(c.color,0.16)};">${c.name}</button>`;
+        }).join('');
+    }
+
+    function updateCatSheetButton() {
+        if (catSheetCurrentSelection.size > 0) {
+            catSkipBtnText.textContent = 'Готово ✅';
+            catSkipBtn.classList.add('has-selection');
+        } else {
+            catSkipBtnText.textContent = 'Пропустить';
+            catSkipBtn.classList.remove('has-selection');
+        }
+    }
+
+    function startCatSheetTimer() {
+        stopCatSheetTimer();
+        if (catSheetTimerSec <= 0) {
+            catTimerWrap.classList.remove('visible');
+            return;
+        }
+        catTimerWrap.classList.add('visible');
+        const total = catSheetTimerSec * 10;
+        catSheetRemainingTenths = total;
+        const circ = 2 * Math.PI * 45;
+        catTimerCircle.style.strokeDasharray = circ;
+        updateCatTimerCircle(1);
+        catTimerText.textContent = catSheetTimerSec;
+        catSheetTimerTick = setInterval(() => {
+            catSheetRemainingTenths--;
+            const p = Math.max(0, catSheetRemainingTenths / total);
+            updateCatTimerCircle(p);
+            const secLeft = Math.max(0, Math.ceil(catSheetRemainingTenths / 10));
+            catTimerText.textContent = secLeft;
+            if (catSheetRemainingTenths <= 0) {
+                stopCatSheetTimer();
+                // Таймер истёк — сохраняем, если есть выбор, и закрываем
+                const item = catSheetQueue[0];
+                if (item && catSheetCurrentSelection.size > 0) {
+                    assignCategoriesToNote(item.noteId, Array.from(catSheetCurrentSelection));
+                }
+                skipCategorySheet();
+            }
+        }, 100);
+    }
+    function updateCatTimerCircle(p) {
+        const c = 2 * Math.PI * 45;
+        catTimerCircle.style.strokeDashoffset = c * (1 - p);
+    }
+    function stopCatSheetTimer() {
+        if (catSheetTimerTick) { clearInterval(catSheetTimerTick); catSheetTimerTick = null; }
+    }
+
+    function assignCategoriesToNote(noteId, catIds) {
+        updateNote(noteId, { categoryIds: catIds }).then(() => {
+            const note = todos.find(t => t.id === noteId);
+            if (note) note.categoryIds = catIds;
+            renderTodos();
+            const names = catIds.map(id => getCategoryById(id)?.name).filter(Boolean).join(', ');
+            if (names) showToast(`🏷 ${names}`, 1000);
+            vibrate(20);
+        }).catch(e => { console.error('assignCategoriesToNote', e); showToast('❌ Ошибка категории', 1500); });
+    }
+
+    function skipCategorySheet() {
+        stopCatSheetTimer();
+        catSheetOverlay.classList.remove('visible');
+        catSheetQueue.shift();
+        if (catSheetQueue.length > 0) setTimeout(openNextCategorySheet, 250);
+    }
+
+    catSheetTiles.addEventListener('click', (e) => {
+        const btn = e.target.closest('.cat-tile');
+        if (!btn) return;
+        const catId = btn.dataset.cat;
+        if (catSheetCurrentSelection.has(catId)) catSheetCurrentSelection.delete(catId);
+        else catSheetCurrentSelection.add(catId);
+        renderCatSheetTiles();
+        updateCatSheetButton();
+        // Перезапускаем таймер при каждом тапе (если включён)
+        startCatSheetTimer();
+    });
+
+    catSkipBtn.addEventListener('click', () => {
+        const item = catSheetQueue[0];
+        if (item && catSheetCurrentSelection.size > 0) {
+            assignCategoriesToNote(item.noteId, Array.from(catSheetCurrentSelection));
+        }
+        skipCategorySheet();
+    });
+
+    catSheetOverlay.addEventListener('click', (e) => {
+        if (e.target === catSheetOverlay) {
+            const item = catSheetQueue[0];
+            if (item && catSheetCurrentSelection.size > 0) {
+                assignCategoriesToNote(item.noteId, Array.from(catSheetCurrentSelection));
+            }
+            skipCategorySheet();
+        }
+    });
+
+    async function addTodo(text) {
+        if (!text || text.trim() === '') return;
+        const { parsed, cleanText, categoryId } = parseDateNLU(text, voiceCategoryEnabled);
+        const finalText = cleanText || text.trim();
+        if (!finalText) return;
+        const catIds = categoryId ? [categoryId] : [];
+        const todo = {
+            text: finalText,
+            time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }),
+            datetime: parsed ? parsed.toISOString() : null,
+            timestamp: Date.now(),
+            status: 'active',
+            color: getRandomColor(),
+            categoryIds: catIds,
+            notified: false,
+            created: new Date().toISOString()
+        };
+        try {
+            const id = await addNote(todo);
+            todo.id = id;
+            todos.unshift(todo);
+            renderTodos(); updateCounts(); updateBadge();
+            const dd = todo.datetime ? formatDateTimeDisplay(todo.datetime) : '';
+            const catName = categoryId ? (getCategoryById(categoryId)?.name || '') : '';
+            showToast(`✅ "${finalText}"${catName ? ' 🏷 ' + catName : ''}${dd ? ' 🕐 ' + dd : ''}`, 1500);
+            vibrate(30);
+            if (todo.datetime) {
+                const delay = new Date(todo.datetime).getTime() - Date.now();
+                if (delay > 0 && delay < 60000) setTimeout(() => checkReminders([todo]), delay + 1000);
+                setTimeout(() => checkReminders([todo]), 1000);
+            }
+            if (!categoryId && askCategoryAfterRecord) queueCategorySheet(id, finalText);
+        } catch (e) { console.error(e); showToast('❌ Ошибка', 1500); }
+    }
+
+    async function deleteTodo(id) {
+        const n = todos.find(t => t.id === id); if (!n) return;
+        try {
+            await deleteNote(id);
+            todos = todos.filter(t => t.id !== id);
+            renderTodos(); updateCounts(); updateBadge();
+            showUndoFab(n);
+            showToast('🗑 Удалено', 800);
+            vibrate(30);
+        } catch (e) { console.error(e); showToast('❌ Ошибка', 1500); }
+    }
+
+    async function markDone(id) {
+        try { const n = todos.find(t => t.id === id); if (!n) return; await updateNote(id, { status:'done' }); n.status = 'done'; renderTodos(); updateCounts(); updateBadge(); showToast('✅ Выполнено!', 1200); vibrate(20); }
+        catch (e) { console.error(e); showToast('❌ Ошибка', 1500); }
+    }
+    async function undoDone(id) {
+        try { const n = todos.find(t => t.id === id); if (!n) return; await updateNote(id, { status:'active' }); n.status = 'active'; renderTodos(); updateCounts(); updateBadge(); showToast('↩️ Возвращено', 1200); vibrate(20); }
+        catch (e) { console.error(e); showToast('❌ Ошибка', 1500); }
+    }
+
+    function showUndoFab(note) {
+        if (undoInterval) { clearInterval(undoInterval); undoInterval = null; }
+        if (pendingUndo) pendingUndo = null;
+        pendingUndo = note;
+        undoCountdown = undoTime;
+        cancelTimerText.textContent = undoCountdown + 'с';
+        undoOverlay.classList.add('visible');
+        showCancelFab('undo');
+        const circ = 2 * Math.PI * 45;
+        cancelTimerCircle.style.strokeDasharray = circ;
+        updateCircleProgress(1);
+        if (undoTime <= 0) { undoOverlay.classList.remove('visible'); hideCancelFab(); return; }
+        undoInterval = setInterval(() => {
+            undoCountdown--;
+            cancelTimerText.textContent = undoCountdown + 'с';
+            updateCircleProgress(undoCountdown / undoTime);
+            if (undoCountdown <= 0) {
+                clearInterval(undoInterval); undoInterval = null; pendingUndo = null;
+                hideCancelFab();
+                undoOverlay.classList.remove('visible');
+                showToast('✅ Заметка удалена', 1000);
+            }
+        }, 1000);
+    }
+    function updateCircleProgress(p) { const c = 2 * Math.PI * 45; cancelTimerCircle.style.strokeDashoffset = c * (1 - p); }
+
+    function undoLastDelete() {
+        if (!pendingUndo) { showToast('❌ Нет действий', 1200); return; }
+        clearInterval(undoInterval); undoInterval = null;
+        const note = pendingUndo;
+        pendingUndo = null;
+        hideCancelFab();
+        undoOverlay.classList.remove('visible');
+        addNote(note).then(id => {
+            note.id = id;
+            todos.unshift(note);
+            renderTodos(); updateCounts(); updateBadge();
+            showToast('↩️ Отменено', 1500);
+        }).catch(e => { console.error(e); showToast('❌ Ошибка', 1500); });
+    }
+
+    function getFilteredTodos() {
+        let f = [...todos];
+        if (currentTab === 'active') f = f.filter(t => t.status !== 'done');
+        else if (currentTab === 'done') f = f.filter(t => t.status === 'done');
+        if (searchQuery) { const q = searchQuery.toLowerCase(); f = f.filter(t => t.text.toLowerCase().includes(q)); }
+        switch (currentFilter) {
+            case 'today': f = f.filter(t => t.datetime && isDateToday(t.datetime)); break;
+            case 'tomorrow': f = f.filter(t => t.datetime && isDateTomorrow(t.datetime)); break;
+            case 'with_date': f = f.filter(t => t.datetime); break;
+            case 'no_date': f = f.filter(t => !t.datetime); break;
+            case 'past': f = f.filter(t => t.datetime && isDatePast(t.datetime)); break;
+        }
+        if (currentCategoryFilter) {
+            f = f.filter(t => (t.categoryIds || []).includes(currentCategoryFilter));
+        }
+        f.sort((a, b) => {
+            const aImp = isImportant(a.categoryIds) ? 1 : 0;
+            const bImp = isImportant(b.categoryIds) ? 1 : 0;
+            if (aImp !== bImp) return bImp - aImp;
+            return (b.timestamp || 0) - (a.timestamp || 0);
+        });
+        return f;
+    }
+    function updateCounts() {
+        const a = todos.filter(t => t.status !== 'done').length;
+        const d = todos.filter(t => t.status === 'done').length;
+        activeCount.textContent = a;
+        doneCount.textContent = d;
+        countBadge.textContent = todos.length;
+    }
+
+    function renderFilterChips() {
+        let html = '';
+        if (currentFilter !== 'all') {
+            const label = `${FILTER_ICONS[currentFilter] || ''} ${FILTER_LABELS[currentFilter] || currentFilter}`.trim();
+            html += `<div class="filter-chip chip-date" data-type="date">
+                <span class="chip-text">${label}</span>
+                <button class="chip-close" data-type="date" aria-label="Сбросить">
+                    <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>`;
+        }
+        if (currentCategoryFilter) {
+            const c = getCategoryById(currentCategoryFilter);
+            if (c) {
+                html += `<div class="filter-chip chip-cat" data-type="cat">
+                    <span class="chip-text">🏷 ${c.name}</span>
+                    <button class="chip-close" data-type="cat" aria-label="Сбросить">
+                        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                </div>`;
+            }
+        }
+        filterChips.innerHTML = html;
+    }
+
+    filterChips.addEventListener('click', (e) => {
+        const closeBtn = e.target.closest('.chip-close');
+        if (closeBtn) {
+            e.stopPropagation();
+            const type = closeBtn.dataset.type;
+            if (type === 'date') { currentFilter = 'all'; }
+            else if (type === 'cat') { currentCategoryFilter = null; }
+            renderFilterChips();
+            renderTodos();
+            updateCounts();
+            vibrate(15);
+            return;
+        }
+        const chip = e.target.closest('.filter-chip');
+        if (chip) { filterBtn.click(); }
+    });
+
+    // === СВАЙП ===
+    let gestureState = null;
+
+    function initSwipe(card) {
+        const wrapper = card.closest('.result-card-wrapper');
+        if (!wrapper) return;
+        const threshold = 60;
+        let holdTimer = null;
+        let holdStartX = 0, holdStartY = 0;
+        const note = () => todos.find(t => t.id === parseInt(wrapper.dataset.id));
+
+        function clearHold() {
+            if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+            card.classList.remove('holding');
+        }
+
+        function onStart(cx, cy) {
+            if (gestureState) return;
+            holdStartX = cx; holdStartY = cy;
+            gestureState = { wrapper, card, startX: cx, startY: cy, currentX: cx, axis: null };
+            const n = note();
+            if (n) {
+                holdTimer = setTimeout(async () => {
+                    holdTimer = null;
+                    if (gestureState && gestureState.wrapper === wrapper && !gestureState.axis) {
+                        card.classList.add('holding');
+                        const ok = await copyText(n.text);
+                        card.classList.remove('holding');
+                        if (ok) {
+                            card.classList.add('copied');
+                            vibrate(50);
+                            showToast('📋 Скопировано', 1200);
+                            setTimeout(() => card.classList.remove('copied'), 600);
+                        } else showToast('❌ Ошибка копирования', 1200);
+                        gestureState = null;
+                    }
+                }, 500);
+            }
+        }
+
+        function onMove(cx, cy) {
+            if (!gestureState || gestureState.wrapper !== wrapper) {
+                if (holdTimer) { if (Math.abs(cx - holdStartX) > 8 || Math.abs(cy - holdStartY) > 8) clearHold(); }
+                return;
+            }
+            const st = gestureState;
+            st.currentX = cx;
+            const dx = cx - st.startX, dy = cy - st.startY;
+            if (!st.axis && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) clearHold();
+            if (!st.axis && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+                st.axis = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+                if (st.axis === 'h') { listScroll.style.overflow = 'hidden'; card.classList.add('swiping'); card.style.willChange = 'transform, opacity'; }
+                else { gestureState = null; return; }
+            }
+            if (st.axis === 'h') {
+                card.style.transform = `translate3d(${dx}px, 0, 0)`;
+                card.style.opacity = 1 - Math.min(Math.abs(dx) / 200, 0.3);
+                if (dx > 20) card.style.borderColor = 'rgba(52,199,89,0.8)';
+                else if (dx < -20) card.style.borderColor = 'rgba(255,70,70,0.8)';
+                else card.style.borderColor = '';
+            }
+        }
+        function onEnd() {
+            clearHold();
+            if (!gestureState || gestureState.wrapper !== wrapper) { gestureState = null; return; }
+            const st = gestureState;
+            const horiz = st.axis === 'h';
+            const dx = st.currentX - st.startX;
+            gestureState = null;
+            listScroll.style.overflow = '';
+            if (!horiz) return;
+            card.classList.remove('swiping');
+            card.style.transition = '';
+            if (Math.abs(dx) > threshold) {
+                const id = parseInt(wrapper.dataset.id);
+                const n = todos.find(t => t.id === id);
+                if (!n) return;
+                if (dx > 0) {
+                    card.style.transition = 'transform 0.35s cubic-bezier(0.2, 0.9, 0.4, 1), opacity 0.35s ease';
+                    card.style.transform = 'translate3d(120%, 0, 0) scale(0.9)';
+                    card.style.opacity = '0';
+                    setTimeout(() => {
+                        if (n.status !== 'done') markDone(id); else undoDone(id);
+                        card.style.transition = ''; card.style.transform = ''; card.style.opacity = ''; card.style.borderColor = ''; card.style.willChange = '';
+                    }, 400);
+                } else {
+                    card.style.transition = 'transform 0.35s cubic-bezier(0.2, 0.9, 0.4, 1), opacity 0.35s ease';
+                    card.style.transform = 'translate3d(-120%, 0, 0) scale(0.9)';
+                    card.style.opacity = '0';
+                    setTimeout(() => {
+                        deleteTodo(id);
+                        card.style.transition = ''; card.style.transform = ''; card.style.opacity = ''; card.style.borderColor = ''; card.style.willChange = '';
+                    }, 400);
+                }
+            } else {
+                card.style.transition = 'transform 0.3s cubic-bezier(0.2, 0.9, 0.4, 1), opacity 0.3s ease';
+                card.style.transform = ''; card.style.opacity = ''; card.style.borderColor = '';
+                setTimeout(() => { card.style.transition = ''; card.style.willChange = ''; }, 350);
+            }
+        }
+
+        if (wrapper._swipeCleanup) wrapper._swipeCleanup();
+        const ts = (e) => { if (e.target.closest('.edit-input')) return; const t = e.touches[0]; onStart(t.clientX, t.clientY); };
+        const tm = (e) => { if (e.target.closest('.edit-input')) return; const t = e.touches[0]; onMove(t.clientX, t.clientY); };
+        const te = () => onEnd();
+        let mouseDown = false;
+        const ms = (e) => { if (e.button !== 0) return; if (e.target.closest('.edit-input')) return; mouseDown = true; onStart(e.clientX, e.clientY); };
+        const mm = (e) => { if (mouseDown) onMove(e.clientX, e.clientY); };
+        const me = () => { if (mouseDown) { mouseDown = false; onEnd(); } };
+
+        wrapper.addEventListener('touchstart', ts, { passive: true });
+        wrapper.addEventListener('touchmove', tm, { passive: true });
+        wrapper.addEventListener('touchend', te, { passive: true });
+        wrapper.addEventListener('touchcancel', te, { passive: true });
+        wrapper.addEventListener('mousedown', ms);
+        document.addEventListener('mousemove', mm);
+        document.addEventListener('mouseup', me);
+        wrapper.addEventListener('mouseleave', () => { if (mouseDown) { mouseDown = false; onEnd(); } });
+
+        wrapper._swipeCleanup = () => {
+            wrapper.removeEventListener('touchstart', ts);
+            wrapper.removeEventListener('touchmove', tm);
+            wrapper.removeEventListener('touchend', te);
+            wrapper.removeEventListener('touchcancel', te);
+            wrapper.removeEventListener('mousedown', ms);
+            document.removeEventListener('mousemove', mm);
+            document.removeEventListener('mouseup', me);
+            if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+        };
+    }
+
+    function renderTodos() {
+        const filtered = getFilteredTodos();
+        if (filtered.length === 0) {
+            let msg = 'Пока пусто';
+            let sub = currentTab === 'active' ? 'нажмите на микрофон и скажите напоминание' : 'здесь будут выполненные задачи';
+            if (searchQuery) { msg = 'Ничего не найдено'; sub = 'попробуйте изменить запрос'; }
+            else if (currentFilter !== 'all' || currentCategoryFilter) { msg = 'Нет записей'; sub = 'попробуйте другой фильтр'; }
+            resultsContainer.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-circle">
+                        <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                    </div>
+                    <div class="empty-title">${msg}</div>
+                    <div class="empty-sub">${sub}</div>
+                </div>
+            `;
+            return;
+        }
+
+        const importantItems = filtered.filter(t => isImportant(t.categoryIds));
+        const regularItems = filtered.filter(t => !isImportant(t.categoryIds));
+
+        function renderCard(item) {
+            const dd = item.datetime ? formatDateTimeDisplay(item.datetime) : '';
+            const ct = item.status === 'done' ? 'done' : getCardType(item);
+            const catIds = item.categoryIds || [];
+            const firstCat = catIds.length ? getCategoryById(catIds[0]) : null;
+            const cc = firstCat ? '' : (item.color || 'color-1');
+            const sc = item.status === 'done' ? 'status-done' : '';
+            const pulse = (isImportant(catIds) && item.status !== 'done') ? ' important-pulse' : '';
+            let sl = '', si = '🕐';
+            if (item.status === 'done') { sl = '✅ выполнено'; si = '✓'; }
+            else if (ct === 'active') { sl = '🟢 активное'; si = '🕐'; }
+            else if (ct === 'past') { sl = '🔴 просрочено'; si = '⏰'; }
+            else if (ct === 'no-date') { sl = '📝 без даты'; si = '📝'; }
+            const dc = item.status === 'done' ? 'done' : ct === 'active' ? 'active' : ct === 'past' ? 'past' : 'no-date';
+            const styleAttr = firstCat ? ` style="border-color:${firstCat.color};background:${hexToRgba(firstCat.color, 0.12)};"` : '';
+            const catLabels = catIds.map(id => {
+                const c = getCategoryById(id);
+                if (!c) return '';
+                return `<span class="category-label" style="background:${hexToRgba(c.color,0.35)};">${c.name}</span>`;
+            }).join('');
+            return `
+                <div class="result-card-wrapper" data-id="${item.id}">
+                    <div class="result-card ${cc} ${sc}${pulse}" data-id="${item.id}"${styleAttr}>
+                        <div class="result-content" data-id="${item.id}">
+                            <div class="result-text">${escapeHtml(item.text)}</div>
+                            <div class="result-meta">
+                                <span class="result-time">${item.time || ''}</span>
+                                ${dd ? `<span class="result-datetime ${dc}">${si} ${dd}</span>` : ''}
+                                ${catLabels}
+                                <span class="status-label">${sl}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        let html = '';
+        if (importantItems.length > 0) {
+            html += `<div class="section-label">🔥 Важные (${importantItems.length})</div>`;
+            html += importantItems.map(renderCard).join('');
+        }
+        html += regularItems.map(renderCard).join('');
+
+        resultsContainer.innerHTML = html;
+
+        resultsContainer.querySelectorAll('.result-content').forEach(el => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (el.closest('.result-card').classList.contains('copied')) return;
+                const id = parseInt(el.closest('.result-card-wrapper').dataset.id);
+                const note = todos.find(t => t.id === id);
+                if (note && note.status !== 'done') openEdit(id);
+            });
+        });
+        resultsContainer.querySelectorAll('.result-card').forEach(c => initSwipe(c));
+    }
+
+    function updateBadge() { countBadge.textContent = todos.length; }
+
+    // === РЕДАКТОР ===
+    let editingId = null, editDate = null, editTime = null, editCategoryIds = [];
+
+    function openEdit(id) {
+        const note = todos.find(t => t.id === id);
+        if (!note || note.status === 'done') return;
+        editingId = id;
+        editTextarea.value = note.text;
+        editCategoryIds = Array.isArray(note.categoryIds) ? [...note.categoryIds] : [];
+        if (note.datetime) { const d = new Date(note.datetime); editDate = new Date(d.getFullYear(), d.getMonth(), d.getDate()); editTime = { hours: d.getHours(), minutes: d.getMinutes() }; }
+        else { editDate = null; editTime = null; }
+        dateCollapsibleHeader.classList.remove('expanded');
+        dateCollapsibleBody.classList.remove('expanded');
+        timeCollapsibleHeader.classList.remove('expanded');
+        timeCollapsibleBody.classList.remove('expanded');
+        renderCategoryTiles();
+        updateEditTiles();
+        updateCollapsibleValues();
+        editOverlay.classList.add('active');
+        setTimeout(() => editTextarea.focus(), 300);
+    }
+
+    function renderCategoryTiles() {
+        categoryTiles.innerHTML = DEFAULT_CATEGORIES.map(c => {
+            const active = editCategoryIds.includes(c.id);
+            const style = active ? `style="border-color:${c.color};background:${hexToRgba(c.color,0.22)};"` : '';
+            return `<button class="edit-tile${active ? ' active cat-active' : ''}" data-cat="${c.id}" ${style}>${c.name}</button>`;
+        }).join('');
+    }
+
+    categoryTiles.addEventListener('click', (e) => {
+        const btn = e.target.closest('.edit-tile');
+        if (!btn) return;
+        const catId = btn.dataset.cat;
+        if (editCategoryIds.includes(catId)) editCategoryIds = editCategoryIds.filter(x => x !== catId);
+        else editCategoryIds.push(catId);
+        renderCategoryTiles();
+    });
+
+    function updateCollapsibleValues() {
+        if (editDate) {
+            const dt = new Date(editDate);
+            const today = new Date(); today.setHours(0,0,0,0);
+            const tm = new Date(today); tm.setDate(tm.getDate()+1);
+            const af = new Date(today); af.setDate(af.getDate()+2);
+            const dOnly = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+            let label;
+            if (dOnly.getTime() === today.getTime()) label = 'Сегодня';
+            else if (dOnly.getTime() === tm.getTime()) label = 'Завтра';
+            else if (dOnly.getTime() === af.getTime()) label = 'Послезавтра';
+            else label = dt.toLocaleDateString('ru-RU', { day:'numeric', month:'short', year: dt.getFullYear() !== today.getFullYear() ? 'numeric' : undefined });
+            dateCollapsibleValue.textContent = label;
+        } else dateCollapsibleValue.textContent = 'Не задано';
+        if (editTime) timeCollapsibleValue.textContent = `${String(editTime.hours).padStart(2,'0')}:${String(editTime.minutes).padStart(2,'0')}`;
+        else timeCollapsibleValue.textContent = 'Не задано';
+    }
+
+    function updateEditTiles() {
+        const today = new Date();
+        const tm = new Date(); tm.setDate(tm.getDate()+1);
+        const af = new Date(); af.setDate(af.getDate()+2);
+        dateTiles.querySelectorAll('.edit-tile[data-date]').forEach(t => t.classList.remove('active'));
+        if (editDate) {
+            if (editDate.toDateString() === today.toDateString()) dateTiles.querySelector('[data-date="today"]')?.classList.add('active');
+            else if (editDate.toDateString() === tm.toDateString()) dateTiles.querySelector('[data-date="tomorrow"]')?.classList.add('active');
+            else if (editDate.toDateString() === af.toDateString()) dateTiles.querySelector('[data-date="after"]')?.classList.add('active');
+        }
+        const mp = { morning:['timeMorning','🌅'], beforeNoon:['timeBeforeNoon','☀️'], noon:['timeNoon','🍽'], afterNoon:['timeAfterNoon','🌇'], evening:['timeEvening','🌆'], night:['timeNight','🌙'] };
+        for (const [k,[id,ico]] of Object.entries(mp)) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = `${ico} ${timeDefaults[k]}`;
+        }
+        timeTiles.querySelectorAll('.edit-tile[data-time]').forEach(t => t.classList.remove('active'));
+        if (editTime) {
+            const hm = `${String(editTime.hours).padStart(2,'0')}:${String(editTime.minutes).padStart(2,'0')}`;
+            for (const [k,[id]] of Object.entries(mp)) { if (timeDefaults[k] === hm) { document.getElementById(id)?.classList.add('active'); break; } }
+        }
+    }
+
+    dateCollapsibleHeader.addEventListener('click', () => {
+        dateCollapsibleHeader.classList.toggle('expanded');
+        dateCollapsibleBody.classList.toggle('expanded');
+    });
+    timeCollapsibleHeader.addEventListener('click', () => {
+        timeCollapsibleHeader.classList.toggle('expanded');
+        timeCollapsibleBody.classList.toggle('expanded');
+    });
+
+    function closeEdit() { editOverlay.classList.remove('active'); editingId = null; editDate = null; editTime = null; editCategoryIds = []; }
+
+    async function saveEdit() {
+        if (editingId === null) return;
+        const newText = editTextarea.value.trim();
+        const note = todos.find(t => t.id === editingId);
+        if (!note) { closeEdit(); return; }
+        let newDatetime = null;
+        if (editDate) {
+            const d = new Date(editDate);
+            if (editTime) d.setHours(editTime.hours, editTime.minutes, 0, 0);
+            else { const def = parseTimeStr(timeDefaults.today); d.setHours(def.hours, def.minutes, 0, 0); }
+            newDatetime = d.toISOString();
+        }
+        const updates = {};
+        if (newText && newText !== note.text) updates.text = newText;
+        if (newDatetime !== note.datetime) updates.datetime = newDatetime;
+        const newCatIds = [...editCategoryIds];
+        const oldCatIds = note.categoryIds || [];
+        if (JSON.stringify(newCatIds) !== JSON.stringify(oldCatIds)) updates.categoryIds = newCatIds;
+        if (Object.keys(updates).length === 0) { closeEdit(); return; }
+        try {
+            if (updates.datetime !== undefined) updates.notified = false;
+            await updateNote(editingId, updates);
+            Object.assign(note, updates);
+            renderTodos(); updateCounts();
+            showToast('✏️ Сохранено', 1000);
+        } catch (e) { console.error(e); showToast('❌ Ошибка', 1500); }
+        closeEdit();
+    }
+
+    editCloseBtn.addEventListener('click', closeEdit);
+    editCancelBtn.addEventListener('click', closeEdit);
+    editSaveBtn.addEventListener('click', saveEdit);
+    editOverlay.addEventListener('click', (e) => { if (e.target === editOverlay) closeEdit(); });
+    dateTiles.querySelectorAll('.edit-tile[data-date]').forEach(tile => {
+        tile.addEventListener('click', () => {
+            const key = tile.dataset.date;
+            const d = new Date();
+            if (key === 'tomorrow') d.setDate(d.getDate()+1);
+            else if (key === 'after') d.setDate(d.getDate()+2);
+            editDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            updateEditTiles();
+            updateCollapsibleValues();
+        });
+    });
+    datePickBtn.addEventListener('click', () => { if (editDate) hiddenDatePicker.value = toLocalInputValue(editDate).slice(0,10); hiddenDatePicker.showPicker?.(); hiddenDatePicker.click(); });
+    hiddenDatePicker.addEventListener('change', () => { if (hiddenDatePicker.value) { const [y,m,d] = hiddenDatePicker.value.split('-').map(Number); editDate = new Date(y, m-1, d); updateEditTiles(); updateCollapsibleValues(); } });
+    dateClearBtn.addEventListener('click', () => { editDate = null; updateEditTiles(); updateCollapsibleValues(); });
+
+    timeTiles.querySelectorAll('.edit-tile[data-time]').forEach(tile => {
+        tile.addEventListener('click', () => { editTime = parseTimeStr(timeDefaults[tile.dataset.time]); if (!editDate) { const d = new Date(); editDate = new Date(d.getFullYear(), d.getMonth(), d.getDate()); } updateEditTiles(); updateCollapsibleValues(); });
+    });
+    timePickBtn.addEventListener('click', () => { if (editTime) hiddenTimePicker.value = `${String(editTime.hours).padStart(2,'0')}:${String(editTime.minutes).padStart(2,'0')}`; hiddenTimePicker.showPicker?.(); hiddenTimePicker.click(); });
+    hiddenTimePicker.addEventListener('change', () => { if (hiddenTimePicker.value) { const [h,m] = hiddenTimePicker.value.split(':').map(Number); editTime = { hours: h, minutes: m }; if (!editDate) { const d = new Date(); editDate = new Date(d.getFullYear(), d.getMonth(), d.getDate()); } updateEditTiles(); updateCollapsibleValues(); } });
+    timeClearBtn.addEventListener('click', () => { editTime = null; updateEditTiles(); updateCollapsibleValues(); });
+
+    // === ТЕМЫ ===
+    function applyTheme(theme) {
+        document.body.classList.remove('dark','light');
+        if (theme === 'light') document.body.classList.add('light');
+        else if (theme === 'dark') document.body.classList.add('dark');
+        else { const p = window.matchMedia('(prefers-color-scheme: dark)').matches; document.body.classList.add(p ? 'dark' : 'light'); }
+        localStorage.setItem('appTheme', theme);
+        themeTiles.querySelectorAll('.tile').forEach(t => { t.classList.toggle('active', t.dataset.theme === theme); t.classList.toggle('pulse', t.dataset.theme === theme); });
+    }
+    function initTheme() { applyTheme(localStorage.getItem('appTheme') || 'auto'); }
+
+    // === ГОЛОС ===
+    let recognition = null, isListening = false;
+
+    function initVoice() {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SR) { showToast('⚠️ Голосовой ввод не поддерживается', 3000); voiceBtn.style.opacity = '0.3'; return; }
+        recognition = new SR();
+        recognition.lang = 'ru-RU';
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.maxAlternatives = 1;
+
+        recognition.onstart = () => {
+            isListening = true; isProcessingVoice = true;
+            voiceOverlay.classList.add('visible');
+            showCancelFab('voice');
+            voiceTimerSeconds = 0;
+            if (voiceTimerInterval) clearInterval(voiceTimerInterval);
+            voiceTimerInterval = setInterval(() => {
+                voiceTimerSeconds++;
+                const m = Math.floor(voiceTimerSeconds / 60);
+                const s = voiceTimerSeconds % 60;
+                cancelTimerText.textContent = `${m}:${String(s).padStart(2,'0')}`;
+            }, 1000);
+        };
+        recognition.onend = () => {
+            isListening = false;
+            voiceOverlay.classList.remove('visible');
+            hideCancelFab();
+            if (voiceTimerInterval) { clearInterval(voiceTimerInterval); voiceTimerInterval = null; }
+            setTimeout(() => { isProcessingVoice = false; }, 300);
+        };
+        recognition.onerror = (event) => {
+            isListening = false; isProcessingVoice = false;
+            voiceOverlay.classList.remove('visible');
+            hideCancelFab();
+            if (voiceTimerInterval) { clearInterval(voiceTimerInterval); voiceTimerInterval = null; }
+            if (event.error === 'not-allowed') showToast('❌ Доступ к микрофону запрещён', 2500);
+            else if (event.error === 'no-speech') showToast('⏳ Ничего не услышано', 2000);
+            else showToast('❌ Ошибка: ' + event.error, 2000);
+        };
+        recognition.onresult = (event) => {
+            let ft = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) { if (event.results[i].isFinal) ft += event.results[i][0].transcript; }
+            if (ft) addTodo(ft);
+        };
+        voiceBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!recognition) return;
+            if (isProcessingVoice && !isListening) { showToast('⏳ Подождите...', 1000); return; }
+            try { if (isListening) recognition.stop(); else { isProcessingVoice = true; recognition.start(); } } catch (_) { isProcessingVoice = false; }
+        });
+    }
+
+    function registerServiceWorker() {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').then(() => {
+                if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+            }).catch(err => console.warn('SW:', err));
+        }
+    }
+
+    // === БЭКАП ===
+    async function exportBackup() {
+        try {
+            const notes = await getAllNotes();
+            const data = {
+                version: '5.10.3',
+                exportedAt: new Date().toISOString(),
+                settings: {
+                    appTheme: localStorage.getItem('appTheme') || 'auto',
+                    undoTime,
+                    timeDefaults: { ...timeDefaults },
+                    askCategory: askCategoryAfterRecord,
+                    voiceCategory: voiceCategoryEnabled,
+                    catSheetTimer: catSheetTimerSec
+                },
+                notes
+            };
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+            const d = new Date(); const p = n => String(n).padStart(2,'0');
+            const fn = `glass-notes-backup-${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.json`;
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = fn;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            showToast('📤 Бэкап сохранён', 2000);
+        } catch (e) { console.error(e); showToast('❌ Ошибка', 1500); }
+    }
+
+    function requestImport() { hiddenFileInput.value = ''; hiddenFileInput.click(); }
+    let pendingImportData = null;
+
+    hiddenFileInput.addEventListener('change', (e) => {
+        const file = e.target.files?.[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try {
+                const data = JSON.parse(ev.target.result);
+                if (!data || !Array.isArray(data.notes)) { showToast('❌ Неверный формат', 2000); return; }
+                pendingImportData = data;
+                importModal.classList.add('active');
+            } catch (err) { console.error(err); showToast('❌ Ошибка чтения', 2000); }
+        };
+        reader.readAsText(file);
+    });
+
+    importCloseBtn.addEventListener('click', () => { importModal.classList.remove('active'); pendingImportData = null; });
+    importModal.addEventListener('click', (e) => { if (e.target === importModal) { importModal.classList.remove('active'); pendingImportData = null; } });
+
+    importAddBtn.addEventListener('click', async () => {
+        if (!pendingImportData) return;
+        try {
+            let added = 0;
+            for (const n of pendingImportData.notes) { const note = migrateNote(n); delete note.id; await addNote(note); added++; }
+            importModal.classList.remove('active'); pendingImportData = null;
+            await loadTodos();
+            showToast(`➕ Добавлено: ${added}`, 2000);
+        } catch (e) { console.error(e); showToast('❌ Ошибка', 1500); }
+    });
+
+    importReplaceBtn.addEventListener('click', async () => {
+        if (!pendingImportData) return;
+        try {
+            await clearAllNotes();
+            let added = 0;
+            for (const n of pendingImportData.notes) { const note = migrateNote(n); delete note.id; await addNote(note); added++; }
+            const s = pendingImportData.settings || {};
+            if (s.appTheme) applyTheme(s.appTheme);
+            if (typeof s.undoTime === 'number') { undoTime = s.undoTime; localStorage.setItem('undoTime', String(undoTime)); }
+            if (s.timeDefaults) { timeDefaults = { ...DEFAULT_TIME_SETTINGS, ...s.timeDefaults }; localStorage.setItem('timeDefaults', JSON.stringify(timeDefaults)); }
+            if (typeof s.askCategory === 'boolean') { askCategoryAfterRecord = s.askCategory; localStorage.setItem('askCategory', String(askCategoryAfterRecord)); }
+            if (typeof s.voiceCategory === 'boolean') { voiceCategoryEnabled = s.voiceCategory; localStorage.setItem('voiceCategory', String(voiceCategoryEnabled)); }
+            if (typeof s.catSheetTimer === 'number') { catSheetTimerSec = s.catSheetTimer; localStorage.setItem('catSheetTimer', String(catSheetTimerSec)); }
+            importModal.classList.remove('active'); pendingImportData = null;
+            await loadTodos();
+            showToast(`🔄 Заменено: ${added}`, 2000);
+        } catch (e) { console.error(e); showToast('❌ Ошибка', 1500); }
+    });
+
+    exportBackupBtn.addEventListener('click', exportBackup);
+    importBackupBtn.addEventListener('click', requestImport);
+
+    // === СБРОС ===
+    function resetAllSettings() {
+        applyTheme('auto');
+        undoTime = 3; localStorage.setItem('undoTime', '3');
+        catSheetTimerSec = 3; localStorage.setItem('catSheetTimer', '3');
+        timeDefaults = { ...DEFAULT_TIME_SETTINGS }; localStorage.setItem('timeDefaults', JSON.stringify(timeDefaults));
+        askCategoryAfterRecord = true; localStorage.setItem('askCategory', 'true');
+        voiceCategoryEnabled = true; localStorage.setItem('voiceCategory', 'true');
+        currentCategoryFilter = null;
+        undoTimerSlider.value = 3; undoTimerValue.textContent = '3с';
+        catSheetTimerSlider.value = 3; catSheetTimerValue.textContent = '3с';
+        askCategoryToggle.checked = true;
+        voiceCategoryToggle.checked = true;
+        themeTiles.querySelectorAll('.tile').forEach(t => {
+            t.classList.toggle('active', t.dataset.theme === 'auto');
+            t.classList.toggle('pulse', t.dataset.theme === 'auto');
+        });
+        timeDefaultsContainer.querySelectorAll('input[data-default]').forEach(inp => {
+            inp.value = timeDefaults[inp.dataset.default] || '00:00';
+        });
+        updateSettingsCollapseValues();
+        renderFilterChips();
+        renderTodos();
+    }
+
+    // === UI ===
+    tabsContainer.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', function() {
+            tabsContainer.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+            currentTab = this.dataset.tab;
+            renderTodos(); updateCounts();
+        });
+    });
+
+    searchToggleBtn.addEventListener('click', () => {
+        const h = searchContainer.classList.contains('hidden');
+        searchContainer.classList.toggle('hidden');
+        if (!h) { searchInput.value=''; searchQuery=''; searchClearBtn.classList.remove('visible'); renderTodos(); searchInput.blur(); }
+        else setTimeout(() => searchInput.focus(), 100);
+    });
+    searchInput.addEventListener('input', function() { searchQuery = this.value; searchClearBtn.classList.toggle('visible', !!searchQuery); renderTodos(); });
+    searchClearBtn.addEventListener('click', function() { searchInput.value = ''; searchQuery = ''; this.classList.remove('visible'); renderTodos(); searchInput.focus(); });
+
+    function renderFilterCategoryTiles() {
+        let html = `<div class="tile${currentCategoryFilter === null ? ' active pulse' : ''}" data-cat="">Все</div>`;
+        html += DEFAULT_CATEGORIES.map(c => {
+            const active = currentCategoryFilter === c.id ? ' active pulse' : '';
+            return `<div class="tile${active}" data-cat="${c.id}">${c.name}</div>`;
+        }).join('');
+        filterCategoryTiles.innerHTML = html;
+    }
+
+    filterBtn.addEventListener('click', () => {
+        filterModal.classList.add('active');
+        filterTiles.querySelectorAll('.tile').forEach(t => { t.classList.toggle('active', t.dataset.filter === currentFilter); t.classList.toggle('pulse', t.dataset.filter === currentFilter); });
+        renderFilterCategoryTiles();
+    });
+    filterCloseBtn.addEventListener('click', () => filterModal.classList.remove('active'));
+    filterOkBtn.addEventListener('click', () => filterModal.classList.remove('active'));
+    filterModal.addEventListener('click', (e) => { if (e.target === filterModal) filterModal.classList.remove('active'); });
+    filterTiles.querySelectorAll('.tile').forEach(tile => {
+        tile.addEventListener('click', function() {
+            filterTiles.querySelectorAll('.tile').forEach(t => t.classList.remove('active', 'pulse'));
+            this.classList.add('active', 'pulse');
+            currentFilter = this.dataset.filter;
+            renderFilterChips();
+            renderTodos();
+            showToast(`📅 ${this.textContent.trim()}`, 900);
+        });
+    });
+    filterCategoryTiles.addEventListener('click', (e) => {
+        const tile = e.target.closest('.tile');
+        if (!tile) return;
+        const cat = tile.dataset.cat || null;
+        currentCategoryFilter = cat;
+        renderFilterCategoryTiles();
+        renderFilterChips();
+        renderTodos();
+        showToast(cat ? `🏷 ${getCategoryById(cat)?.name}` : '🏷 Все категории', 900);
+    });
+
+    timersHeader.addEventListener('click', () => { timersHeader.classList.toggle('expanded'); timersBody.classList.toggle('expanded'); });
+    categoriesSettingsHeader.addEventListener('click', () => { categoriesSettingsHeader.classList.toggle('expanded'); categoriesSettingsBody.classList.toggle('expanded'); });
+    timeDefaultsHeader.addEventListener('click', () => { timeDefaultsHeader.classList.toggle('expanded'); timeDefaultsBody.classList.toggle('expanded'); });
+
+    function updateSettingsCollapseValues() {
+        timersValue.textContent = `отмена ${undoTime}с · сплэш ${catSheetTimerSec}с`;
+        categoriesSettingsValue.textContent = (askCategoryAfterRecord ? 'Спрашивать' : 'Не спрашивать') + ' · ' + (voiceCategoryEnabled ? 'Голос' : 'Без голоса');
+        timeDefaultsValue.textContent = `${timeDefaults.morning} · ${timeDefaults.beforeNoon} · …`;
+    }
+
+    settingsBtn.addEventListener('click', () => {
+        settingsModal.classList.add('active');
+        const saved = localStorage.getItem('appTheme') || 'auto';
+        themeTiles.querySelectorAll('.tile').forEach(t => { t.classList.toggle('active', t.dataset.theme === saved); t.classList.toggle('pulse', t.dataset.theme === saved); });
+        undoTimerSlider.value = undoTime; undoTimerValue.textContent = undoTime + 'с';
+        catSheetTimerSlider.value = catSheetTimerSec; catSheetTimerValue.textContent = catSheetTimerSec + 'с';
+        askCategoryToggle.checked = askCategoryAfterRecord;
+        voiceCategoryToggle.checked = voiceCategoryEnabled;
+        timeDefaultsContainer.querySelectorAll('input[data-default]').forEach(inp => { inp.value = timeDefaults[inp.dataset.default] || '00:00'; });
+        updateSettingsCollapseValues();
+    });
+    settingsCloseBtn.addEventListener('click', () => settingsModal.classList.remove('active'));
+    settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) settingsModal.classList.remove('active'); });
+    undoTimerSlider.addEventListener('input', function() { undoTimerValue.textContent = this.value + 'с'; timersValue.textContent = `отмена ${this.value}с · сплэш ${catSheetTimerSlider.value}с`; });
+    catSheetTimerSlider.addEventListener('input', function() { catSheetTimerValue.textContent = this.value + 'с'; timersValue.textContent = `отмена ${undoTimerSlider.value}с · сплэш ${this.value}с`; });
+    themeTiles.querySelectorAll('.tile').forEach(tile => {
+        tile.addEventListener('click', function() {
+            themeTiles.querySelectorAll('.tile').forEach(t => t.classList.remove('active', 'pulse'));
+            this.classList.add('active', 'pulse');
+        });
+    });
+
+    applySettingsBtn.addEventListener('click', function() {
+        const theme = themeTiles.querySelector('.tile.active')?.dataset.theme || 'auto';
+        const newUndo = parseInt(undoTimerSlider.value);
+        const newCatTimer = parseInt(catSheetTimerSlider.value);
+        const newTime = {};
+        timeDefaultsContainer.querySelectorAll('input[data-default]').forEach(inp => { if (inp.value) newTime[inp.dataset.default] = inp.value; });
+        timeDefaults = { ...DEFAULT_TIME_SETTINGS, ...newTime };
+        applyTheme(theme);
+        undoTime = newUndo;
+        catSheetTimerSec = newCatTimer;
+        askCategoryAfterRecord = askCategoryToggle.checked;
+        voiceCategoryEnabled = voiceCategoryToggle.checked;
+        localStorage.setItem('undoTime', String(undoTime));
+        localStorage.setItem('catSheetTimer', String(catSheetTimerSec));
+        localStorage.setItem('timeDefaults', JSON.stringify(timeDefaults));
+        localStorage.setItem('askCategory', String(askCategoryAfterRecord));
+        localStorage.setItem('voiceCategory', String(voiceCategoryEnabled));
+        settingsModal.classList.remove('active');
+        showToast('✓ Настройки применены', 1500);
+        renderTodos();
+    });
+
+    resetAllBtn.addEventListener('click', () => { confirmResetModal.classList.add('active'); });
+    confirmResetCloseBtn.addEventListener('click', () => confirmResetModal.classList.remove('active'));
+    confirmResetCancelBtn.addEventListener('click', () => confirmResetModal.classList.remove('active'));
+    confirmResetModal.addEventListener('click', (e) => { if (e.target === confirmResetModal) confirmResetModal.classList.remove('active'); });
+    confirmResetOkBtn.addEventListener('click', () => {
+        resetAllSettings();
+        confirmResetModal.classList.remove('active');
+        showToast('↺ Настройки сброшены', 1500);
+    });
+
+    footerEl.addEventListener('click', () => infoModal.classList.add('active'));
+    infoCloseBtn.addEventListener('click', () => infoModal.classList.remove('active'));
+    infoModal.addEventListener('click', (e) => { if (e.target === infoModal) infoModal.classList.remove('active'); });
+
+    window.addEventListener('resize', applyFabPosition);
+    window.addEventListener('orientationchange', () => setTimeout(applyFabPosition, 100));
+
+    // === СТАРТ ===
+    async function init() {
+        try {
+            await openDB();
+            initTheme();
+            applyFabPosition();
+            await loadTodos();
+            initVoice();
+            registerServiceWorker();
+            startReminderChecker();
+            updateSettingsCollapseValues();
+            renderFilterChips();
+            console.log('🎙️ Glass Notes v5.10.3');
+            console.log(`📊 Заметок: ${todos.length}`);
+            console.log('📅 Сборка: 25.09.2026');
+        } catch (e) { console.error('Init error:', e); showToast('❌ Ошибка инициализации', 3000); }
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
