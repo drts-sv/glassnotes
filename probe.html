@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#1c1c1e">
+<title>Probe — возможности WebView</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; padding:16px 14px 40px; background:#12141c; color:#e8ecff;
+         font:15px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  h1 { font-size:1.15rem; margin:0 0 4px; }
+  .sub { color:#8b93b0; font-size:.8rem; margin-bottom:14px; }
+  .row { display:flex; align-items:center; gap:10px; padding:10px 12px; margin-bottom:6px;
+         border-radius:14px; background:#1b1e2a; border:1px solid #262a3a; }
+  .row .name { flex:1; font-family:ui-monospace,Consolas,monospace; font-size:.82rem; }
+  .row .val { font-weight:700; font-size:.9rem; }
+  .ok { color:#34c759; } .no { color:#ff6b6b; } .mid { color:#ffd166; }
+  button { width:100%; padding:14px; margin-top:10px; border-radius:14px; border:1px solid #2f3550;
+           background:#232a44; color:#e8ecff; font:inherit; font-weight:600; }
+  button:active { transform:scale(.98); }
+  pre { white-space:pre-wrap; word-break:break-word; background:#0d0f16; border:1px solid #232838;
+        border-radius:14px; padding:12px; font-size:.75rem; margin-top:12px; }
+  .big { font-size:1.5rem; font-weight:800; text-align:center; padding:14px; border-radius:16px;
+         margin:12px 0; }
+  .big.ok { background:rgba(52,199,89,.14); border:1px solid rgba(52,199,89,.4); }
+  .big.no { background:rgba(255,107,107,.14); border:1px solid rgba(255,107,107,.4); }
+</style>
+</head>
+<body>
+<h1>Probe: что умеет этот WebView</h1>
+<div class="sub">Собери этот файл как APK и посмотри, какие строки зелёные. Если «Голос: распознавание речи» красное — голосовой ввод Glass Notes в APK работать не будет.</div>
+
+<div id="verdict" class="big">считаю…</div>
+<div id="rows"></div>
+
+<button id="micBtn">Проверить микрофон (getUserMedia)</button>
+<button id="notifBtn">Проверить уведомление (Notification)</button>
+<pre id="log">—</pre>
+
+<script>
+const CHECKS = [
+  ['Голос: распознавание речи', () => {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      return { ok: typeof SR === 'function', text: SR ? 'есть' : 'НЕТ (Web Speech API не поддерживается)' };
+  }],
+  ['Уведомления: конструктор', () => {
+      const ok = typeof Notification === 'function';
+      return { ok, text: ok ? 'есть, permission=' + Notification.permission : 'НЕТ' };
+  }],
+  ['Уведомления: SW showNotification', () => {
+      const ok = !!(navigator.serviceWorker && navigator.serviceWorker.registration);
+      return { ok: null, text: 'проверю ниже' };
+  }],
+  ['Service Worker', () => ({ ok: 'serviceWorker' in navigator, text: 'serviceWorker' in navigator ? 'есть' : 'НЕТ' })],
+  ['Микрофон getUserMedia', () => ({
+      ok: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+      text: navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? 'есть' : 'НЕТ'
+  })],
+  ['MediaRecorder', () => ({ ok: typeof MediaRecorder === 'function', text: typeof MediaRecorder === 'function' ? 'есть' : 'НЕТ' })],
+  ['IndexedDB', () => ({ ok: 'indexedDB' in window, text: 'indexedDB' in window ? 'есть' : 'НЕТ' })],
+  ['localStorage', () => ({ ok: (() => { try { localStorage.setItem('t','1'); localStorage.removeItem('t'); return true; } catch(e){ return false; } })(), text: ' проверил' })],
+  ['Vibration API', () => ({ ok: 'vibrate' in navigator, text: 'vibrate' in navigator ? 'есть' : 'НЕТ' })],
+];
+
+const rows = document.getElementById('rows');
+const results = {};
+for (const [name, fn] of CHECKS) {
+  let r; try { r = fn(); } catch (e) { r = { ok: false, text: 'ошибка: ' + e.message }; }
+  results[name] = r.text;
+  const cls = r.ok === true ? 'ok' : r.ok === false ? 'no' : 'mid';
+  rows.insertAdjacentHTML('beforeend',
+    `<div class="row"><span class="name">${name}</span><span class="val ${cls}">${r.text}</span></div>`);
+}
+
+const verdict = document.getElementById('verdict');
+const sr = window.SpeechRecognition || window.webkitSpeechRecognition;
+verdict.textContent = typeof sr === 'function'
+  ? '✅ Голосовой ввод доступен — APK будет полноценным'
+  : '⛔ Голосовой ввод недоступен в этом движке';
+verdict.className = 'big ' + (typeof sr === 'function' ? 'ok' : 'no');
+
+document.getElementById('log').textContent = JSON.stringify({
+  origin: location.origin, secure: window.isSecureContext, ua: navigator.userAgent,
+  checks: results
+}, null, 2);
+
+// уведомление через SW, если он умеет
+(async () => {
+  try {
+    if (navigator.serviceWorker) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const can = !!(reg && typeof reg.showNotification === 'function');
+      results['Уведомления: SW showNotification'] = can ? 'есть' : 'НЕТ';
+      rows.lastElementChild.insertAdjacentHTML('beforeend', '');
+      document.getElementById('log').textContent = JSON.stringify({
+        origin: location.origin, secure: window.isSecureContext, ua: navigator.userAgent,
+        swShowNotification: can, checks: results
+      }, null, 2);
+    }
+  } catch (e) {}
+})();
+
+document.getElementById('micBtn').onclick = async () => {
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    s.getTracks().forEach(t => t.stop());
+    document.getElementById('log').textContent += '\n\nМикрофон: ✅ доступ получен';
+  } catch (e) {
+    document.getElementById('log').textContent += '\n\nМикрофон: ⛔ ' + e.name + ': ' + e.message;
+  }
+};
+
+document.getElementById('notifBtn').onclick = () => {
+  try {
+    if (typeof Notification !== 'function') throw new Error('Notification отсутствует');
+    if (Notification.permission === 'default') Notification.requestPermission();
+    new Notification('Проверка', { body: 'Если это видно в шторке — уведомления работают', tag: 'probe-' + Date.now() });
+    document.getElementById('log').textContent += '\n\nУведомление: отправлено (permission=' + Notification.permission + ')';
+  } catch (e) {
+    document.getElementById('log').textContent += '\n\nУведомление: ⛔ ' + e.name + ': ' + e.message;
+  }
+};
+</script>
+</body>
+</html>

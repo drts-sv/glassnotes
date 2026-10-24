@@ -1563,9 +1563,13 @@
         vibrate(200);
         if (!('Notification' in window) || Notification.permission !== 'granted') return;
         // В Chrome на Android конструктор new Notification бросает TypeError — нужен SW.
+        // В WebView (APK) SW-уведомлений нет, зато есть мост на системные уведомления.
         if (navigator.serviceWorker && navigator.serviceWorker.controller) {
             navigator.serviceWorker.ready
-                .then(reg => reg.showNotification(title, opts))
+                .then(reg => {
+                    if (typeof reg.showNotification !== 'function') return legacyNotification(title, opts);
+                    return reg.showNotification(title, opts);
+                })
                 .catch(e => { console.warn('showNotification:', e); legacyNotification(title, opts); });
             return;
         }
