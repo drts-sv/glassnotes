@@ -47,6 +47,29 @@ serve.bat
 - **Бэкап** — экспорт/импорт JSON (заметки + настройки), импорт «добавить»
   или «заменить всё».
 
+## Сборка APK (WebToApp, на телефоне)
+
+Проект предполагается собирать через [shiaho777/web-to-app](https://github.com/shiaho777/web-to-app)
+(локальный клон: `C:\Users\drts\web-to-app`). JDK и Android SDK на ПК не нужны —
+сборка идёт на телефоне.
+
+1. Собрать `dist/probe.zip` (внутри `probe.html` → `index.html`) и посмотреть в APK,
+   есть ли `webkitSpeechRecognition`. В Android WebView его **нет**
+   ([Chromium 40417848](https://issues.chromium.org/issues/40417848), статус New),
+   значит голосовой ввод в APK не заработает.
+2. Импорт `dist/glass-notes-webtoutapp.zip`: Create → **HTML**, entry `index.html`.
+3. Load mode — `AUTO` или `LOCAL_HTTP`: страница с манифестом и SW должна получить
+   реальный origin `http://localhost:PORT`, иначе SW и secure context недоступны.
+4. Special settings → **Notification polyfill = ON** (по умолчанию выключен).
+   В WebView нет `Notification`, но полифил мостит `new Notification()` на
+   `NativeBridge.showWebNotification()` → системные уведомления Android.
+   Наш `showLocalNotification()` доходит туда через ветку `legacyNotification`.
+5. Permissions: `RECORD_AUDIO` (микрофон — `RESOURCE_AUDIO_CAPTURE` поддерживается),
+   `POST_NOTIFICATIONS` (приходит с полифилом), `INTERNET` для `LOCAL_HTTP`.
+
+Ограничения APK-варианта: нет голосового ввода (WebView), напоминания работают
+только когда приложение запущено.
+
 ## Что изменено в 5.10.4
 
 1. **Уведомления через service worker.** `showLocalNotification` сначала пробует
