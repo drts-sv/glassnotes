@@ -1033,7 +1033,7 @@
     </div>
 
     <div class="footer" id="footer">
-        голосовые напоминания · v5.10.3
+        голосовые напоминания · <span id="appVersionFooter">v5.10.4</span>
     </div>
 </div>
 
@@ -1354,7 +1354,7 @@
         </div>
         <div class="modal-content">
             <div class="info-row"><span class="info-label">📱 Приложение</span><span class="info-value">Glass Notes</span></div>
-            <div class="info-row"><span class="info-label">🏷️ Версия</span><span class="info-value">5.10.3</span></div>
+            <div class="info-row"><span class="info-label">🏷️ Версия</span><span class="info-value" id="appVersion">5.10.4</span></div>
             <div class="info-row"><span class="info-label">📅 Сборка</span><span class="info-value">25.09.2026</span></div>
             <div class="info-row"><span class="info-label">💾 Хранилище</span><span class="info-value">IndexedDB</span></div>
             <div class="info-row"><span class="info-label">👆 Свайп</span><span class="info-value" style="color:#34c759;">вправо ✅ / влево 🗑️</span></div>
@@ -1367,6 +1367,7 @@
 </div>
 
 <script>
+    const APP_VERSION = '5.10.4';
     const COLORS = ['color-1','color-2','color-3','color-4','color-5','color-6','color-7','color-8','color-9','color-10','color-11','color-12'];
     const DEFAULT_TIME_SETTINGS = { morning:'09:00', beforeNoon:'11:00', noon:'13:00', afterNoon:'15:00', evening:'18:00', night:'21:00', today:'12:00', tomorrow:'09:00' };
     const FAB_POSITION = { x: 50, y: 75 };
@@ -1531,32 +1532,60 @@
 
     let reminderInterval = null;
     let scheduledReminders = new Set();
+    const REMINDER_GRACE_MS = 24 * 60 * 60 * 1000;  // просрочку старше суток не поднимаем
+    const REMINDER_BATCH_MAX = 3;                   // не больше 3 уведомлений за один тик
+
     function checkReminders(notes) {
         if (!notes || notes.length === 0) return;
-        const now = new Date(), nowTime = now.getTime();
-        for (const note of notes) {
-            if (!note.datetime) continue;
-            if (scheduledReminders.has(note.id)) continue;
-            if (note.notified) continue;
-            if (note.status === 'done') continue;
-            const rt = new Date(note.datetime).getTime();
-            if (rt <= nowTime && rt > nowTime - 120000) {
-                scheduledReminders.add(note.id);
-                showLocalNotification(note.text, note.datetime);
-                updateNote(note.id, { notified: true }).then(() => { note.notified = true; renderTodos(); updateCounts(); }).catch(e => console.warn(e));
-            }
+        const nowTime = Date.now();
+        // Берём всё, что уже наступило и ещё не отмечено: иначе пропущенное
+        // в фоне напоминание не сработает никогда.
+        const due = notes
+            .filter(n => n && n.datetime && !n.notified && n.status !== 'done' && !scheduledReminders.has(n.id))
+            .map(n => ({ note: n, rt: new Date(n.datetime).getTime() }))
+            .filter(x => x.rt <= nowTime && nowTime - x.rt <= REMINDER_GRACE_MS)
+            .sort((a, b) => b.rt - a.rt);
+        let fired = 0;
+        for (const { note } of due) {
+            if (fired >= REMINDER_BATCH_MAX) break;
+            fired++;
+            scheduledReminders.add(note.id);
+            showLocalNotification(note.text, note.datetime);
+            updateNote(note.id, { notified: true }).then(() => { note.notified = true; renderTodos(); updateCounts(); }).catch(e => console.warn(e));
         }
+        if (fired) console.log(`🔔 напоминаний: ${fired}`);
     }
+
     function showLocalNotification(text, dt) {
         const title = '🔔 Напоминание', body = `${text}\n${formatDateTimeDisplay(dt)}`;
-        if ('Notification' in window && Notification.permission === 'granted') {
-            try { const n = new Notification(title, { body, icon:'icon-192.png', vibrate:[200,100,200], badge:'icon-192.png', requireInteraction: true, tag:`r-${Date.now()}` }); n.onclick = function() { window.focus(); this.close(); }; } catch(e) {}
+        const opts = { body, icon: 'icon-192.png', badge: 'icon-192.png', vibrate: [200, 100, 200], requireInteraction: true, tag: `r-${Date.now()}`, data: { url: './' } };
+        showToast(`🔔 ${text}`, 8000);
+        vibrate(200);
+        if (!('Notification' in window) || Notification.permission !== 'granted') return;
+        // В Chrome на Android конструктор new Notification бросает TypeError — нужен SW.
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.ready
+                .then(reg => reg.showNotification(title, opts))
+                .catch(e => { console.warn('showNotification:', e); legacyNotification(title, opts); });
+            return;
         }
-        showToast(`🔔 ${text}`, 8000); vibrate(200);
+        legacyNotification(title, opts);
     }
+
+    function legacyNotification(title, opts) {
+        try {
+            const n = new Notification(title, opts);
+            n.onclick = function () { window.focus(); this.close(); };
+        } catch (e) { console.warn('Notification ctor:', e); }
+    }
+
     function startReminderChecker() {
         if (reminderInterval) clearInterval(reminderInterval);
-        reminderInterval = setInterval(async () => { try { const n = await getAllNotes(); checkReminders(n); } catch(e) {} }, 5000);
+        const tick = async () => { try { const n = await getAllNotes(); checkReminders(n); } catch (e) {} };
+        reminderInterval = setInterval(tick, 5000);
+        // В фоне таймеры душатся: догоняем при возврате в приложение.
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+        tick();
     }
 
     // === СОСТОЯНИЕ ===
@@ -2189,9 +2218,16 @@
         };
     }
 
+    // innerHTML уничтожает узлы, но document-слушатели свайпа живут дальше
+    // и копятся при каждом рендере — снимаем их явно.
+    function detachSwipes() {
+        resultsContainer.querySelectorAll('.result-card-wrapper').forEach(w => { if (w._swipeCleanup) w._swipeCleanup(); });
+    }
+
     function renderTodos() {
         const filtered = getFilteredTodos();
         if (filtered.length === 0) {
+            detachSwipes();
             let msg = 'Пока пусто';
             let sub = currentTab === 'active' ? 'нажмите на микрофон и скажите напоминание' : 'здесь будут выполненные задачи';
             if (searchQuery) { msg = 'Ничего не найдено'; sub = 'попробуйте изменить запрос'; }
@@ -2255,6 +2291,7 @@
         }
         html += regularItems.map(renderCard).join('');
 
+        detachSwipes();
         resultsContainer.innerHTML = html;
 
         resultsContainer.querySelectorAll('.result-content').forEach(el => {
@@ -2483,10 +2520,15 @@
 
     function registerServiceWorker() {
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js').then(() => {
-                if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
-            }).catch(err => console.warn('SW:', err));
+            // Относительный путь: работает и из корня, и из подпапки.
+            navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW:', err));
         }
+        const askPermission = () => {
+            if (!('Notification' in window) || Notification.permission !== 'default') return;
+            try { const p = Notification.requestPermission(); if (p && p.catch) p.catch(() => {}); } catch (_) {}
+        };
+        askPermission();                                                        // десктоп
+        window.addEventListener('pointerdown', askPermission, { once: true });   // Android: нужен жест
     }
 
     // === БЭКАП ===
@@ -2494,7 +2536,7 @@
         try {
             const notes = await getAllNotes();
             const data = {
-                version: '5.10.3',
+                version: APP_VERSION,
                 exportedAt: new Date().toISOString(),
                 settings: {
                     appTheme: localStorage.getItem('appTheme') || 'auto',
@@ -2736,7 +2778,9 @@
             startReminderChecker();
             updateSettingsCollapseValues();
             renderFilterChips();
-            console.log('🎙️ Glass Notes v5.10.3');
+            document.getElementById('appVersion').textContent = APP_VERSION;
+            document.getElementById('appVersionFooter').textContent = 'v' + APP_VERSION;
+            console.log(`🎙️ Glass Notes v${APP_VERSION}`);
             console.log(`📊 Заметок: ${todos.length}`);
             console.log('📅 Сборка: 25.09.2026');
         } catch (e) { console.error('Init error:', e); showToast('❌ Ошибка инициализации', 3000); }
