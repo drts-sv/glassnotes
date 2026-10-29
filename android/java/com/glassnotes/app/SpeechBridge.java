@@ -114,6 +114,21 @@ public class SpeechBridge {
         return true;
     }
 
+    /** Чем распознаём — для диалога «О приложении». */
+    @JavascriptInterface
+    public String modelInfo() {
+        return engine.modelInfo();
+    }
+
+    /** Перекачать модель заново (со страховкой от потери рабочей копии). */
+    @JavascriptInterface
+    public boolean redownloadModel() {
+        engine.redownloadModel(
+                percent -> js("onDownload(" + percent + ")"),
+                ok -> js("onDownload(" + (ok ? -1 : -2) + ")"));
+        return true;
+    }
+
     /** Автодокачка при старте: только по Wi-Fi и только если модели ещё нет. */
     public boolean autoDownloadModelIfPossible() {
         return engine.maybeAutoDownloadModel(

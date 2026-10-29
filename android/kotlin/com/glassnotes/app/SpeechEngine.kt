@@ -116,6 +116,66 @@ class SpeechEngine(context: Context) {
 
     fun isDownloading(): Boolean = downloading
 
+    /** Строка для диалога «О приложении»: чем и на каком движке распознаём. */
+    fun modelInfo(): String {
+        if (!modelManager.isInstalled()) return "системное (Google)"
+        return "GigaAM v3 e2e · ${modelSizeMb()} МБ · офлайн"
+    }
+
+    /**
+     * Перекачать модель заново. Их ModelManager при неудаче сносит и старую модель,
+     * поэтому рабочую копию откладываем в .bak и возвращаем, если докачка сорвалась.
+     */
+    fun redownloadModel(onProgress: ProgressSink, onDone: DoneSink) {
+        if (downloading) {
+            onDone.onDone(false)
+            return
+        }
+        downloading = true
+        scope.launch {
+            val dir = modelManager.modelFile.parentFile
+            val modelBak = java.io.File(dir, modelManager.modelFile.name + ".bak")
+            val vocabBak = java.io.File(dir, modelManager.vocabFile.name + ".bak")
+            val ready = java.io.File(dir, ".ready")
+            val hadModel = modelManager.isInstalled()
+            if (hadModel) {
+                modelBak.delete()
+                vocabBak.delete()
+                modelManager.modelFile.renameTo(modelBak)
+                modelManager.vocabFile.renameTo(vocabBak)
+                Log.i(TAG, "перекачка: прежняя модель отложена в .bak")
+            }
+            var ok = false
+            try {
+                var attempt = 0
+                while (attempt < 3 && !ok) {
+                    attempt++
+                    try {
+                        modelManager.download { percent -> onProgress.onProgress(percent) }
+                    } catch (t: Throwable) {
+                        Log.e(TAG, "перекачка: попытка $attempt сорвалась", t)
+                    }
+                    ok = modelManager.isInstalled()
+                    if (!ok && attempt < 3) Thread.sleep(5000)
+                }
+            } finally {
+                if (ok || !hadModel) {
+                    modelBak.delete()
+                    vocabBak.delete()
+                } else {
+                    // вернуть прежнюю модель, чтобы приложение не осталось без распознавания
+                    modelBak.renameTo(modelManager.modelFile)
+                    vocabBak.renameTo(modelManager.vocabFile)
+                    ready.writeText("ok")
+                    resetInstalledCache()
+                    Log.i(TAG, "перекачка: не удалась, прежняя модель возвращена")
+                }
+                downloading = false
+            }
+            onDone.onDone(ok)
+        }
+    }
+
     /** Может ли приложение открыть TCP к хосту: shell ходит, а процесс — не обязательно. */
     fun probe(url: String): String {
         return try {
@@ -404,6 +464,20 @@ class SpeechEngine(context: Context) {
             Log.w(TAG, "отмена записи: $t")
         }
         recorder = null
+    }
+
+    /**
+     * ModelManager кэширует признак готовности и после сбоя пишет туда false.
+     * Публичного сброса у него нет, а после возврата .bak модель снова на месте — сбрасываем сами.
+     */
+    private fun resetInstalledCache() {
+        try {
+            val field = modelManager.javaClass.getDeclaredField("isInstalledCached")
+            field.isAccessible = true
+            field.set(modelManager, null)
+        } catch (t: Throwable) {
+            Log.w(TAG, "не удалось сбросить кэш готовности модели: $t")
+        }
     }
 
     fun close() {

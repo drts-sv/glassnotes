@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 
 PROJECT = os.path.dirname(os.path.abspath(__file__))
@@ -72,6 +73,13 @@ def bat(path):
     return ["cmd", "/c", path]
 
 
+def manifest_version():
+    """Версия берётся из манифеста — единственный источник правды."""
+    text = io.open(os.path.join(PROJECT, "AndroidManifest.xml"), encoding="utf-8").read()
+    m = re.search(r'android:versionName="([^"]+)"', text)
+    return m.group(1) if m else "0.0"
+
+
 def sync_assets():
     assets = os.path.join(PROJECT, "assets")
     os.makedirs(assets, exist_ok=True)
@@ -80,8 +88,33 @@ def sync_assets():
         if not os.path.exists(src):
             print("нет файла приложения: %s" % src)
             sys.exit(1)
-        shutil.copy2(src, os.path.join(assets, name))
-    print(">> assets: %d файлов приложения + native-shim.js" % len(ASSET_FILES))
+        dst = os.path.join(assets, name)
+        if name == "index.html":
+            # версию и дату сборки вписывает сама сборка: руками они разъезжаются
+            text = io.open(src, encoding="utf-8").read()
+            text = re.sub(r"const APP_VERSION = '[^']*';",
+                          "const APP_VERSION = '%s';" % manifest_version(), text, count=1)
+            text = re.sub(r"const BUILD_DATE = '[^']*';",
+                          "const BUILD_DATE = '%s';" % time.strftime("%d.%m.%Y"), text, count=1)
+            io.open(dst, "w", encoding="utf-8", newline="").write(text)
+            print(">> assets: index.html -> версия %s, сборка %s" %
+                  (manifest_version(), time.strftime("%d.%m.%Y")))
+        else:
+            shutil.copy2(src, dst)
+    # тексты лицензий сторонних компонентов — внутрь APK (требование MIT/Apache при распространении)
+    lic_dir = os.path.join(PROJECT, "licenses")
+    lic_dst = os.path.join(assets, "licenses")
+    lic_count = 0
+    if os.path.isdir(lic_dir):
+        if os.path.isdir(lic_dst):
+            shutil.rmtree(lic_dst)
+        os.makedirs(lic_dst)
+        for lic in sorted(os.listdir(lic_dir)):
+            if lic.endswith(".txt"):
+                shutil.copy2(os.path.join(lic_dir, lic), os.path.join(lic_dst, lic))
+                lic_count += 1
+    print(">> assets: %d файлов приложения + native-shim.js + %d лицензий" %
+          (len(ASSET_FILES), lic_count))
 
 
 def main():

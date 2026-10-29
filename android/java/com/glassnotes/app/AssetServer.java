@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.io.BufferedReader;
@@ -39,25 +40,14 @@ public class AssetServer {
      *  localStorage привязаны к origin. Со случайным портом (0) все заметки
      *  и настройки терялись при каждом запуске приложения. */
     private static final int PREFERRED_PORT = 8734;
-    private static final int PORT_ATTEMPTS = 6;
+    private static final int PORT_ATTEMPTS = 4;
+    /** Повторы на тот же порт: после перезапуска сокет бывает в TIME_WAIT доли секунды. */
+    private static final int PORT_RETRIES = 6;
+    private static final long PORT_RETRY_MS = 250;
 
     public int start() throws IOException {
         InetAddress loopback = InetAddress.getByName("127.0.0.1");
-        IOException last = null;
-        for (int i = 0; i < PORT_ATTEMPTS; i++) {
-            try {
-                socket = new ServerSocket(PREFERRED_PORT + i, 16, loopback);
-                break;
-            } catch (IOException e) {
-                last = e;
-                Log.w(TAG, "порт " + (PREFERRED_PORT + i) + " занят: " + e.getMessage());
-            }
-        }
-        if (socket == null) {
-            // совсем не вышло — работаем на случайном порту, но данные будут теряться
-            socket = new ServerSocket(0, 16, loopback);
-            if (last != null) Log.w(TAG, "запасной случайный порт: " + last.getMessage());
-        }
+        socket = bindFirstFree(loopback);
         port = socket.getLocalPort();
         running = true;
         Thread t = new Thread(this::loop, "asset-server");
@@ -65,6 +55,48 @@ public class AssetServer {
         t.start();
         Log.i(TAG, "AssetServer на порту " + port);
         return port;
+    }
+
+    /**
+     * Порт — это origin, а к origin привязаны IndexedDB и localStorage: уезд на соседний порт
+     * выглядит для пользователя как «все заметки пропали». Поэтому SO_REUSEADDR и повторы,
+     * а уход на другой порт — только как последний вариант, с предупреждением в логе.
+     */
+    private ServerSocket bindFirstFree(InetAddress loopback) throws IOException {
+        IOException last = null;
+        for (int i = 0; i < PORT_ATTEMPTS; i++) {
+            int candidate = PREFERRED_PORT + i;
+            int tries = (i == 0) ? PORT_RETRIES : 1;
+            for (int attempt = 0; attempt < tries; attempt++) {
+                ServerSocket candidateSocket = new ServerSocket();
+                try {
+                    candidateSocket.setReuseAddress(true);
+                    candidateSocket.bind(new InetSocketAddress(loopback, candidate), 16);
+                    if (i > 0) {
+                        Log.w(TAG, "порт " + PREFERRED_PORT + " занят, поднялись на " + candidate
+                                + " — заметки лежат в 127.0.0.1:" + PREFERRED_PORT);
+                    }
+                    return candidateSocket;
+                } catch (IOException e) {
+                    last = e;
+                    try {
+                        candidateSocket.close();
+                    } catch (IOException ignored) {
+                    }
+                    try {
+                        Thread.sleep(PORT_RETRY_MS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
+            Log.w(TAG, "порт " + candidate + " занят: " + (last != null ? last.getMessage() : "?"));
+        }
+        ServerSocket fallback = new ServerSocket();
+        fallback.setReuseAddress(true);
+        fallback.bind(new InetSocketAddress(loopback, 0), 16);
+        Log.w(TAG, "запасной случайный порт: " + fallback.getLocalPort());
+        return fallback;
     }
 
     public int getPort() {
