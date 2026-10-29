@@ -65,11 +65,12 @@
             min-height: 100vh; height: 100vh;
             background: radial-gradient(circle at 20% 30%, var(--bg-start), var(--bg-end));
             font-family: system-ui, -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;
-            padding: 0.8rem; display: flex; justify-content: center; align-items: center;
+            padding: calc(0.8rem + var(--inset-top, 0px)) 0.8rem calc(0.8rem + var(--inset-bottom, 0px));
+            display: flex; justify-content: center; align-items: center;
             transition: background 0.2s; overflow: hidden; margin: 0;
         }
         .glass-app {
-            max-width: 800px; width: 100%; height: 100vh; max-height: 96vh;
+            max-width: 800px; width: 100%; height: 100%; max-height: 100%;
             margin: 0 auto; background: var(--glass-bg);
             backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
             border-radius: 48px; border: 1px solid var(--glass-border);
@@ -559,7 +560,7 @@
 
         #toastMessage {
             position: fixed;
-            bottom: calc(130px + env(safe-area-inset-bottom, 0px));
+            bottom: calc(130px + env(safe-area-inset-bottom, 0px) + var(--inset-bottom, 0px));
             left: 50%; transform: translateX(-50%) translateY(20px);
             background: rgba(30, 32, 44, 0.85);
             backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
@@ -941,14 +942,72 @@
             pointer-events: none;
         }
 
+        .note-sheet {
+            position: fixed; inset: 0; z-index: 420;
+            display: none; align-items: center; justify-content: center;
+            padding: calc(1rem + var(--inset-top, 0px)) 1rem calc(1rem + var(--inset-bottom, 0px));
+            background: rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
+        }
+        .note-sheet.visible { display: flex; }
+        .note-sheet-card {
+            position: relative;
+            width: 100%; max-width: 560px; max-height: 100%; overflow-y: auto;
+            background: var(--glass-bg);
+            backdrop-filter: blur(32px); -webkit-backdrop-filter: blur(32px);
+            border: 1px solid var(--glass-border); border-radius: 36px;
+            padding: 2rem 1.6rem 1.3rem;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.45);
+            text-align: center; font-weight: 400;
+            animation: cardPop 0.3s cubic-bezier(0.2, 0.9, 0.4, 1);
+        }
+        body.light .note-sheet-card { background: rgba(245, 248, 255, 0.88); }
+        .note-sheet-when {
+            font-size: 1.45rem; font-weight: 500; letter-spacing: -0.2px;
+            color: var(--text-primary); margin-bottom: 0.5rem;
+        }
+        .note-sheet-when.no-date {
+            font-size: 1rem; font-weight: 400; color: var(--text-secondary); opacity: 0.65;
+        }
+        .note-sheet-text {
+            font-size: 1.2rem; font-weight: 400; line-height: 1.35;
+            color: var(--text-primary); word-break: break-word;
+            white-space: pre-wrap; margin-bottom: 0.9rem;
+        }
+        .note-sheet-cats {
+            display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+            margin-bottom: 1.1rem; min-height: 0;
+        }
+        .note-sheet-actions { display: flex; gap: 10px; }
+        .note-sheet-btn {
+            flex: 1; padding: 14px 0; border-radius: 40px;
+            border: 1px solid var(--glass-border);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-secondary); font-family: inherit;
+            font-weight: 400; font-size: 1rem; cursor: pointer; transition: 0.15s;
+        }
+        .note-sheet-btn:active { transform: scale(0.97); }
+        .note-sheet-btn.edit { color: #007aff; border-color: rgba(0, 122, 255, 0.35); background: rgba(0, 122, 255, 0.10); }
+        .note-sheet-btn.delete { color: #ff6b6b; border-color: rgba(255, 70, 70, 0.30); background: rgba(255, 70, 70, 0.08); }
+        .note-sheet-x {
+            position: absolute; top: 14px; right: 14px;
+            width: 38px; height: 38px; border-radius: 50%;
+            border: none; background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary); cursor: pointer; padding: 0;
+            display: flex; align-items: center; justify-content: center;
+            transition: 0.15s;
+        }
+        .note-sheet-x:active { transform: scale(0.9); }
+        .note-sheet-x svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; }
+        body.light .note-sheet-x { background: rgba(0, 0, 0, 0.06); }
         @media (max-width: 440px) {
-            body { padding: 0.5rem; }
+            body { padding: calc(0.5rem + var(--inset-top, 0px)) 0.5rem calc(0.5rem + var(--inset-bottom, 0px)); }
             .glass-app { padding: 1rem 0.5rem 0.8rem; border-radius: 32px; }
             .title { font-size: 1.2rem; }
             .result-card { padding: 0.9rem 1.2rem; }
             .result-text { font-size: 0.95rem; }
             .list-scroll { padding: 20px 8px 120px 8px; }
-            #toastMessage { font-size: 0.85rem; padding: 10px 20px; bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
+            #toastMessage { font-size: 0.85rem; padding: 10px 20px; bottom: calc(100px + env(safe-area-inset-bottom, 0px) + var(--inset-bottom, 0px)); }
             .cancel-fab { width: 116px; height: 116px; }
             .cancel-fab .cancel-icon { width: 46px; height: 46px; }
             .cancel-fab .fab-text-top { font-size: 1rem; }
@@ -962,7 +1021,7 @@
             .edit-tile { font-size: 0.75rem; padding: 8px 4px; }
         }
         @media (max-height: 700px) {
-            #toastMessage { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+            #toastMessage { bottom: calc(80px + env(safe-area-inset-bottom, 0px) + var(--inset-bottom, 0px)); }
             .result-card { padding: 0.7rem 1rem; }
             .result-text { font-size: 0.85rem; }
             .cancel-fab { width: 96px; height: 96px; }
@@ -1033,7 +1092,7 @@
     </div>
 
     <div class="footer" id="footer">
-        голосовые напоминания · <span id="appVersionFooter">v5.10.4</span>
+        голосовые напоминания · <span id="appVersionFooter">v5.10.5</span>
     </div>
 </div>
 
@@ -1140,6 +1199,21 @@
                 <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
                 Сохранить
             </button>
+        </div>
+    </div>
+</div>
+
+<div class="note-sheet" id="noteSheet">
+    <div class="note-sheet-card" id="noteSheetCard">
+        <button class="note-sheet-x" id="noteSheetCloseBtn" aria-label="Закрыть">
+            <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <div class="note-sheet-when" id="noteSheetWhen"></div>
+        <div class="note-sheet-text" id="noteSheetText"></div>
+        <div class="note-sheet-cats" id="noteSheetCats"></div>
+        <div class="note-sheet-actions">
+            <button class="note-sheet-btn edit" id="noteSheetEditBtn">Изменить</button>
+            <button class="note-sheet-btn delete" id="noteSheetDeleteBtn">Удалить</button>
         </div>
     </div>
 </div>
@@ -1354,7 +1428,7 @@
         </div>
         <div class="modal-content">
             <div class="info-row"><span class="info-label">📱 Приложение</span><span class="info-value">Glass Notes</span></div>
-            <div class="info-row"><span class="info-label">🏷️ Версия</span><span class="info-value" id="appVersion">5.10.4</span></div>
+            <div class="info-row"><span class="info-label">🏷️ Версия</span><span class="info-value" id="appVersion">5.10.5</span></div>
             <div class="info-row"><span class="info-label">📅 Сборка</span><span class="info-value">25.09.2026</span></div>
             <div class="info-row"><span class="info-label">💾 Хранилище</span><span class="info-value">IndexedDB</span></div>
             <div class="info-row"><span class="info-label">👆 Свайп</span><span class="info-value" style="color:#34c759;">вправо ✅ / влево 🗑️</span></div>
@@ -1367,7 +1441,7 @@
 </div>
 
 <script>
-    const APP_VERSION = '5.10.4';
+    const APP_VERSION = '5.10.5';
     const COLORS = ['color-1','color-2','color-3','color-4','color-5','color-6','color-7','color-8','color-9','color-10','color-11','color-12'];
     const DEFAULT_TIME_SETTINGS = { morning:'09:00', beforeNoon:'11:00', noon:'13:00', afterNoon:'15:00', evening:'18:00', night:'21:00', today:'12:00', tomorrow:'09:00' };
     const FAB_POSITION = { x: 50, y: 75 };
@@ -1402,12 +1476,26 @@
 
     let currentCategoryFilter = null;
 
+    function getCategoryById(id) { return DEFAULT_CATEGORIES.find(c => c.id === id) || null; }
+    function isImportant(catIds) { if (!catIds || !catIds.length) return false; return catIds.some(id => id === 'important'); }
+
+    function hexToRgba(hex, alpha) {
+        const h = hex.replace('#','');
+        const r = parseInt(h.substring(0,2),16);
+        const g = parseInt(h.substring(2,4),16);
+        const b = parseInt(h.substring(4,6),16);
+        return `rgba(${r},${g},${b},${alpha})`;
+    }
+
     // === NLU START ===
     function parseTimeStr(str) { const [h,m] = str.split(':').map(Number); return { hours: h, minutes: m }; }
 
+    // В JS \b и \w работают только по латинице: для кириллицы границу слова
+    // приходится задавать явно — (?<![а-яё]) и (?![а-яё]).
+
     // «напомни …», «запиши …», «создай заметку …» — это команда, а не текст заметки
     function stripCommandWords(text) {
-        return text.replace(/^\s*(?:напомни(?:ть)?|напоминание|запиши|записать|создай|добавь|заметка|отметь)\b[\s:,.-]*/i, '').trim();
+        return text.replace(/^[ ]*(?:напомни(?:ть)?|напоминание|запиши|записать|создай|добавь|заметка|отметь)(?![а-яё])[ ,:.-]*/i, '').trim();
     }
 
     // вырезаем найденный кусок из рабочей строки и схлопываем пробелы
@@ -1415,29 +1503,34 @@
         return (working.slice(0, start) + ' ' + working.slice(start + length)).replace(/\s+/g, ' ').trim();
     }
 
+    const BS = String.fromCharCode(92);   // бэкслеш для регексов, собранных из строк
+
     // «через 30 минут», «через пол часа», «через полчаса», «через час», «через полтора часа»
     const RELATIVE_UNITS = [
-        [/(\d+(?:[.,]\d+)?)\s*(?:мин(?:ут\w*)?|мин)\b/, 60 * 1000],
-        [/(\d+(?:[.,]\d+)?)\s*час\w*\b/, 60 * 60 * 1000],
-        [/(\d+)\s*(?:дн\w*|день|сут\w*)\b/, 24 * 60 * 60 * 1000],
-        [/(\d+)\s*недел\w*\b/, 7 * 24 * 60 * 60 * 1000],
-        [/(?:пол|половину)\s*час\w*\b/, 30 * 60 * 1000],
-        [/полчаса\b/, 30 * 60 * 1000],
-        [/полтора\s*час\w*\b/, 90 * 60 * 1000],
-        [/час\b/, 60 * 60 * 1000],
-        [/минуту\b/, 60 * 1000],
+        [/(\d+(?:[.,]\d+)?)\s*(?:минут[а-яё]*|мин)(?![а-яё])/, 60 * 1000],
+        [/(\d+(?:[.,]\d+)?)\s*час[а-яё]*(?![а-яё])/, 60 * 60 * 1000],
+        [/(\d+)\s*(?:дн[а-яё]*|день|сут[а-яё]*)(?![а-яё])/, 24 * 60 * 60 * 1000],
+        [/(\d+)\s*недел[а-яё]*(?![а-яё])/, 7 * 24 * 60 * 60 * 1000],
+        [/(?:пол|половину)\s*час[а-яё]*(?![а-яё])/, 30 * 60 * 1000],
+        [/полчаса(?![а-яё])/, 30 * 60 * 1000],
+        [/полтора\s*час[а-яё]*(?![а-яё])/, 90 * 60 * 1000],
+        [/час(?![а-яё])/, 60 * 60 * 1000],
+        [/минуту(?![а-яё])/, 60 * 1000],
     ];
 
     function parseRelativeTime(lower) {
         if (lower.indexOf('через') < 0) return null;
         for (const [re, ms] of RELATIVE_UNITS) {
             const m = lower.match(new RegExp('через' + BS + 's+' + re.source));
-            if (m) return { ms, matched: m[0] };
+            if (m) {
+                // «через 30 минут» — число из фразы умножаем на размер единицы;
+                // «через час» / «через полчаса» числа не имеют, это уже готовое значение
+                const count = m[1] ? parseFloat(m[1].replace(',', '.')) : 1;
+                return { ms: ms * count, matched: m[0] };
+            }
         }
         return null;
     }
-
-    const BS = String.fromCharCode(92);   // бэкслеш для сборки регексов из строк
 
     // словесные часы: «в десять», «в полдень» — так нередко выдаёт распознавание речи
     const WORD_HOURS = { 'один':1,'одну':1,'два':2,'две':2,'три':3,'четыре':4,'пять':5,'шесть':6,'семь':7,
@@ -1485,7 +1578,7 @@
             const datePatterns = [
                 { re: /(\d{1,2})\s*(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s*(\d{4}|\d{2})?/i,
                   parse: (m) => { const d = parseInt(m[1]); const mm = {'января':0,'февраля':1,'марта':2,'апреля':3,'мая':4,'июня':5,'июля':6,'августа':7,'сентября':8,'октября':9,'ноября':10,'декабря':11}; const mo = mm[m[2].toLowerCase()]; let y = m[3] ? parseInt(m[3]) : now.getFullYear(); if (y < 100) y += 2000; return new Date(y, mo, d); } },
-                { re: /(\d{1,2})[\/\.](\d{1,2})[\/\.](\d{4}|\d{2})/, parse: (m) => { let d=parseInt(m[1]),mo=parseInt(m[2])-1,y=parseInt(m[3]); if(y<100)y+=2000; return new Date(y,mo,d); } },
+                { re: /(\d{1,2})[\/.](\d{1,2})[\/.](\d{4}|\d{2})/, parse: (m) => { let d=parseInt(m[1]),mo=parseInt(m[2])-1,y=parseInt(m[3]); if(y<100)y+=2000; return new Date(y,mo,d); } },
                 { re: /(\d{4})[-.](\d{1,2})[-.](\d{1,2})/, parse: (m) => new Date(parseInt(m[1]),parseInt(m[2])-1,parseInt(m[3])) }
             ];
             for (const p of datePatterns) {
@@ -1504,16 +1597,16 @@
             }
         }
         if (!result) {
-            if (lower.includes('послезавтра')) { const d = new Date(now); d.setDate(d.getDate()+2); result = d; working = cutOut(working, lower.indexOf('послезавтра'), 11); }
-            else if (lower.includes('завтра')) { const d = new Date(now); d.setDate(d.getDate()+1); result = d; working = cutOut(working, lower.indexOf('завтра'), 6); }
-            else if (lower.includes('сегодня')) { result = new Date(now); working = cutOut(working, lower.indexOf('сегодня'), 7); }
+            if (lower.indexOf('послезавтра') >= 0) { const d = new Date(now); d.setDate(d.getDate()+2); result = d; working = cutOut(working, lower.indexOf('послезавтра'), 11); }
+            else if (lower.indexOf('завтра') >= 0) { const d = new Date(now); d.setDate(d.getDate()+1); result = d; working = cutOut(working, lower.indexOf('завтра'), 6); }
+            else if (lower.indexOf('сегодня') >= 0) { result = new Date(now); working = cutOut(working, lower.indexOf('сегодня'), 7); }
             lower = working.toLowerCase();
         }
         if (!result) {
             const wd = ['понедельник','вторник','среда','четверг','пятница','суббота','воскресенье'];
             const wg = ['понедельник','вторник','среду','четверг','пятницу','субботу','воскресенье'];
             for (let i = 0; i < wd.length; i++) {
-                const re = new RegExp('(?:во?' + BS + 's*)?(следующую' + BS + 's*)?(' + wd[i] + '|' + wg[i] + ')', 'i');
+                const re = new RegExp('(?:во?' + BS + 's*)?(следующую' + BS + 's*)?(' + wd[i] + '|' + wg[i] + ')(?![а-яё])', 'i');
                 const match = lower.match(re);
                 if (match) {
                     const td = i+1; let cd = now.getDay(); if (cd === 0) cd = 7;
@@ -1530,7 +1623,7 @@
         // 3. Время внутри суток (для относительного уже посчитано).
         if (!relativeApplied) {
             // 3.1 «14:30», «в 14.30»
-            let m = lower.match(/(?:в\s*)?(\d{1,2})\s*[:.]\s*(\d{2})(?!\d)/);
+            let m = lower.match(/(?:в\s+)?(\d{1,2})\s*[:.]\s*(\d{2})(?!\d)/);
             if (m) {
                 const h = parseInt(m[1]), mi = parseInt(m[2]);
                 if (h >= 0 && h < 24 && mi >= 0 && mi < 60) {
@@ -1553,11 +1646,11 @@
             }
             // 3.3 голый час: «в 10», «к 10», «в десять», «в 10 утра/дня/вечера/ночи»
             if (!timeResult) {
-                m = lower.match(/\b(?:в|к)\s+(\d{1,2}|полдень|полночь|один|одну|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать)(?!\d)(?!\s*(?:минут|рубл|штук|процент|раз|кг|грамм|человек|лет|года|месяц|организац))/);
+                m = lower.match(/(?<![а-яё])(?:в|к)\s+(\d{1,2}|полдень|полночь|один|одну|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать)(?![\dа-яё])(?!\s*(?:минут|рубл|штук|процент|раз|кг|грамм|человек|лет|года|месяц|организац))/);
                 if (m && (/^\d+$/.test(m[1]) || WORD_HOURS[m[1]] !== undefined)) {
                     let h = /^\d+$/.test(m[1]) ? parseInt(m[1]) : WORD_HOURS[m[1]];
                     const after = lower.slice(m.index + m[0].length);
-                    const mod = after.match(/^\s*(утр\w*|дн\w*|обед\w*|вечер\w*|ноч\w*)/);
+                    const mod = after.match(/^\s*(утр[а-яё]*|дн[а-яё]*|обед[а-яё]*|вечер[а-яё]*|ноч[а-яё]*)(?![а-яё])/);
                     if (mod) {
                         h = applyDayPart(h, mod[1]);
                         working = cutOut(working, m.index, m[0].length + mod[0].length);
@@ -1571,12 +1664,12 @@
             // 3.4 периоды без часа
             if (!timeResult) {
                 const periods = [
-                    { re: /(?:^|\s)(утром|с утра|утра)(?=\s|$)/, key: 'morning' },
-                    { re: /(?:^|\s)(до обеда|перед обедом)(?=\s|$)/, key: 'beforeNoon' },
-                    { re: /(?:^|\s)(в обед|днём|днем|обед)(?=\s|$)/, key: 'noon' },
-                    { re: /(?:^|\s)(после обеда|послеобеденное)(?=\s|$)/, key: 'afterNoon' },
-                    { re: /(?:^|\s)(вечером|под вечер|вечера)(?=\s|$)/, key: 'evening' },
-                    { re: /(?:^|\s)(ночью|ночи)(?=\s|$)/, key: 'night' }
+                    { re: /(?<![а-яё])(утром|с утра|утра)(?![а-яё])/, key: 'morning' },
+                    { re: /(?<![а-яё])(до обеда|перед обедом)(?![а-яё])/, key: 'beforeNoon' },
+                    { re: /(?<![а-яё])(в обед|днём|днем|обед)(?![а-яё])/, key: 'noon' },
+                    { re: /(?<![а-яё])(после обеда|послеобеденное)(?![а-яё])/, key: 'afterNoon' },
+                    { re: /(?<![а-яё])(вечером|под вечер|вечера)(?![а-яё])/, key: 'evening' },
+                    { re: /(?<![а-яё])(ночью|ночи)(?![а-яё])/, key: 'night' }
                 ];
                 for (const p of periods) {
                     const match = lower.match(p.re);
@@ -2424,7 +2517,7 @@
                 if (el.closest('.result-card').classList.contains('copied')) return;
                 const id = parseInt(el.closest('.result-card-wrapper').dataset.id);
                 const note = todos.find(t => t.id === id);
-                if (note && note.status !== 'done') openEdit(id);
+                if (note) openNoteSheet(id);
             });
         });
         resultsContainer.querySelectorAll('.result-card').forEach(c => initSwipe(c));
@@ -2434,6 +2527,57 @@
 
     // === РЕДАКТОР ===
     let editingId = null, editDate = null, editTime = null, editCategoryIds = [];
+
+    // === СПЛЭШ СОБЫТИЯ ===
+    let sheetNoteId = null;
+    let sheetNoteDone = false;
+
+    function openNoteSheet(id) {
+        const note = todos.find(t => t.id === id);
+        if (!note) return;
+        sheetNoteId = id;
+        sheetNoteDone = note.status === 'done';
+
+        const whenEl = document.getElementById('noteSheetWhen');
+        if (note.datetime) {
+            whenEl.textContent = formatDateTimeDisplay(note.datetime);
+            whenEl.classList.remove('no-date');
+        } else {
+            whenEl.textContent = 'Без даты';
+            whenEl.classList.add('no-date');
+        }
+        document.getElementById('noteSheetText').textContent = note.text;
+        document.getElementById('noteSheetCats').innerHTML = (note.categoryIds || [])
+            .map(cid => getCategoryById(cid))
+            .filter(Boolean)
+            .map(c => '<span class="category-label" style="background:' + hexToRgba(c.color, 0.35) + ';">' + c.name + '</span>')
+            .join('');
+        document.getElementById('noteSheetEditBtn').textContent = sheetNoteDone ? 'Вернуть' : 'Изменить';
+        document.getElementById('noteSheet').classList.add('visible');
+        vibrate(15);
+    }
+
+    function closeNoteSheet() {
+        document.getElementById('noteSheet').classList.remove('visible');
+        sheetNoteId = null;
+    }
+
+    document.getElementById('noteSheetCloseBtn').addEventListener('click', closeNoteSheet);
+    document.getElementById('noteSheet').addEventListener('click', (e) => {
+        if (e.target === document.getElementById('noteSheet')) closeNoteSheet();
+    });
+    document.getElementById('noteSheetEditBtn').addEventListener('click', () => {
+        const id = sheetNoteId, wasDone = sheetNoteDone;
+        closeNoteSheet();
+        if (id === null) return;
+        if (wasDone) undoDone(id);
+        else openEdit(id);
+    });
+    document.getElementById('noteSheetDeleteBtn').addEventListener('click', () => {
+        const id = sheetNoteId;
+        closeNoteSheet();
+        if (id !== null) deleteTodo(id);
+    });
 
     function openEdit(id) {
         const note = todos.find(t => t.id === id);
@@ -2676,6 +2820,15 @@
             const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
             const d = new Date(); const p = n => String(n).padStart(2,'0');
             const fn = `glass-notes-backup-${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.json`;
+            // В APK (WebView) <a download> не срабатывает, сохраняем через нативный мост.
+            if (window.NativeSave && window.NativeSave.saveFile) {
+                const bytes = new TextEncoder().encode(json);
+                let binary = '';
+                for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+                const ok = window.NativeSave.saveFile(fn, 'application/json', btoa(binary));
+                showToast(ok ? '📤 Бэкап в «Загрузках»' : '❌ Не удалось сохранить', 2500);
+                return;
+            }
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
             a.download = fn;

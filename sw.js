@@ -3,7 +3,7 @@
    и показ системных уведомлений через showNotification (на Android Chrome
    конструктор new Notification недоступен). */
 
-const VERSION = 'glass-notes-v1';
+const VERSION = 'glass-notes-v2';
 const SHELL = [
   './',
   './index.html',

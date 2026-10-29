@@ -32,6 +32,8 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private AssetServer server;
+    private android.webkit.ValueCallback<android.net.Uri[]> filePathCallback;
+    private static final int REQ_FILE = 1002;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,7 +63,40 @@ public class MainActivity extends Activity {
             ws.setSafeBrowsingEnabled(false);
         }
 
+        // статус-бар, вырез камеры и панель навигации уезжают в CSS-переменные:
+        // без этого на Pixel 10a шапка приложения лезет под строку состояния
+        webView.setOnApplyWindowInsetsListener(new android.view.View.OnApplyWindowInsetsListener() {
+            @Override
+            public android.view.WindowInsets onApplyWindowInsets(android.view.View v, android.view.WindowInsets insets) {
+                int top, bottom;
+                if (Build.VERSION.SDK_INT >= 30) {
+                    android.graphics.Insets bars = insets.getInsets(
+                            android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout());
+                    top = bars.top;
+                    bottom = bars.bottom;
+                } else {
+                    top = insets.getSystemWindowInsetTop();
+                    bottom = insets.getSystemWindowInsetBottom();
+                }
+                pushInsets(top, bottom);
+                return insets;
+            }
+        });
+
         webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                // Слушатель insets успевает сработать раньше, чем появится JS-контекст,
+                // и тогда значения теряются. Поэтому после загрузки берём их напрямую
+                // из окна и, сбросив кэш, отправляем заново.
+                webView.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        pushCurrentInsets();
+                    }
+                }, 300);
+            }
+
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri url = request.getUrl();
@@ -95,9 +130,30 @@ public class MainActivity extends Activity {
                 }
                 request.deny();
             }
+
+            @Override
+            public boolean onShowFileChooser(WebView view, android.webkit.ValueCallback<android.net.Uri[]> callback,
+                                             FileChooserParams params) {
+                // WebView без этого метода молча игнорирует input[type=file] — импорт бэкапа не открывался
+                if (filePathCallback != null) {
+                    filePathCallback.onReceiveValue(null);
+                }
+                filePathCallback = callback;
+                try {
+                    android.content.Intent intent = params.createIntent();
+                    intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+                    intent.setType("*/*");
+                    startActivityForResult(intent, REQ_FILE);
+                    return true;
+                } catch (Throwable t) {
+                    filePathCallback = null;
+                    return false;
+                }
+            }
         });
 
         webView.addJavascriptInterface(new NotificationBridge(this), "NativeNotify");
+        webView.addJavascriptInterface(new SaveBridge(this), "NativeSave");
         webView.addJavascriptInterface(new SpeechBridge(this, webView), "NativeSpeech");
 
         setContentView(webView);
@@ -127,6 +183,68 @@ public class MainActivity extends Activity {
         if (!need.isEmpty()) {
             requestPermissions(need.toArray(new String[0]), REQ_PERMS);
         }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+        if (requestCode == REQ_FILE) {
+            if (filePathCallback == null) return;
+            android.net.Uri[] result = null;
+            if (resultCode == RESULT_OK && data != null) {
+                if (data.getDataString() != null) {
+                    result = new android.net.Uri[]{android.net.Uri.parse(data.getDataString())};
+                } else if (data.getClipData() != null) {
+                    int count = data.getClipData().getItemCount();
+                    result = new android.net.Uri[count];
+                    for (int i = 0; i < count; i++) {
+                        result[i] = data.getClipData().getItemAt(i).getUri();
+                    }
+                }
+            }
+            filePathCallback.onReceiveValue(result);
+            filePathCallback = null;
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    private int lastTopInset = -1, lastBottomInset = -1;
+
+    private void pushCurrentInsets() {
+        int top = 0, bottom = 0;
+        try {
+            android.view.WindowInsets wi = getWindow().getDecorView().getRootWindowInsets();
+            if (wi != null) {
+                if (Build.VERSION.SDK_INT >= 30) {
+                    android.graphics.Insets b = wi.getInsets(
+                            android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout());
+                    top = b.top;
+                    bottom = b.bottom;
+                } else {
+                    top = wi.getSystemWindowInsetTop();
+                    bottom = wi.getSystemWindowInsetBottom();
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        lastTopInset = -1;
+        lastBottomInset = -1;
+        pushInsets(top, bottom);
+    }
+
+    private void pushInsets(int top, int bottom) {
+        if (top == lastTopInset && bottom == lastBottomInset) return;
+        lastTopInset = top;
+        lastBottomInset = bottom;
+        final String js = "document.documentElement.style.setProperty('--inset-top','" + top + "px');"
+                + "document.documentElement.style.setProperty('--inset-bottom','" + bottom + "px');";
+        if (webView == null) return;
+        webView.post(new Runnable() {
+            @Override
+            public void run() {
+                try { webView.evaluateJavascript(js, null); } catch (Throwable ignored) {}
+            }
+        });
     }
 
     @Override

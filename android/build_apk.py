@@ -6,7 +6,9 @@
 
 Запуск:  python android/build_apk.py
 """
+import io
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -160,7 +162,11 @@ def main():
 
     dist = os.path.join(ROOT, "dist")
     os.makedirs(dist, exist_ok=True)
-    shutil.copy2(FINAL, os.path.join(dist, "glass-notes-5.10.4.apk"))
+    manifest = io.open(os.path.join(PROJECT, 'AndroidManifest.xml'), encoding='utf-8').read()
+    vm = re.search(r'android:versionName="([^"]+)"', manifest)
+    version = vm.group(1) if vm else 'dev'
+    shutil.copy2(FINAL, os.path.join(dist, 'glass-notes-%s.apk' % version))
+    print('копия: dist/glass-notes-%s.apk' % version)
 
     print()
     print("ГОТОВО: %s (%d КБ)" % (FINAL, os.path.getsize(FINAL) // 1024))

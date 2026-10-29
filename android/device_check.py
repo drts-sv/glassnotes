@@ -72,9 +72,25 @@ CHECKS = [
               "notifyBridge:typeof window.NativeNotify,"
               "sw:('serviceWorker' in navigator),swCtl:!!(navigator.serviceWorker&&navigator.serviceWorker.controller),"
               "idb:'indexedDB' in window})"),
-    ("заметка через NLU", "(async()=>{ await addTodo('проверка с телефона завтра в 9:00 категория работа');"
+    ("NLU по фразе с телефона", "(async()=>{ await addTodo('купить хлеб завтра в 10 категория покупки');"
                           " await new Promise(r=>setTimeout(r,600));"
-                          " return JSON.stringify(todos.map(t=>({t:t.text,dt:t.datetime,c:t.categoryIds}))); })()"),
+                          " const n=todos[0]; const d=n.datetime?new Date(n.datetime):null;"
+                          " return JSON.stringify({текст:n.text, когда:d?d.toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'нет', кат:n.categoryIds}); })()"),
+    ("insets под строку состояния", "JSON.stringify({ver:document.getElementById('appVersion').textContent,"
+                                   "varTop:getComputedStyle(document.documentElement).getPropertyValue('--inset-top').trim(),"
+                                   "padTop:getComputedStyle(document.body).paddingTop,"
+                                   "varBottom:getComputedStyle(document.documentElement).getPropertyValue('--inset-bottom').trim()})"),
+    ("сплэш события", "(async()=>{ renderTodos(); const c=document.querySelector('.result-card-wrapper .result-content');"
+                      " if(!c) return 'нет карточек'; c.click(); await new Promise(r=>setTimeout(r,400));"
+                      " const out={sheet:document.getElementById('noteSheet').classList.contains('visible'),"
+                      " when:document.getElementById('noteSheetWhen').textContent,"
+                      " text:document.getElementById('noteSheetText').textContent,"
+                      " editLabel:document.getElementById('noteSheetEditBtn').textContent,"
+                      " editorBefore:document.getElementById('editOverlay').classList.contains('active')};"
+                      " document.getElementById('noteSheetEditBtn').click(); await new Promise(r=>setTimeout(r,500));"
+                      " out.editorAfter=document.getElementById('editOverlay').classList.contains('active');"
+                      " out.sheetAfter=document.getElementById('noteSheet').classList.contains('visible');"
+                      " return JSON.stringify(out); })()"),
     ("уведомление в систему", "(()=>{ try { new Notification('🔔 Тест с телефона',{body:'мост уведомлений работает',tag:'devcheck'});"
                               " return 'отправлено'; } catch(e){ return 'ОШИБКА: '+e.message; } })()"),
     ("просроченное напоминание",

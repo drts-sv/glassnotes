@@ -35,8 +35,29 @@ public class AssetServer {
         this.assets = assets;
     }
 
+    /** Порт фиксирован намеренно: origin = схема + хост + порт, а IndexedDB и
+     *  localStorage привязаны к origin. Со случайным портом (0) все заметки
+     *  и настройки терялись при каждом запуске приложения. */
+    private static final int PREFERRED_PORT = 8734;
+    private static final int PORT_ATTEMPTS = 6;
+
     public int start() throws IOException {
-        socket = new ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"));
+        InetAddress loopback = InetAddress.getByName("127.0.0.1");
+        IOException last = null;
+        for (int i = 0; i < PORT_ATTEMPTS; i++) {
+            try {
+                socket = new ServerSocket(PREFERRED_PORT + i, 16, loopback);
+                break;
+            } catch (IOException e) {
+                last = e;
+                Log.w(TAG, "порт " + (PREFERRED_PORT + i) + " занят: " + e.getMessage());
+            }
+        }
+        if (socket == null) {
+            // совсем не вышло — работаем на случайном порту, но данные будут теряться
+            socket = new ServerSocket(0, 16, loopback);
+            if (last != null) Log.w(TAG, "запасной случайный порт: " + last.getMessage());
+        }
         port = socket.getLocalPort();
         running = true;
         Thread t = new Thread(this::loop, "asset-server");
