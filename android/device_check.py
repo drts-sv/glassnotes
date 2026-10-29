@@ -20,10 +20,13 @@ import websockets
 ADB = r"C:\adb\adb.exe"
 PKG = "com.glassnotes.app"
 PORT = 9222
+# В adb бывает несколько устройств (телефон + ТВ-приставки) — пинуем серийник.
+SERIAL = "65041XEA36AFF8"
 
 
 def adb(*args):
-    r = subprocess.run([ADB, *args], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    # -s обязателен: без него adb падает «more than one device/emulator»
+    r = subprocess.run([ADB, "-s", SERIAL, *args], capture_output=True, text=True, encoding="utf-8", errors="replace")
     return (r.stdout or "").strip()
 
 
@@ -131,6 +134,15 @@ async def main():
     ws_url = pages[0]["webSocketDebuggerUrl"]
     print("цель:", pages[0].get("url"))
     print()
+
+    # одиночное выражение: python android/device_check.py --expr "<js>"
+    if len(sys.argv) > 2 and sys.argv[1] == "--expr":
+        try:
+            tmo = float(sys.argv[3]) if len(sys.argv) > 3 else 25.0
+        except ValueError:
+            tmo = 25.0
+        print(await evaluate(ws_url, sys.argv[2], timeout=tmo))
+        return 0
 
     for name, expr in CHECKS:
         value = await evaluate(ws_url, expr)

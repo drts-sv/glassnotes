@@ -115,6 +115,15 @@
         var s = registry[id];
         if (s) s._fire('end');
         delete registry[id];
+      },
+      onDownload: function (percent) {
+        // прогресс докачки модели GigaAM: -1 готово, -2 ошибка
+        try {
+          if (typeof showToast !== 'function') return;
+          if (percent >= 0) showToast('📥 Модель GigaAM: ' + percent + '%', 1200);
+          else if (percent === -1) showToast('✅ Модель GigaAM готова', 2500);
+          else showToast('❌ Модель GigaAM не скачалась', 2500);
+        } catch (e) {}
       }
     };
 

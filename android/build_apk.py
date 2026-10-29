@@ -22,6 +22,14 @@ SDK = os.path.join(TOOLS, "sdk")
 BT = os.path.join(SDK, "build-tools", "35.0.0")
 ANDROID_JAR = os.path.join(SDK, "platforms", "android-35", "android.jar")
 
+# ветка giga: Kotlin-ядро GigaAM + onnxruntime
+TOOLS_ROOT = TOOLS   # .android-tools и есть корень: jdk, sdk, kotlin, libs
+KOTLIN_SRC = os.path.join(PROJECT, "kotlin")
+KOTLIN_LIBS = os.path.join(TOOLS_ROOT, "libs", "onnxruntime")
+KOTLINC_LIB = os.path.join(TOOLS_ROOT, "kotlin", "kotlinc", "lib", "*")
+NATIVE_LIBS = os.path.join(KOTLIN_LIBS, "arm64-v8a")
+DEX_JARS = ["onnxruntime.jar", "kotlin-stdlib.jar", "kotlinx-coroutines-core-jvm.jar"]
+
 BUILD = os.path.join(PROJECT, "build")
 CLASSES = os.path.join(BUILD, "classes")
 GEN = os.path.join(BUILD, "gen")
@@ -103,6 +111,18 @@ def main():
          "--java", GEN,
          "--auto-add-overlay"], "aapt2 link (манифест + ресурсы + assets)")
 
+    kt_sources = []
+    for root, _dirs, files in os.walk(KOTLIN_SRC):
+        kt_sources += [os.path.join(root, f) for f in files if f.endswith(".kt")]
+    kt_sources.sort()
+    if kt_sources:
+        # компилятор Kotlin зовём напрямую через java: kotlinc.bat режет classpath по ';'
+        kotlin_cp = ";".join([ANDROID_JAR] + [os.path.join(KOTLIN_LIBS, j) for j in DEX_JARS])
+        run([os.path.join(JDK, "bin", "java.exe"), "-cp", KOTLINC_LIB,
+             "org.jetbrains.kotlin.cli.jvm.K2JVMCompiler",
+             "-classpath", kotlin_cp, "-jvm-target", "1.8", "-nowarn",
+             "-d", CLASSES] + kt_sources, "kotlinc (ядро GigaAM, %d файлов)" % len(kt_sources))
+
     java_sources = []
     for root, _dirs, files in os.walk(os.path.join(PROJECT, "java")):
         java_sources += [os.path.join(root, f) for f in files if f.endswith(".java")]
@@ -111,7 +131,7 @@ def main():
 
     run([os.path.join(JDK, "bin", "javac.exe"),
          "-source", "8", "-target", "8",
-         "-classpath", ANDROID_JAR,
+         "-classpath", ";".join([ANDROID_JAR, CLASSES] + [os.path.join(KOTLIN_LIBS, j) for j in DEX_JARS]),
          "-encoding", "UTF-8", "-nowarn",
          "-d", CLASSES] + java_sources, "javac (компиляция Java)")
 
@@ -119,9 +139,13 @@ def main():
     for root, _dirs, files in os.walk(CLASSES):
         class_files += [os.path.join(root, f) for f in files if f.endswith(".class")]
 
+    # javac и kotlinc пишут в один каталог: без дедупликации d8 ругается
+    # «Type … is defined multiple times»
+    class_files = sorted(set(class_files))
+    dex_inputs = class_files + [os.path.join(KOTLIN_LIBS, j) for j in DEX_JARS]
     run(bat(os.path.join(BT, "d8.bat")) + ["--release", "--lib", ANDROID_JAR,
                                            "--min-api", "24",
-                                           "--output", DEX] + class_files, "d8 (dex)")
+                                           "--output", DEX] + dex_inputs, "d8 (dex)")
 
     dex_file = os.path.join(DEX, "classes.dex")
     if not os.path.exists(dex_file):
@@ -132,6 +156,13 @@ def main():
         for item in src.infolist():
             dst.writestr(item, src.read(item.filename))
         dst.write(dex_file, "classes.dex", compress_type=zipfile.ZIP_STORED)
+        native_count = 0
+        if os.path.isdir(NATIVE_LIBS):
+            for so in sorted(os.listdir(NATIVE_LIBS)):
+                if so.endswith(".so"):
+                    dst.write(os.path.join(NATIVE_LIBS, so), "lib/arm64-v8a/" + so, compress_type=zipfile.ZIP_DEFLATED)
+                    native_count += 1
+        print(">> нативных библиотек в APK: %d" % native_count)
     print(">> упаковка APK: %d КБ (dex %d КБ)" % (
         os.path.getsize(UNSIGNED) // 1024, os.path.getsize(dex_file) // 1024))
 

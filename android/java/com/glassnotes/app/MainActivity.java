@@ -32,6 +32,19 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private AssetServer server;
+    private SpeechBridge speechBridge;
+
+    /** Первый запуск: тянем модель фоном, если есть Wi-Fi. */
+    private void autoDownloadModel() {
+        webView.postDelayed(() -> {
+            try {
+                if (speechBridge != null && speechBridge.autoDownloadModelIfPossible()) {
+                    android.util.Log.i("GlassNotes", "начата автодокачка модели GigaAM");
+                }
+            } catch (Throwable ignored) {
+            }
+        }, 3000);
+    }
     private android.webkit.ValueCallback<android.net.Uri[]> filePathCallback;
     private static final int REQ_FILE = 1002;
 
@@ -154,7 +167,9 @@ public class MainActivity extends Activity {
 
         webView.addJavascriptInterface(new NotificationBridge(this), "NativeNotify");
         webView.addJavascriptInterface(new SaveBridge(this), "NativeSave");
-        webView.addJavascriptInterface(new SpeechBridge(this, webView), "NativeSpeech");
+        speechBridge = new SpeechBridge(this, webView);
+        autoDownloadModel();
+        webView.addJavascriptInterface(speechBridge, "NativeSpeech");
 
         setContentView(webView);
         NotificationBridge.ensureChannel(this);
@@ -258,6 +273,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (speechBridge != null) speechBridge.releaseEngine();
         if (server != null) server.stop();
         if (webView != null) {
             webView.loadUrl("about:blank");

@@ -38,19 +38,66 @@ public class SpeechBridge {
     private final Handler main = new Handler(Looper.getMainLooper());
     private SpeechRecognizer recognizer;
     private String currentId;
+    private final SpeechEngine engine;
+    private boolean gigaMode = false;
 
     public SpeechBridge(Activity activity, WebView webView) {
         this.activity = activity;
         this.webView = webView;
+        this.engine = new SpeechEngine(activity.getApplicationContext());
     }
 
+    /** Освободить ONNX-сессию при выходе из приложения. */
+    public void releaseEngine() {
+        engine.close();
+    }
+
+    /** Состояние движка — для проверок с телефона и будущей настройки. */
     @JavascriptInterface
-    public boolean isAvailable() {
+    public String gigaStatus() {
+        return "{\"installed\":" + engine.isModelInstalled()
+                + ",\"downloading\":" + engine.isDownloading()
+                + ",\"modelMb\":" + engine.modelSizeMb()
+                + ",\"dirBytes\":" + engine.modelDirBytes()
+                + ",\"net\":\"" + engine.activeTransport() + "\""
+                + ",\"fallbackSpeech\":" + safeSystemRecognizer() + "}";
+    }
+
+    /** Диагностика сети приложения: NativeSpeech.netProbe(url). */
+    @JavascriptInterface
+    public String netProbe(String url) {
+        return engine.probe(url);
+    }
+
+    private boolean safeSystemRecognizer() {
         try {
             return SpeechRecognizer.isRecognitionAvailable(activity);
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    /** Докачка модели GigaAM (214 МБ). Прогресс уходит в JS как onDownload(проценты). */
+    @JavascriptInterface
+    public boolean downloadModel() {
+        engine.downloadModel(
+                percent -> js("onDownload(" + percent + ")"),
+                ok -> js("onDownload(" + (ok ? -1 : -2) + ")"));
+        return true;
+    }
+
+    /** Автодокачка при старте: только по Wi-Fi и только если модели ещё нет. */
+    public boolean autoDownloadModelIfPossible() {
+        return engine.maybeAutoDownloadModel(
+                percent -> js("onDownload(" + percent + ")"),
+                ok -> js("onDownload(" + (ok ? -1 : -2) + ")"));
+    }
+
+    @JavascriptInterface
+    public boolean isAvailable() {
+        // ветка giga: если модель на месте, системный распознаватель не нужен
+        if (engine.isModelInstalled()) return true;
+        return safeSystemRecognizer();
     }
 
     @JavascriptInterface
@@ -68,6 +115,21 @@ public class SpeechBridge {
         main.post(new Runnable() {
             @Override
             public void run() {
+                if (gigaMode) {
+                    final String id = currentId;
+                    if (id == null) return;
+                    currentId = null;
+                    engine.stopAndTranscribe(
+                            text -> {
+                                js("window.__nativeSpeech.onResult(" + q(id) + "," + q(text) + ",true)");
+                                js("window.__nativeSpeech.onEnd(" + q(id) + ")");
+                            },
+                            error -> {
+                                js("window.__nativeSpeech.onError(" + q(id) + "," + q(error) + ")");
+                                js("window.__nativeSpeech.onEnd(" + q(id) + ")");
+                            });
+                    return;
+                }
                 if (recognizer != null) {
                     try {
                         recognizer.stopListening();
@@ -83,6 +145,7 @@ public class SpeechBridge {
         main.post(new Runnable() {
             @Override
             public void run() {
+                if (gigaMode) engine.cancelCapture();
                 release();
                 if (currentId != null) {
                     js("window.__nativeSpeech.onEnd(" + q(currentId) + ")");
@@ -101,6 +164,19 @@ public class SpeechBridge {
             currentId = null;
             return;
         }
+        if (engine.isModelInstalled()) {
+            // GigaAM: пишем PCM сами, словами занимается ONNX
+            gigaMode = true;
+            if (engine.startCapture()) {
+                js("window.__nativeSpeech.onStart(" + q(id) + ")");
+            } else {
+                js("window.__nativeSpeech.onError(" + q(id) + ",'audio-capture')");
+                js("window.__nativeSpeech.onEnd(" + q(id) + ")");
+                currentId = null;
+            }
+            return;
+        }
+        gigaMode = false;
         if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
             js("window.__nativeSpeech.onError(" + q(id) + ",'service-not-allowed')");
             js("window.__nativeSpeech.onEnd(" + q(id) + ")");
