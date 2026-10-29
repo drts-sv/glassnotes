@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -109,7 +110,7 @@ public class SpeechBridge {
 
         release();
         try {
-            recognizer = SpeechRecognizer.createSpeechRecognizer(activity);
+            recognizer = createRecognizer();
             recognizer.setRecognitionListener(new RecognitionListener() {
                 @Override
                 public void onReadyForSpeech(Bundle params) {
@@ -171,6 +172,11 @@ public class SpeechBridge {
             intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
             intent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, activity.getPackageName());
+            // приоритет локального распознавателя: сеть телефона ненадёжна,
+            // а облако Google отдаёт ERROR_NETWORK и ввод пропадает
+            intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L);
             recognizer.startListening(intent);
         } catch (Throwable t) {
             Log.e(TAG, "start: " + t);
@@ -179,6 +185,22 @@ public class SpeechBridge {
             currentId = null;
             release();
         }
+    }
+
+    /** Локальный распознаватель, если он есть: не зависит от сети. */
+    private SpeechRecognizer createRecognizer() {
+        if (Build.VERSION.SDK_INT >= 31) {
+            try {
+                if (SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)) {
+                    Log.i(TAG, "использую локальный распознаватель (on-device)");
+                    return SpeechRecognizer.createOnDeviceSpeechRecognizer(activity);
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "on-device недоступен: " + t);
+            }
+        }
+        Log.i(TAG, "использую облачный распознаватель");
+        return SpeechRecognizer.createSpeechRecognizer(activity);
     }
 
     private void release() {

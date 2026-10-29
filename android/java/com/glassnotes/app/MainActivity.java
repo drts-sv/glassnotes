@@ -37,6 +37,11 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // отладка WebView (chrome://inspect / CDP через adb forward) — нужна для проверки на устройстве
+        if (Build.VERSION.SDK_INT >= 19) {
+            WebView.setWebContentsDebuggingEnabled(true);
+        }
+
         webView = new WebView(this);
         webView.setBackgroundColor(Color.parseColor("#0A0C12"));
         webView.setLayoutParams(new ViewGroup.LayoutParams(
