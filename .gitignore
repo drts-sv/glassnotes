@@ -1,3 +1,12 @@
 Thumbs.db
 *.log
 dist/
+android/build/
+android/glass-notes.apk
+android/assets/index.html
+android/assets/sw.js
+android/assets/manifest.json
+android/assets/icon-192.png
+android/assets/icon-512.png
+android/assets/icon-512-maskable.png
+android/assets/apple-touch-icon.png

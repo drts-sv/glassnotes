@@ -47,9 +47,48 @@ serve.bat
 - **Бэкап** — экспорт/импорт JSON (заметки + настройки), импорт «добавить»
   или «заменить всё».
 
-## Сборка APK (WebToApp, на телефоне)
+## APK: нативная обёртка (основной путь)
 
-Проект предполагается собирать через [shiaho777/web-to-app](https://github.com/shiaho777/web-to-app)
+`android/` — обёртка WebView на чистой Java, без Gradle и AndroidX. Сборка:
+
+```bat
+python android/build_apk.py
+```
+
+Конвейер: aapt2 → javac → d8 → zip → zipalign → apksigner (тот же, что в
+`Documents\RouterApiBalance-Android`), тулчейн в `C:\Users\drts\.android-tools`.
+Результат: `android/glass-notes.apk` → копия в `dist/glass-notes-5.10.4.apk`.
+
+Что внутри:
+
+| Часть | Зачем |
+|---|---|
+| `java/…/AssetServer.java` | HTTP-сервер на 127.0.0.1 из assets: на `file://` в WebView не работают IndexedDB, localStorage и service worker |
+| `java/…/SpeechBridge.java` | `android.speech.SpeechRecognizer` — Web Speech API в WebView отсутствует (Chromium 40417848) |
+| `java/…/NotificationBridge.java` | системные уведомления Android (в WebView нет `Notification`) |
+| `assets/native-shim.js` | подставляет `webkitSpeechRecognition` и `Notification` поверх мостов; **не** перекрывает настоящие API, если они есть |
+| `AndroidManifest.xml` | package `com.glassnotes.app`, minSdk 24, targetSdk 35, RECORD_AUDIO + POST_NOTIFICATIONS + INTERNET + VIBRATE |
+
+Установка:
+
+```bat
+adb install -r dist\glass-notes-5.10.4.apk
+```
+
+Подпись — debug-ключом `android/debug.keystore` (пароль `android`), для Google Play
+нужен собственный ключ.
+
+Проверено без телефона: шим поднимает `webkitSpeechRecognition`/`Notification` там,
+где их нет, вызов моста речи уходит с `ru-RU`, финальный результат создаёт заметку
+через NLU, просроченное напоминание уходит в `NativeNotify.show`. Что проверяется
+только на устройстве: доступность `SpeechRecognizer` и диалог разрешений.
+
+## Сборка APK через WebToApp (альтернатива)
+
+В WebToApp голосовой ввод работать не будет (в WebView нет Web Speech API, а моста
+на `android.speech` у него нет), поэтому основной путь — нативная обёртка выше.
+
+Проект собирается через [shiaho777/web-to-app](https://github.com/shiaho777/web-to-app)
 (локальный клон: `C:\Users\drts\web-to-app`). JDK и Android SDK на ПК не нужны —
 сборка идёт на телефоне.
 
