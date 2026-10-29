@@ -63,6 +63,34 @@ public class SpeechBridge {
                 + ",\"fallbackSpeech\":" + safeSystemRecognizer() + "}";
     }
 
+    /** Самотест: телефон сам произносит фразу и распознаёт её. Результат в window.__selfTestResult. */
+    @JavascriptInterface
+    public boolean selfTest(String phrase) {
+        js("window.__selfTestResult=null");
+        engine.selfTest(phrase,
+                text -> js("window.__selfTestResult=" + q(text)),
+                error -> js("window.__selfTestResult=" + q("ОШИБКА " + error)));
+        return true;
+    }
+
+    /** Прямой самотест: TTS -> файл -> PCM 16 кГц -> распознаватель, без микрофона. */
+    @JavascriptInterface
+    public boolean selfTestDirect(String phrase) {
+        jsRaw("window.__selfTestResult=null");
+        engine.selfTestDirect(phrase,
+                text -> jsRaw("window.__selfTestResult=" + q(text)),
+                error -> jsRaw("window.__selfTestResult=" + q("ОШИБКА " + error)));
+        return true;
+    }
+
+    /** Уровень микрофона: NativeSpeech.micCheck(3) -> строка с rms и пиком. */
+    @JavascriptInterface
+    public boolean micCheck(final int seconds) {
+        jsRaw("window.__micCheck=null");
+        engine.micCheck(seconds, result -> jsRaw("window.__micCheck=" + q(result)));
+        return true;
+    }
+
     /** Диагностика сети приложения: NativeSpeech.netProbe(url). */
     @JavascriptInterface
     public String netProbe(String url) {
@@ -316,6 +344,18 @@ public class SpeechBridge {
 
     private static String q(String s) {
         return JSONObject.quote(s == null ? "" : s);
+    }
+
+    private void jsRaw(final String code) {
+        main.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    webView.evaluateJavascript(code + ";", null);
+                } catch (Throwable ignored) {
+                }
+            }
+        });
     }
 
     private void js(final String call) {

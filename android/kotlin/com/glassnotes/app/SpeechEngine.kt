@@ -1,6 +1,9 @@
 package com.glassnotes.app
 
 import android.content.Context
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.speech.tts.TextToSpeech
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
@@ -189,6 +192,7 @@ class SpeechEngine(context: Context) {
             onError.onError("audio-capture")
             return
         }
+        Log.i(TAG, "запись: ${pcm.size} сэмплов, ${pcmLevel(pcm)}")
         Thread {
             try {
                 val engine = recognizer ?: GigaAmOnnxRecognizer(appContext, modelManager).also { recognizer = it }
@@ -200,6 +204,196 @@ class SpeechEngine(context: Context) {
                 Log.e(TAG, "распознавание: $t")
                 onError.onError("unknown")
             }
+        }.start()
+    }
+
+    /**
+     * Самотест на устройстве: телефон сам произносит фразу своим TTS, пишет её микрофоном
+     * и распознаёт — проверка всего тракта без человека. Результат уходит в JS как onSelfTest.
+     */
+    fun selfTest(phrase: String, onText: TextSink, onError: ErrorSink) {
+        Thread {
+            var tts: TextToSpeech? = null
+            var player: MediaPlayer? = null
+            try {
+                val wav = java.io.File(appContext.cacheDir, "self_test.wav")
+                if (wav.exists()) wav.delete()
+                var ready = false
+                tts = TextToSpeech(appContext) { status -> ready = status == TextToSpeech.SUCCESS }
+                tts.language = java.util.Locale("ru", "RU")
+                for (i in 0 until 60) {
+                    if (ready) break
+                    Thread.sleep(100)
+                }
+                Log.i(TAG, "самотест: TTS готов = $ready")
+                tts.synthesizeToFile(phrase, null, wav, "self_test")
+                var last = -1L
+                for (i in 0 until 100) {
+                    Thread.sleep(100)
+                    val size = wav.length()
+                    if (size > 1000L && size == last) break
+                    last = size
+                }
+                if (wav.length() < 1000L) {
+                    onError.onError("tts: файл не создан (${wav.length()} байт)")
+                    return@Thread
+                }
+                Log.i(TAG, "самотест: речь ${wav.length()} байт, включаю запись")
+                if (!startCapture()) {
+                    onError.onError("audio-capture")
+                    return@Thread
+                }
+                val am = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC), 0)
+                player = MediaPlayer()
+                player.setDataSource(wav.absolutePath)
+                player.prepare()
+                player.start()
+                val waitMs = player.duration.coerceAtLeast(800) + 1200L
+                Thread.sleep(waitMs)
+                player.release()
+                player = null
+                Log.i(TAG, "самотест: проиграл ${waitMs} мс, распознаю")
+                stopAndTranscribe(onText, onError)
+            } catch (t: Throwable) {
+                Log.e(TAG, "самотест сорвался", t)
+                onError.onError((t.javaClass.simpleName + ": " + (t.message ?: "?")).take(80))
+            } finally {
+                try {
+                    player?.release()
+                    tts?.shutdown()
+                } catch (ignored: Throwable) {
+                }
+            }
+        }.start()
+    }
+
+    /** RMS и пик записи: ноль означает, что микрофон не слышал ничего. */
+    fun pcmLevel(pcm: ShortArray): String {
+        if (pcm.isEmpty()) return "пусто"
+        var sum = 0.0
+        var peak = 0
+        for (v in pcm) {
+            val a = kotlin.math.abs(v.toInt())
+            sum += a.toDouble() * a
+            if (a > peak) peak = a
+        }
+        val rms = kotlin.math.sqrt(sum / pcm.size)
+        return "rms=${rms.toInt()} пик=$peak"
+    }
+
+    /**
+     * Прямой тест движка, без микрофона: TTS пишет фразу в файл, файл разбирается в PCM 16 кГц
+     * и уходит прямо в распознаватель. Так проверяется модель, словарь и декодер отдельно от акустики.
+     */
+    fun selfTestDirect(phrase: String, onText: TextSink, onError: ErrorSink) {
+        Thread {
+            var tts: TextToSpeech? = null
+            try {
+                val wav = java.io.File(appContext.cacheDir, "self_test.wav")
+                if (wav.exists()) wav.delete()
+                var ready = false
+                tts = TextToSpeech(appContext) { status -> ready = status == TextToSpeech.SUCCESS }
+                tts.language = java.util.Locale("ru", "RU")
+                for (i in 0 until 60) {
+                    if (ready) break
+                    Thread.sleep(100)
+                }
+                tts.synthesizeToFile(phrase, null, wav, "self_test")
+                var last = -1L
+                for (i in 0 until 100) {
+                    Thread.sleep(100)
+                    val size = wav.length()
+                    if (size > 1000L && size == last) break
+                    last = size
+                }
+                if (wav.length() < 1000L) {
+                    onError.onError("tts: файл не создан")
+                    return@Thread
+                }
+                val pcm = wavToPcm16k(wav)
+                Log.i(TAG, "прямой тест: файл ${wav.length()} байт -> ${pcm.size} сэмплов 16кГц, ${pcmLevel(pcm)}")
+                val engine = recognizer ?: GigaAmOnnxRecognizer(appContext, modelManager).also { recognizer = it }
+                val started = System.currentTimeMillis()
+                val text = engine.transcribe(pcm).trim()
+                Log.i(TAG, "прямой тест: '${text}' за ${System.currentTimeMillis() - started} мс")
+                if (text.isEmpty()) onError.onError("no-speech") else onText.onText(text)
+            } catch (t: Throwable) {
+                Log.e(TAG, "прямой тест сорвался", t)
+                onError.onError((t.javaClass.simpleName + ": " + (t.message ?: "?")).take(80))
+            } finally {
+                try {
+                    tts?.shutdown()
+                } catch (ignored: Throwable) {
+                }
+            }
+        }.start()
+    }
+
+    /** Разбор WAV от TTS в моно PCM 16 кГц (распознаватель ждёт именно такое). */
+    private fun wavToPcm16k(file: java.io.File): ShortArray {
+        val b = file.readBytes()
+        fun le16(o: Int) = (b[o].toInt() and 0xFF) or ((b[o + 1].toInt() and 0xFF) shl 8)
+        fun le32(o: Int) = le16(o) or (le16(o + 2) shl 16)
+        var pos = 12
+        var channels = 1
+        var rate = 16000
+        var bits = 16
+        var dataOff = -1
+        var dataLen = 0
+        while (pos + 8 <= b.size) {
+            val id = String(b, pos, 4, Charsets.US_ASCII)
+            val size = le32(pos + 4)
+            if (id == "fmt ") {
+                channels = le16(pos + 10)
+                rate = le32(pos + 12)
+                bits = le16(pos + 22)
+            } else if (id == "data") {
+                dataOff = pos + 8
+                dataLen = minOf(size, b.size - dataOff)
+                break
+            }
+            pos += 8 + size + (size and 1)
+        }
+        if (dataOff < 0 || bits != 16) throw IllegalStateException("неожиданный WAV: bits=$bits offset=$dataOff")
+        val frames = dataLen / 2 / channels
+        val mono = ShortArray(frames)
+        for (i in 0 until frames) {
+            var acc = 0
+            for (c in 0 until channels) acc += le16(dataOff + (i * channels + c) * 2).toShort().toInt()
+            mono[i] = (acc / channels).toShort()
+        }
+        if (rate == 16000) return mono
+        // линейная передискретизация в 16 кГц
+        val out = ShortArray((frames.toLong() * 16000L / rate).toInt())
+        for (i in out.indices) {
+            val src = i.toDouble() * rate / 16000.0
+            val i0 = src.toInt().coerceIn(0, frames - 1)
+            val i1 = (i0 + 1).coerceAtMost(frames - 1)
+            val frac = src - i0
+            out[i] = (mono[i0] * (1 - frac) + mono[i1] * frac).toInt().toShort()
+        }
+        Log.i(TAG, "прямой тест: передискретизация $rate -> 16000 Гц, каналов $channels")
+        return out
+    }
+
+    /** Проверка микрофона без распознавания: пишем N секунд и возвращаем уровень сигнала. */
+    fun micCheck(seconds: Int, onDone: TextSink) {
+        Thread {
+            val result = try {
+                if (!startCapture()) {
+                    "нет записи"
+                } else {
+                    Thread.sleep(seconds.coerceIn(1, 10) * 1000L)
+                    val pcm = recorder?.stop() ?: ShortArray(0)
+                    recorder = null
+                    "${pcm.size} сэмплов (${pcm.size / 16000.0} с), ${pcmLevel(pcm)}"
+                }
+            } catch (t: Throwable) {
+                (t.javaClass.simpleName + ": " + (t.message ?: "?")).take(80)
+            }
+            Log.i(TAG, "проверка микрофона: $result")
+            onDone.onText(result)
         }.start()
     }
 
