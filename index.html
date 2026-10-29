@@ -1321,6 +1321,12 @@
                         <div class="slider-card">
                             <div class="slider-label" id="modelInfoText">GigaAM v3</div>
                             <div style="font-size:0.8rem;color:var(--text-secondary);opacity:0.8;margin-top:4px;" id="modelStatusText">проверяю…</div>
+                            <div id="modelProgressWrap" style="display:none;flex-direction:column;gap:6px;margin-top:10px;">
+                                <div style="height:8px;border-radius:6px;background:rgba(255,255,255,0.08);overflow:hidden;">
+                                    <div id="modelProgressBar" style="height:100%;width:0%;border-radius:6px;background:linear-gradient(90deg,#007aff,#34c759);transition:width 0.25s ease;"></div>
+                                </div>
+                                <div id="modelProgressText" style="font-size:0.75rem;color:var(--text-secondary);opacity:0.8;text-align:center;">0%</div>
+                            </div>
                         </div>
                         <button class="backup-btn import" id="modelRedownloadBtn" style="width:100%;">
                             ♻️ Перекачать модель (214 МБ)
@@ -3131,10 +3137,16 @@
         if (st.downloading) {
             if (statusEl) statusEl.textContent = 'идёт загрузка…';
             if (valEl) valEl.textContent = 'загружается';
-        } else if (st.installed) {
+            const wrapOn = document.getElementById('modelProgressWrap');
+            if (wrapOn) wrapOn.style.display = 'flex';
+        } else {
+            const wrapOff = document.getElementById('modelProgressWrap');
+            if (wrapOff) wrapOff.style.display = 'none';
+        }
+        if (st.installed && !st.downloading) {
             if (statusEl) statusEl.textContent = 'модель на месте (' + st.modelMb + ' МБ), распознавание офлайн';
             if (valEl) valEl.textContent = st.modelMb + ' МБ · офлайн';
-        } else {
+        } else if (!st.downloading) {
             if (statusEl) statusEl.textContent = 'модели нет — пока распознаёт система (Google)';
             if (valEl) valEl.textContent = 'не установлена';
         }
@@ -3147,8 +3159,19 @@
         api.onDownload = function (p) {
             if (typeof orig === 'function') { try { orig(p); } catch (_) {} }
             const statusEl = document.getElementById('modelStatusText');
-            if (p >= 0) { if (statusEl) statusEl.textContent = 'загрузка модели: ' + p + '%'; }
-            else setTimeout(updateModelUI, 500);
+            const wrap = document.getElementById('modelProgressWrap');
+            const bar = document.getElementById('modelProgressBar');
+            const txt = document.getElementById('modelProgressText');
+            if (p >= 0) {
+                if (wrap) wrap.style.display = 'flex';
+                if (bar) bar.style.width = p + '%';
+                if (txt) txt.textContent = p + '% · ' + (p * 2.249).toFixed(0) + ' МБ из 214';
+                if (statusEl) statusEl.textContent = 'загрузка модели: ' + p + '%';
+            } else {
+                if (wrap) wrap.style.display = 'none';
+                if (bar) bar.style.width = '0%';
+                setTimeout(updateModelUI, 500);
+            }
         };
         api.__progressWrapped = true;
     }

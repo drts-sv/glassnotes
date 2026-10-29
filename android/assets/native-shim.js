@@ -45,7 +45,17 @@
   var hasNativeSpeech = !!(window.NativeSpeech && window.NativeSpeech.isAvailable && window.NativeSpeech.isAvailable());
   var alreadyHas = (typeof window.SpeechRecognition !== 'undefined') || (typeof window.webkitSpeechRecognition !== 'undefined');
 
-  if (!alreadyHas && hasNativeSpeech) {
+  /* В свежих WebView появилось собственное распознавание речи («[native code]»), но оно
+   * не офлайновое и не русское. Если модель GigaAM на месте, наш мост строго лучше —
+   * в этом случае нативное API перекрываем намеренно. */
+  var gigaInstalled = false;
+  try {
+    gigaInstalled = !!(window.NativeSpeech && window.NativeSpeech.gigaStatus &&
+      JSON.parse(window.NativeSpeech.gigaStatus()).installed);
+  } catch (e) { gigaInstalled = false; }
+  window.__engineSource = gigaInstalled ? 'giga' : (alreadyHas ? 'webview' : (hasNativeSpeech ? 'android.speech' : 'none'));
+
+  if ((!alreadyHas || gigaInstalled) && hasNativeSpeech) {
     var registry = {};
     var seq = 0;
 
@@ -117,18 +127,33 @@
         delete registry[id];
       },
       onDownload: function (percent) {
-        // прогресс докачки модели GigaAM: -1 готово, -2 ошибка
+        // прогресс докачки модели GigaAM: -1 готово, -2 ошибка.
+        // Тост — только на шагах по 10%, иначе он перекрывает сам себя на каждом проценте.
         try {
           if (typeof showToast !== 'function') return;
-          if (percent >= 0) showToast('📥 Модель GigaAM: ' + percent + '%', 1200);
-          else if (percent === -1) showToast('✅ Модель GigaAM готова', 2500);
-          else showToast('❌ Модель GigaAM не скачалась', 2500);
+          if (percent >= 0) {
+            var step = Math.floor(percent / 10) * 10;
+            if (step !== window.__dlLastStep) {
+              window.__dlLastStep = step;
+              showToast('📥 Модель GigaAM: ' + percent + '%', 1200);
+            }
+          } else {
+            window.__dlLastStep = -1;
+            showToast(percent === -1 ? '✅ Модель GigaAM готова' : '❌ Модель GigaAM не скачалась', 2500);
+          }
         } catch (e) {}
       }
     };
 
-    window.SpeechRecognition = SR;
-    window.webkitSpeechRecognition = SR;
+    function expose(name, value) {
+      try {
+        Object.defineProperty(window, name, { value: value, configurable: true, writable: true });
+      } catch (e) {
+        try { window[name] = value; } catch (e2) {}
+      }
+    }
+    expose('SpeechRecognition', SR);
+    expose('webkitSpeechRecognition', SR);
     console.log('[native-shim] распознавание речи подключено через android.speech');
   }
 

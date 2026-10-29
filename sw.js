@@ -1,8 +1,11 @@
 /* Glass Notes — service worker
-   Задачи: офлайн-оболочка (cache-first для статики, navigation fallback на index.html)
-   и показ системных уведомлений через showNotification (на Android Chrome
-   конструктор new Notification недоступен). */
+   Задачи: офлайн-оболочка (network-first, кэш как запас) и показ системных уведомлений
+   через showNotification (на Android Chrome конструктор new Notification недоступен).
+   Стратегия именно network-first: ассеты раздаёт локальный сервер внутри APK, сеть всегда
+   свежая, а cache-first маскировал обновления (см. историю с native-shim.js). */
 
+// Версию подставляет сборка (как APP_VERSION/BUILD_DATE): без смены имени кэша
+// обновлённый APK отдаёт старые ассеты — так уже терялся свежий шим речи.
 const VERSION = 'glass-notes-v2';
 const SHELL = [
   './',
@@ -51,18 +54,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Статика: сначала кэш, добор в кэш при промахе.
+  // Статика: сначала сеть, кэш — только если сети нет.
   event.respondWith(
-    caches.match(req).then((hit) => {
-      if (hit) return hit;
-      return fetch(req).then((res) => {
+    fetch(req)
+      .then((res) => {
         if (res && res.status === 200 && res.type === 'basic') {
           const copy = res.clone();
           caches.open(VERSION).then((c) => c.put(req, copy)).catch(() => {});
         }
         return res;
-      });
-    })
+      })
+      .catch(() => caches.match(req))
   );
 });
 

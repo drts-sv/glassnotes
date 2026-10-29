@@ -89,7 +89,13 @@ def sync_assets():
             print("нет файла приложения: %s" % src)
             sys.exit(1)
         dst = os.path.join(assets, name)
-        if name == "index.html":
+        if name == "sw.js":
+            # имя кэша зависит от версии: иначе обновлённый APK живёт со старым кэшем
+            text = io.open(src, encoding="utf-8").read()
+            text = re.sub(r"const VERSION = '[^']*';",
+                          "const VERSION = 'glass-notes-%s';" % manifest_version(), text, count=1)
+            io.open(dst, "w", encoding="utf-8", newline="").write(text)
+        elif name == "index.html":
             # версию и дату сборки вписывает сама сборка: руками они разъезжаются
             text = io.open(src, encoding="utf-8").read()
             text = re.sub(r"const APP_VERSION = '[^']*';",
