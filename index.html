@@ -1402,99 +1402,219 @@
 
     let currentCategoryFilter = null;
 
+    // === NLU START ===
     function parseTimeStr(str) { const [h,m] = str.split(':').map(Number); return { hours: h, minutes: m }; }
-    function getCategoryById(id) { return DEFAULT_CATEGORIES.find(c => c.id === id) || null; }
-    function isImportant(catIds) { if (!catIds || !catIds.length) return false; return catIds.some(id => id === 'important'); }
 
-    function hexToRgba(hex, alpha) {
-        const h = hex.replace('#','');
-        const r = parseInt(h.substring(0,2),16);
-        const g = parseInt(h.substring(2,4),16);
-        const b = parseInt(h.substring(4,6),16);
-        return `rgba(${r},${g},${b},${alpha})`;
+    // «напомни …», «запиши …», «создай заметку …» — это команда, а не текст заметки
+    function stripCommandWords(text) {
+        return text.replace(/^\s*(?:напомни(?:ть)?|напоминание|запиши|записать|создай|добавь|заметка|отметь)\b[\s:,.-]*/i, '').trim();
     }
 
-    // === NLU ===
+    // вырезаем найденный кусок из рабочей строки и схлопываем пробелы
+    function cutOut(working, start, length) {
+        return (working.slice(0, start) + ' ' + working.slice(start + length)).replace(/\s+/g, ' ').trim();
+    }
+
+    // «через 30 минут», «через пол часа», «через полчаса», «через час», «через полтора часа»
+    const RELATIVE_UNITS = [
+        [/(\d+(?:[.,]\d+)?)\s*(?:мин(?:ут\w*)?|мин)\b/, 60 * 1000],
+        [/(\d+(?:[.,]\d+)?)\s*час\w*\b/, 60 * 60 * 1000],
+        [/(\d+)\s*(?:дн\w*|день|сут\w*)\b/, 24 * 60 * 60 * 1000],
+        [/(\d+)\s*недел\w*\b/, 7 * 24 * 60 * 60 * 1000],
+        [/(?:пол|половину)\s*час\w*\b/, 30 * 60 * 1000],
+        [/полчаса\b/, 30 * 60 * 1000],
+        [/полтора\s*час\w*\b/, 90 * 60 * 1000],
+        [/час\b/, 60 * 60 * 1000],
+        [/минуту\b/, 60 * 1000],
+    ];
+
+    function parseRelativeTime(lower) {
+        if (lower.indexOf('через') < 0) return null;
+        for (const [re, ms] of RELATIVE_UNITS) {
+            const m = lower.match(new RegExp('через' + BS + 's+' + re.source));
+            if (m) return { ms, matched: m[0] };
+        }
+        return null;
+    }
+
+    const BS = String.fromCharCode(92);   // бэкслеш для сборки регексов из строк
+
+    // словесные часы: «в десять», «в полдень» — так нередко выдаёт распознавание речи
+    const WORD_HOURS = { 'один':1,'одну':1,'два':2,'две':2,'три':3,'четыре':4,'пять':5,'шесть':6,'семь':7,
+                         'восемь':8,'девять':9,'десять':10,'одиннадцать':11,'двенадцать':12,
+                         'полдень':12,'полночь':0 };
+
+    // уточнение после часа: «10 утра», «10 вечера», «2 ночи», «3 дня»
+    function applyDayPart(hour, word) {
+        if (/ноч/.test(word)) return (hour >= 5 && hour < 12) ? hour + 12 : hour;
+        if (/вечер/.test(word)) return hour < 12 ? hour + 12 : hour;
+        if (/дн|обед/.test(word)) return hour < 12 ? hour + 12 : hour;
+        return hour;
+    }
+
     function parseDateNLU(text, voiceCatEnabled) {
-        const lower = text.toLowerCase().trim();
+        let working = stripCommandWords(text);
+        let lower = working.toLowerCase();
         const now = new Date();
-        let result = null;
-        let cleanText = text;
-        let categoryId = null;
+        let result = null, timeResult = null, categoryId = null, relativeApplied = false;
 
         if (voiceCatEnabled) {
-            const catMatch = text.match(/\s*категория\s+([а-яёa-z]+)\s*[.!?]?\s*$/i);
+            const catMatch = working.match(/\s*категория\s+([а-яёa-z]+)\s*[.!?]?\s*$/i);
             if (catMatch) {
                 const word = catMatch[1].toLowerCase();
                 const found = DEFAULT_CATEGORIES.find(c => c.name.toLowerCase() === word || c.id === word);
                 if (found) {
                     categoryId = found.id;
-                    cleanText = text.replace(catMatch[0], '').trim();
+                    working = working.slice(0, catMatch.index).trim();
+                    lower = working.toLowerCase();
                 }
             }
         }
 
-        const datePatterns = [
-            { re: /(\d{1,2})\s*(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s*(\d{4}|\d{2})/i,
-              parse: (m) => { const d = parseInt(m[1]); const mm = {'января':0,'февраля':1,'марта':2,'апреля':3,'мая':4,'июня':5,'июля':6,'августа':7,'сентября':8,'октября':9,'ноября':10,'декабря':11}; const mo = mm[m[2].toLowerCase()]; let y = parseInt(m[3]); if (y<100) y+=2000; return new Date(y,mo,d); } },
-            { re: /(\d{1,2})[\/\.](\d{1,2})[\/\.](\d{4}|\d{2})/, parse: (m) => { let d=parseInt(m[1]),mo=parseInt(m[2])-1,y=parseInt(m[3]); if(y<100)y+=2000; return new Date(y,mo,d); } },
-            { re: /(\d{4})[-.](\d{1,2})[-.](\d{1,2})/, parse: (m) => new Date(parseInt(m[1]),parseInt(m[2])-1,parseInt(m[3])) }
-        ];
-        for (const p of datePatterns) {
-            const match = cleanText.match(p.re);
-            if (match) { try { const date = p.parse(match); if (!isNaN(date.getTime())) { result = date; cleanText = cleanText.replace(match[0],'').trim(); break; } } catch(_) {} }
+        // 1. Относительное время: оно точное, дефолтные часы к нему не применяем.
+        const rel = parseRelativeTime(lower);
+        if (rel) {
+            result = new Date(now.getTime() + rel.ms);
+            relativeApplied = true;
+            working = cutOut(working, lower.indexOf(rel.matched), rel.matched.length);
+            lower = working.toLowerCase();
         }
+
+        // 2. Абсолютная дата.
         if (!result) {
-            const tm = lower.match(/через\s*(\d+)\s*(мин(?:ут(?:ы|)?)?|час(?:ов|а)?|дн(?:я|ей|ь)?|недел(?:ю|и|ь)?)/);
-            if (tm) { const num = parseInt(tm[1]), u = tm[2], d = new Date(now);
-                if (u.startsWith('мин')) d.setMinutes(d.getMinutes()+num);
-                else if (u.startsWith('час')) d.setHours(d.getHours()+num);
-                else if (u.startsWith('дн')) d.setDate(d.getDate()+num);
-                else if (u.startsWith('недел')) d.setDate(d.getDate()+num*7);
-                result = d; cleanText = cleanText.replace(tm[0],'').trim();
+            const datePatterns = [
+                { re: /(\d{1,2})\s*(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s*(\d{4}|\d{2})?/i,
+                  parse: (m) => { const d = parseInt(m[1]); const mm = {'января':0,'февраля':1,'марта':2,'апреля':3,'мая':4,'июня':5,'июля':6,'августа':7,'сентября':8,'октября':9,'ноября':10,'декабря':11}; const mo = mm[m[2].toLowerCase()]; let y = m[3] ? parseInt(m[3]) : now.getFullYear(); if (y < 100) y += 2000; return new Date(y, mo, d); } },
+                { re: /(\d{1,2})[\/\.](\d{1,2})[\/\.](\d{4}|\d{2})/, parse: (m) => { let d=parseInt(m[1]),mo=parseInt(m[2])-1,y=parseInt(m[3]); if(y<100)y+=2000; return new Date(y,mo,d); } },
+                { re: /(\d{4})[-.](\d{1,2})[-.](\d{1,2})/, parse: (m) => new Date(parseInt(m[1]),parseInt(m[2])-1,parseInt(m[3])) }
+            ];
+            for (const p of datePatterns) {
+                const match = lower.match(p.re);
+                if (match) {
+                    try {
+                        const date = p.parse(match);
+                        if (!isNaN(date.getTime())) {
+                            result = date;
+                            working = cutOut(working, match.index, match[0].length);
+                            lower = working.toLowerCase();
+                            break;
+                        }
+                    } catch (_) {}
+                }
             }
         }
         if (!result) {
-            if (lower.includes('послезавтра')) { const d = new Date(now); d.setDate(d.getDate()+2); result = d; cleanText = cleanText.replace(/послезавтра/g,'').trim(); }
-            else if (lower.includes('завтра')) { const d = new Date(now); d.setDate(d.getDate()+1); result = d; cleanText = cleanText.replace(/завтра/g,'').trim(); }
-            else if (lower.includes('сегодня')) { result = new Date(now); cleanText = cleanText.replace(/сегодня/g,'').trim(); }
+            if (lower.includes('послезавтра')) { const d = new Date(now); d.setDate(d.getDate()+2); result = d; working = cutOut(working, lower.indexOf('послезавтра'), 11); }
+            else if (lower.includes('завтра')) { const d = new Date(now); d.setDate(d.getDate()+1); result = d; working = cutOut(working, lower.indexOf('завтра'), 6); }
+            else if (lower.includes('сегодня')) { result = new Date(now); working = cutOut(working, lower.indexOf('сегодня'), 7); }
+            lower = working.toLowerCase();
         }
         if (!result) {
             const wd = ['понедельник','вторник','среда','четверг','пятница','суббота','воскресенье'];
             const wg = ['понедельник','вторник','среду','четверг','пятницу','субботу','воскресенье'];
             for (let i = 0; i < wd.length; i++) {
-                const re = new RegExp(`(?:в\\s*)?(следующую\\s*)?(${wd[i]}|${wg[i]})`, 'i');
-                const match = cleanText.match(re);
-                if (match) { const td = i+1; let cd = now.getDay(); if (cd===0) cd=7; let diff = td-cd; if (diff<0) diff+=7; if (diff===0) diff=7; if (match[1]) diff+=7; const d = new Date(now); d.setDate(d.getDate()+diff); result = d; cleanText = cleanText.replace(match[0],'').trim(); break; }
+                const re = new RegExp('(?:во?' + BS + 's*)?(следующую' + BS + 's*)?(' + wd[i] + '|' + wg[i] + ')', 'i');
+                const match = lower.match(re);
+                if (match) {
+                    const td = i+1; let cd = now.getDay(); if (cd === 0) cd = 7;
+                    let diff = td - cd; if (diff < 0) diff += 7; if (diff === 0) diff = 7;
+                    if (match[1]) diff += 7;
+                    const d = new Date(now); d.setDate(d.getDate()+diff); result = d;
+                    working = cutOut(working, match.index, match[0].length);
+                    break;
+                }
             }
+            lower = working.toLowerCase();
         }
-        let timeResult = null;
-        let timeCleanText = cleanText;
-        let timeMatch = cleanText.match(/(?:в\s*)?(\d{1,2})\s*[:.]\s*(\d{2})/);
-        if (timeMatch) { const h = parseInt(timeMatch[1]), m = parseInt(timeMatch[2]); if (h>=0&&h<24&&m>=0&&m<60) { timeResult = {hours:h,minutes:m}; timeCleanText = cleanText.replace(timeMatch[0],'').trim(); } }
-        else { timeMatch = cleanText.match(/(?:в\s*)?(\d{1,2})\s*час(?:ов|а)?(?:\s*(\d{1,2})\s*минут(?:ы|)?)?/);
-            if (timeMatch) { let h = parseInt(timeMatch[1]), m = timeMatch[2]?parseInt(timeMatch[2]):0; if (h>=1&&h<=23&&m>=0&&m<60) { timeResult = {hours:h,minutes:m}; timeCleanText = cleanText.replace(timeMatch[0],'').trim(); } } }
-        if (!timeResult) {
-            const periods = [
-                { re: /(?:^|\s)(утром|с утра|утра)(?:\s|$)/, key: 'morning' },
-                { re: /(?:^|\s)(до обеда|перед обедом)(?:\s|$)/, key: 'beforeNoon' },
-                { re: /(?:^|\s)(в обед|днём|днем|обед)(?:\s|$)/, key: 'noon' },
-                { re: /(?:^|\s)(после обеда|послеобеденное)(?:\s|$)/, key: 'afterNoon' },
-                { re: /(?:^|\s)(вечером|под вечер|вечера)(?:\s|$)/, key: 'evening' },
-                { re: /(?:^|\s)(ночью|ночи)(?:\s|$)/, key: 'night' }
-            ];
-            for (const p of periods) {
-                const match = lower.match(p.re);
-                if (match) { timeResult = parseTimeStr(timeDefaults[p.key]); timeCleanText = cleanText.replace(new RegExp(match[0],'i'),' ').replace(/\s+/g,' ').trim(); cleanText = timeCleanText; break; }
-            }
-        }
-        if (timeResult && result) { result.setHours(timeResult.hours, timeResult.minutes, 0, 0); cleanText = timeCleanText; }
-        else if (timeResult && !result) { const d = new Date(now); d.setHours(timeResult.hours, timeResult.minutes, 0, 0); if (d <= now) d.setDate(d.getDate()+1); result = d; cleanText = timeCleanText; }
-        if (result && !timeResult) { const isToday = result.toDateString() === now.toDateString(); const def = isToday ? parseTimeStr(timeDefaults.today) : parseTimeStr(timeDefaults.tomorrow); result.setHours(def.hours, def.minutes, 0, 0); }
-        if (timeResult && result) { const d = new Date(result); if (d <= now && d.toDateString() === now.toDateString()) { d.setDate(d.getDate()+1); result = d; } }
 
+        // 3. Время внутри суток (для относительного уже посчитано).
+        if (!relativeApplied) {
+            // 3.1 «14:30», «в 14.30»
+            let m = lower.match(/(?:в\s*)?(\d{1,2})\s*[:.]\s*(\d{2})(?!\d)/);
+            if (m) {
+                const h = parseInt(m[1]), mi = parseInt(m[2]);
+                if (h >= 0 && h < 24 && mi >= 0 && mi < 60) {
+                    timeResult = { hours: h, minutes: mi };
+                    working = cutOut(working, m.index, m[0].length);
+                    lower = working.toLowerCase();
+                }
+            }
+            // 3.2 «в 10 часов», «в 10 часов 30 минут»
+            if (!timeResult) {
+                m = lower.match(/(?:в\s*)?(\d{1,2})\s*час(?:ов|а)?(?:\s*(\d{1,2})\s*минут(?:ы)?)?/);
+                if (m) {
+                    const h = parseInt(m[1]), mi = m[2] ? parseInt(m[2]) : 0;
+                    if (h >= 0 && h <= 23 && mi >= 0 && mi < 60) {
+                        timeResult = { hours: h, minutes: mi };
+                        working = cutOut(working, m.index, m[0].length);
+                        lower = working.toLowerCase();
+                    }
+                }
+            }
+            // 3.3 голый час: «в 10», «к 10», «в десять», «в 10 утра/дня/вечера/ночи»
+            if (!timeResult) {
+                m = lower.match(/\b(?:в|к)\s+(\d{1,2}|полдень|полночь|один|одну|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать)(?!\d)(?!\s*(?:минут|рубл|штук|процент|раз|кг|грамм|человек|лет|года|месяц|организац))/);
+                if (m && (/^\d+$/.test(m[1]) || WORD_HOURS[m[1]] !== undefined)) {
+                    let h = /^\d+$/.test(m[1]) ? parseInt(m[1]) : WORD_HOURS[m[1]];
+                    const after = lower.slice(m.index + m[0].length);
+                    const mod = after.match(/^\s*(утр\w*|дн\w*|обед\w*|вечер\w*|ноч\w*)/);
+                    if (mod) {
+                        h = applyDayPart(h, mod[1]);
+                        working = cutOut(working, m.index, m[0].length + mod[0].length);
+                    } else {
+                        working = cutOut(working, m.index, m[0].length);
+                    }
+                    if (h >= 0 && h <= 23) timeResult = { hours: h, minutes: 0 };
+                    lower = working.toLowerCase();
+                }
+            }
+            // 3.4 периоды без часа
+            if (!timeResult) {
+                const periods = [
+                    { re: /(?:^|\s)(утром|с утра|утра)(?=\s|$)/, key: 'morning' },
+                    { re: /(?:^|\s)(до обеда|перед обедом)(?=\s|$)/, key: 'beforeNoon' },
+                    { re: /(?:^|\s)(в обед|днём|днем|обед)(?=\s|$)/, key: 'noon' },
+                    { re: /(?:^|\s)(после обеда|послеобеденное)(?=\s|$)/, key: 'afterNoon' },
+                    { re: /(?:^|\s)(вечером|под вечер|вечера)(?=\s|$)/, key: 'evening' },
+                    { re: /(?:^|\s)(ночью|ночи)(?=\s|$)/, key: 'night' }
+                ];
+                for (const p of periods) {
+                    const match = lower.match(p.re);
+                    if (match) {
+                        timeResult = parseTimeStr(timeDefaults[p.key]);
+                        working = cutOut(working, match.index, match[0].length);
+                        lower = working.toLowerCase();
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 4. Собираем результат.
+        if (result && timeResult) {
+            result.setHours(timeResult.hours, timeResult.minutes, 0, 0);
+        } else if (timeResult && !result) {
+            const d = new Date(now);
+            d.setHours(timeResult.hours, timeResult.minutes, 0, 0);
+            if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1);
+            result = d;
+        } else if (result && !timeResult && !relativeApplied) {
+            const isToday = result.toDateString() === now.toDateString();
+            const def = parseTimeStr(isToday ? timeDefaults.today : timeDefaults.tomorrow);
+            result.setHours(def.hours, def.minutes, 0, 0);
+        }
+        // «названо только время, и оно уже прошло» → переносим на завтра
+        if (result && timeResult && result.getTime() <= now.getTime() && result.toDateString() === now.toDateString()) {
+            const d = new Date(result);
+            d.setDate(d.getDate() + 1);
+            result = d;
+        }
+
+        let cleanText = working.replace(/\s+/g, ' ').trim();
+        if (!cleanText && result) cleanText = 'Напоминание';
         return { parsed: result, cleanText, categoryId };
     }
+    // === NLU END ===
 
     // === INDEXEDDB ===
     const DB_NAME = 'glass_notes_db', STORE_NAME = 'notes', DB_VERSION = 4;
