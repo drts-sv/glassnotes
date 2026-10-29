@@ -1092,7 +1092,7 @@
     </div>
 
     <div class="footer" id="footer">
-        голосовые напоминания · <span id="appVersionFooter">v5.10.5</span>
+        голосовые напоминания · <span id="appVersionFooter">v5.10.6</span>
     </div>
 </div>
 
@@ -1428,7 +1428,7 @@
         </div>
         <div class="modal-content">
             <div class="info-row"><span class="info-label">📱 Приложение</span><span class="info-value">Glass Notes</span></div>
-            <div class="info-row"><span class="info-label">🏷️ Версия</span><span class="info-value" id="appVersion">5.10.5</span></div>
+            <div class="info-row"><span class="info-label">🏷️ Версия</span><span class="info-value" id="appVersion">5.10.6</span></div>
             <div class="info-row"><span class="info-label">📅 Сборка</span><span class="info-value">25.09.2026</span></div>
             <div class="info-row"><span class="info-label">💾 Хранилище</span><span class="info-value">IndexedDB</span></div>
             <div class="info-row"><span class="info-label">👆 Свайп</span><span class="info-value" style="color:#34c759;">вправо ✅ / влево 🗑️</span></div>
@@ -1441,10 +1441,12 @@
 </div>
 
 <script>
-    const APP_VERSION = '5.10.5';
+    const APP_VERSION = '5.10.6';
     const COLORS = ['color-1','color-2','color-3','color-4','color-5','color-6','color-7','color-8','color-9','color-10','color-11','color-12'];
     const DEFAULT_TIME_SETTINGS = { morning:'09:00', beforeNoon:'11:00', noon:'13:00', afterNoon:'15:00', evening:'18:00', night:'21:00', today:'12:00', tomorrow:'09:00' };
-    const FAB_POSITION = { x: 50, y: 75 };
+    // 75% было слишком низко: до кнопки отмены не дотянуться одной рукой.
+    // 60% — зона большого пальца на высоком экране (Pixel: 411x923 CSS px).
+    const FAB_POSITION = { x: 50, y: 60 };
     const FILTER_LABELS = {
         all: 'Все', today: 'Сегодня', tomorrow: 'Завтра',
         with_date: 'С датой', no_date: 'Без даты', past: 'Просрочено'
