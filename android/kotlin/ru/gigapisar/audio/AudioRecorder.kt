@@ -47,6 +47,14 @@ class AudioRecorder(
      */
     @Volatile
     var level: Float = 0f
+
+    /**
+     * Абсолютная громкость последнего куска PCM (rms, 0..32767). `level` адаптивный:
+     * в тихой комнате он показывает 0.98-1.00 при rms около 150, поэтому конец фразы
+     * искать по нему нельзя. Добавлено в нашем форке (см. android/THIRD-PARTY.md).
+     */
+    @Volatile
+    var rms: Int = 0
         private set
 
     fun start(): Boolean {
@@ -168,6 +176,7 @@ class AudioRecorder(
                             )
                         }
                         level = meter.levelOf(buffer, count)
+                        rms = rmsOf(buffer, count)
                     }
 
                     count == AudioRecord.ERROR_DEAD_OBJECT -> {
@@ -186,7 +195,29 @@ class AudioRecorder(
         } finally {
             recording = false
             level = 0f
+            rms = 0
         }
+    }
+
+    /** rms одного куска little-endian 16-bit PCM. */
+    private fun rmsOf(
+        bytes: ByteArray,
+        count: Int,
+    ): Int {
+        val samples = count / 2
+        if (samples == 0) return 0
+        var sum = 0.0
+        var i = 0
+        while (i < samples) {
+            val sample =
+                (
+                    (bytes[i * 2].toInt() and 0xFF) or
+                        (bytes[i * 2 + 1].toInt() shl 8)
+                ).toShort().toInt()
+            sum += sample.toDouble() * sample
+            i++
+        }
+        return kotlin.math.sqrt(sum / samples).toInt()
     }
 
     fun stop(): ShortArray {

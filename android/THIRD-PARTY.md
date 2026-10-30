@@ -14,8 +14,9 @@
 - Файлы в `android/kotlin/ru/gigapisar/`: `speech/GigaAmOnnxRecognizer.kt`,
   `audio/AudioRecorder.kt`, `audio/AudioChunker.kt`, `audio/LevelMeter.kt`,
   `model/ModelConfig.kt`, `model/ModelManager.kt`
-- Изменения относительно оригинала: версия 1.0-giga, используются как есть;
-  доступ к модели и распознавание вызываются из нашего `SpeechEngine`.
+- Изменения относительно оригинала: пакеты и логика сохранены; в `AudioRecorder.kt` добавлено
+  публичное поле `rms` (абсолютная громкость куска PCM) — по адаптивному `level` нельзя отличить
+  тишину от речи. Доступ к модели и распознавание вызываются из нашего `SpeechEngine`.
 
 ## ONNX Runtime
 

@@ -47,6 +47,14 @@ public class SpeechBridge {
         this.engine = new SpeechEngine(activity.getApplicationContext());
     }
 
+    /** Проверка: произнести фразу в динамик (без записи). Результат в window.__speakResult. */
+    @JavascriptInterface
+    public boolean speakOnly(String phrase) {
+        jsRaw("window.__speakResult=null");
+        engine.speakOnly(phrase, done -> jsRaw("window.__speakResult=" + q(done.toString())));
+        return true;
+    }
+
     /** Прогреть распознаватель, чтобы первая фраза не ждала 15 секунд. */
     public void warmUp() {
         engine.warmUp();

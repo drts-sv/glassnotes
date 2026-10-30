@@ -447,7 +447,7 @@
 
         .cancel-fab {
             position: fixed; width: 130px; height: 130px;
-            border-radius: 50%; z-index: 100;
+            border-radius: 50%; z-index: 510;   /* выше сплэша события: запись должна останавливаться всегда */
             opacity: 0; pointer-events: none;
             transition: opacity 0.3s ease;
             transform: translate(-50%, -50%);
@@ -519,10 +519,13 @@
         }
 
         .voice-fab {
-            position: absolute;
-            bottom: calc(var(--voice-fab-bottom) + env(safe-area-inset-bottom, 0px));
+            /* fixed, а не absolute: кнопка лежит вне .glass-app, у которого backdrop-filter
+               создаёт свой контекст наложения — внутри контейнера z-index не помогал,
+               и сплэш события (420) перекрывал кнопку микрофона */
+            position: fixed;
+            z-index: 500;
+            bottom: calc(var(--voice-fab-bottom) + env(safe-area-inset-bottom, 0px) + var(--inset-bottom, 0px));
             right: calc(var(--voice-fab-right) + env(safe-area-inset-right, 0px));
-            z-index: 50;
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             opacity: 1; transform: scale(1); pointer-events: auto;
             padding: 6px; margin: -6px;
@@ -1085,16 +1088,18 @@
         </div>
     </div>
 
-    <div class="voice-fab compact" id="voiceFab">
-        <button class="fab-btn" id="voiceBtn" aria-label="Голосовой ввод">
-            <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
-        </button>
-    </div>
+
 
     <div class="footer" id="footer">
         голосовые напоминания · <span id="appVersionFooter">v1.1-giga</span>
     </div>
 </div>
+
+    <div class="voice-fab compact" id="voiceFab">
+        <button class="fab-btn" id="voiceBtn" aria-label="Голосовой ввод">
+            <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+        </button>
+    </div>
 
 <div class="undo-overlay" id="undoOverlay"></div>
 <div class="voice-overlay" id="voiceOverlay"></div>
@@ -2613,6 +2618,14 @@
     let sheetNoteId = null;
     let sheetNoteDone = false;
 
+    let noteSheetTimer = null;
+
+    /** Сплэш события закрываем сами: пока он открыт, он перекрывает кнопки записи. */
+    function armNoteSheetTimer() {
+        clearTimeout(noteSheetTimer);
+        noteSheetTimer = setTimeout(() => closeNoteSheet(), 8000);
+    }
+
     function openNoteSheet(id) {
         const note = todos.find(t => t.id === id);
         if (!note) return;
@@ -2635,10 +2648,12 @@
             .join('');
         document.getElementById('noteSheetEditBtn').textContent = sheetNoteDone ? 'Вернуть' : 'Изменить';
         document.getElementById('noteSheet').classList.add('visible');
+        armNoteSheetTimer();
         vibrate(15);
     }
 
     function closeNoteSheet() {
+        clearTimeout(noteSheetTimer);
         document.getElementById('noteSheet').classList.remove('visible');
         sheetNoteId = null;
     }
@@ -2861,6 +2876,8 @@
         };
         voiceBtn.addEventListener('click', (e) => {
             e.stopPropagation();
+            // сплэш события не должен мешать начать новую запись
+            try { if (typeof closeNoteSheet === 'function') closeNoteSheet(); } catch (_) {}
             if (!recognition) return;
             if (isProcessingVoice && !isListening) { showToast('⏳ Подождите...', 1000); return; }
             try {

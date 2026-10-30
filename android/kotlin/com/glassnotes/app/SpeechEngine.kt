@@ -124,8 +124,12 @@ class SpeechEngine(context: Context) {
      * Прогрев: сессия ONNX создаётся лениво, при первом распознавании, и это стоит 10-15 секунд.
      * Создаём её заранее и прогоняем секунду тишины — тогда первая же фраза распознаётся за ~2 с.
      */
+    @Volatile
+    private var warmingUp = false
+
     fun warmUp() {
-        if (recognizer != null || !modelManager.isInstalled()) return
+        if (recognizer != null || warmingUp || !modelManager.isInstalled()) return
+        warmingUp = true
         Thread {
             try {
                 val started = System.currentTimeMillis()
@@ -135,6 +139,8 @@ class SpeechEngine(context: Context) {
                 Log.i(TAG, "прогрев модели: " + (System.currentTimeMillis() - started) + " мс")
             } catch (t: Throwable) {
                 Log.w(TAG, "прогрев не удался: $t")
+            } finally {
+                warmingUp = false
             }
         }.apply { isDaemon = true }.start()
     }
@@ -289,31 +295,32 @@ class SpeechEngine(context: Context) {
     }
 
     /**
-     * Следит за уровнем записи: нашли речь -> ждём тишину -> останавливаем сами.
-     * Порог и выдержка подобраны под адаптивный LevelMeter из ядра (он отдаёт 0..1).
+     * Следит за абсолютной громкостью записи: нашли речь -> ждём тишину -> останавливаем сами.
+     * Работаем по rms (не путать с адаптивным `level`: тот в тихой комнате равен единице).
      */
     private fun startSilenceWatcher(rec: AudioRecorder) {
         val thread = Thread {
             val startedAt = System.currentTimeMillis()
             var lastSpeechAt = 0L
-            var peak = 0f
+            var peak = 0
             var lastLogAt = 0L
             while (capturing && recorder === rec) {
                 val now = System.currentTimeMillis()
-                val level = rec.level
-                if (level > peak) peak = level
-                if (level >= SPEECH_LEVEL) lastSpeechAt = now
+                val rms = rec.rms
+                if (rms > peak) peak = rms
+                if (rms >= SPEECH_RMS) lastSpeechAt = now
                 if (now - lastLogAt >= 1000) {
                     lastLogAt = now
-                    Log.i(TAG, "уровень записи: %.2f (пик %.2f)".format(level, peak))
+                    Log.i(TAG, "уровень записи: rms=$rms (пик $peak, адаптивный %.2f)".format(rec.level))
                 }
                 val silentFor = if (lastSpeechAt > 0L) now - lastSpeechAt else 0L
-                if (lastSpeechAt > 0L && silentFor >= SILENCE_MS) {
-                    Log.i(TAG, "авто-стоп: тишина " + silentFor + " мс, пик %.2f".format(peak))
+                val speechMs = if (lastSpeechAt > 0L) lastSpeechAt - startedAt else 0L
+                if (lastSpeechAt > 0L && silentFor >= SILENCE_MS && speechMs >= MIN_SPEECH_MS) {
+                    Log.i(TAG, "авто-стоп: тишина " + silentFor + " мс после " + speechMs + " мс речи, пик rms=$peak")
                     break
                 }
                 if (now - startedAt >= MAX_CAPTURE_MS) {
-                    Log.i(TAG, "авто-стоп: предел " + (MAX_CAPTURE_MS / 1000) + " с, пик %.2f".format(peak))
+                    Log.i(TAG, "авто-стоп: предел " + (MAX_CAPTURE_MS / 1000) + " с, пик rms=$peak")
                     break
                 }
                 try {
@@ -551,6 +558,59 @@ class SpeechEngine(context: Context) {
         }.start()
     }
 
+    /**
+     * Произнести фразу вслух и закончить. Нужно для проверки авто-стопа без человека:
+     * приложение говорит само, микрофон это слышит, запись должна закрыться по тишине.
+     */
+    fun speakOnly(phrase: String, onDone: TextSink) {
+        Thread {
+            var tts: TextToSpeech? = null
+            var player: MediaPlayer? = null
+            try {
+                val wav = java.io.File(appContext.cacheDir, "speak_only.wav")
+                if (wav.exists()) wav.delete()
+                var ready = false
+                tts = TextToSpeech(appContext) { status -> ready = status == TextToSpeech.SUCCESS }
+                tts.language = java.util.Locale("ru", "RU")
+                for (i in 0 until 60) {
+                    if (ready) break
+                    Thread.sleep(100)
+                }
+                tts.synthesizeToFile(phrase, null, wav, "speak_only")
+                var last = -1L
+                for (i in 0 until 100) {
+                    Thread.sleep(100)
+                    val size = wav.length()
+                    if (size > 1000L && size == last) break
+                    last = size
+                }
+                if (wav.length() < 1000L) {
+                    onDone.onText("tts: файл не создан")
+                    return@Thread
+                }
+                val am = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC), 0)
+                player = MediaPlayer()
+                player.setDataSource(wav.absolutePath)
+                player.prepare()
+                player.start()
+                val waitMs = player.duration.coerceAtLeast(800)
+                Thread.sleep(waitMs + 200L)
+                Log.i(TAG, "произнёс фразу: " + waitMs + " мс")
+                onDone.onText("сыграно " + waitMs + " мс")
+            } catch (t: Throwable) {
+                Log.e(TAG, "произнести не удалось", t)
+                onDone.onText("ошибка: " + (t.message ?: "?"))
+            } finally {
+                try {
+                    player?.release()
+                    tts?.shutdown()
+                } catch (ignored: Throwable) {
+                }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
     fun cancelCapture() {
         capturing = false
         try {
@@ -588,8 +648,11 @@ class SpeechEngine(context: Context) {
     companion object {
         private const val TAG = "GlassNotes"
 
-        /** Уровень, с которого считаем, что человек говорит. */
-        private const val SPEECH_LEVEL = 0.22f
+        /** rms, с которого считаем, что человек говорит (тихая комната даёт ~150, речь — тысячи). */
+        private const val SPEECH_RMS = 400
+
+        /** Сколько речи должно накопиться, прежде чем разрешим авто-стоп. */
+        private const val MIN_SPEECH_MS = 500L
 
         /** Сколько тишины после речи = конец фразы. */
         private const val SILENCE_MS = 1200L
