@@ -34,6 +34,16 @@ public class MainActivity extends Activity {
     private AssetServer server;
     private SpeechBridge speechBridge;
 
+    /** Прогрев распознавателя отложенно: не мешает загрузке страницы. */
+    private void warmUpRecognizer() {
+        webView.postDelayed(() -> {
+            try {
+                if (speechBridge != null) speechBridge.warmUp();
+            } catch (Throwable ignored) {
+            }
+        }, 4000);
+    }
+
     /** Первый запуск: тянем модель фоном, если есть Wi-Fi. */
     private void autoDownloadModel() {
         webView.postDelayed(() -> {
@@ -169,6 +179,7 @@ public class MainActivity extends Activity {
         webView.addJavascriptInterface(new SaveBridge(this), "NativeSave");
         speechBridge = new SpeechBridge(this, webView);
         autoDownloadModel();
+        warmUpRecognizer();
         webView.addJavascriptInterface(speechBridge, "NativeSpeech");
 
         setContentView(webView);

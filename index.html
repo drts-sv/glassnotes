@@ -2063,9 +2063,18 @@
         cancelMode = null;
     }
 
+    // Распознавание идёт 2-15 с: без подписи кажется, что кнопка стоп не сработала.
+    function markRecognizing() {
+        try {
+            cancelFabText.style.display = 'flex';
+            cancelFabText.textContent = '⏳ Распознаю…';
+            cancelRecordingRing.style.display = 'none';
+        } catch (_) {}
+    }
+
     cancelBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (cancelMode === 'voice') { if (recognition && isListening) recognition.stop(); }
+        if (cancelMode === 'voice') { if (recognition && isListening) { recognition.stop(); markRecognizing(); } }
         else if (cancelMode === 'undo') { undoLastDelete(); }
     });
 
@@ -2854,7 +2863,10 @@
             e.stopPropagation();
             if (!recognition) return;
             if (isProcessingVoice && !isListening) { showToast('⏳ Подождите...', 1000); return; }
-            try { if (isListening) recognition.stop(); else { isProcessingVoice = true; recognition.start(); } } catch (_) { isProcessingVoice = false; }
+            try {
+                if (isListening) { recognition.stop(); markRecognizing(); }
+                else { isProcessingVoice = true; recognition.start(); }
+            } catch (_) { isProcessingVoice = false; }
         });
     }
 

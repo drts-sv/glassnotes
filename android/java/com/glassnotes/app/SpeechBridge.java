@@ -39,12 +39,17 @@ public class SpeechBridge {
     private SpeechRecognizer recognizer;
     private String currentId;
     private final SpeechEngine engine;
-    private boolean gigaMode = false;
+    private volatile boolean gigaMode = false;
 
     public SpeechBridge(Activity activity, WebView webView) {
         this.activity = activity;
         this.webView = webView;
         this.engine = new SpeechEngine(activity.getApplicationContext());
+    }
+
+    /** Прогреть распознаватель, чтобы первая фраза не ждала 15 секунд. */
+    public void warmUp() {
+        engine.warmUp();
     }
 
     /** Освободить ONNX-сессию при выходе из приложения. */
@@ -155,24 +160,13 @@ public class SpeechBridge {
 
     @JavascriptInterface
     public void stop() {
+        if (gigaMode) {
+            stopGigaAndTranscribe();
+            return;
+        }
         main.post(new Runnable() {
             @Override
             public void run() {
-                if (gigaMode) {
-                    final String id = currentId;
-                    if (id == null) return;
-                    currentId = null;
-                    engine.stopAndTranscribe(
-                            text -> {
-                                js("window.__nativeSpeech.onResult(" + q(id) + "," + q(text) + ",true)");
-                                js("window.__nativeSpeech.onEnd(" + q(id) + ")");
-                            },
-                            error -> {
-                                js("window.__nativeSpeech.onError(" + q(id) + "," + q(error) + ")");
-                                js("window.__nativeSpeech.onEnd(" + q(id) + ")");
-                            });
-                    return;
-                }
                 if (recognizer != null) {
                     try {
                         recognizer.stopListening();
@@ -183,12 +177,40 @@ public class SpeechBridge {
         });
     }
 
+    /**
+     * Останов записи в ветке giga. Один и тот же путь для кнопки и для авто-стопа по тишине:
+     * трансляция идёт в отдельном потоке, поэтому вызов можно делать откуда угодно.
+     */
+    private void stopGigaAndTranscribe() {
+        main.post(new Runnable() {
+            @Override
+            public void run() {
+                final String id = currentId;
+                if (id == null) return;
+                currentId = null;
+                engine.disableAutoStop();
+                engine.stopAndTranscribe(
+                        text -> {
+                            js("window.__nativeSpeech.onResult(" + q(id) + "," + q(text) + ",true)");
+                            js("window.__nativeSpeech.onEnd(" + q(id) + ")");
+                        },
+                        error -> {
+                            js("window.__nativeSpeech.onError(" + q(id) + "," + q(error) + ")");
+                            js("window.__nativeSpeech.onEnd(" + q(id) + ")");
+                        });
+            }
+        });
+    }
+
     @JavascriptInterface
     public void abort() {
         main.post(new Runnable() {
             @Override
             public void run() {
-                if (gigaMode) engine.cancelCapture();
+                if (gigaMode) {
+                    engine.disableAutoStop();
+                    engine.cancelCapture();
+                }
                 release();
                 if (currentId != null) {
                     js("window.__nativeSpeech.onEnd(" + q(currentId) + ")");
@@ -210,6 +232,7 @@ public class SpeechBridge {
         if (engine.isModelInstalled()) {
             // GigaAM: пишем PCM сами, словами занимается ONNX
             gigaMode = true;
+            engine.enableAutoStop(() -> stopGigaAndTranscribe());
             if (engine.startCapture()) {
                 js("window.__nativeSpeech.onStart(" + q(id) + ")");
             } else {

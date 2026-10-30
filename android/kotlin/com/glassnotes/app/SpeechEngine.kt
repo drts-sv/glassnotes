@@ -30,6 +30,10 @@ fun interface DoneSink {
     fun onDone(ok: Boolean)
 }
 
+fun interface Trigger {
+    fun run()
+}
+
 fun interface TextSink {
     fun onText(text: String)
 }
@@ -115,6 +119,25 @@ class SpeechEngine(context: Context) {
     }
 
     fun isDownloading(): Boolean = downloading
+
+    /**
+     * Прогрев: сессия ONNX создаётся лениво, при первом распознавании, и это стоит 10-15 секунд.
+     * Создаём её заранее и прогоняем секунду тишины — тогда первая же фраза распознаётся за ~2 с.
+     */
+    fun warmUp() {
+        if (recognizer != null || !modelManager.isInstalled()) return
+        Thread {
+            try {
+                val started = System.currentTimeMillis()
+                val engine = GigaAmOnnxRecognizer(appContext, modelManager)
+                engine.transcribe(ShortArray(16000))
+                recognizer = engine
+                Log.i(TAG, "прогрев модели: " + (System.currentTimeMillis() - started) + " мс")
+            } catch (t: Throwable) {
+                Log.w(TAG, "прогрев не удался: $t")
+            }
+        }.apply { isDaemon = true }.start()
+    }
 
     /** Строка для диалога «О приложении»: чем и на каком движке распознаём. */
     fun modelInfo(): String {
@@ -226,23 +249,92 @@ class SpeechEngine(context: Context) {
         return true
     }
 
+    /**
+     * Авто-стоп по тишине. Включает только рабочий путь (в самотестах не нужен: там своя логика).
+     * Без него фраза не заканчивается сама — приходится жать кнопку.
+     */
+    @Volatile
+    private var autoStopEnabled = false
+
+    private var autoStopCallback: Trigger? = null
+
+    /** Включить авто-стоп: onStop вызовется, когда после речи наступит тишина. */
+    fun enableAutoStop(onStop: Trigger) {
+        autoStopCallback = onStop
+        autoStopEnabled = true
+    }
+
+    fun disableAutoStop() {
+        autoStopEnabled = false
+        autoStopCallback = null
+    }
+
+    private var capturing = false
+
     /** Возвращает false, если микрофон не отдался. */
     fun startCapture(): Boolean {
         return try {
             val rec = AudioRecorder()
             recorder = rec
-            rec.start()
+            val started = rec.start()
+            capturing = started
+            if (started && autoStopEnabled) startSilenceWatcher(rec)
+            started
         } catch (t: Throwable) {
             Log.e(TAG, "старт записи: $t")
             recorder = null
+            capturing = false
             false
         }
+    }
+
+    /**
+     * Следит за уровнем записи: нашли речь -> ждём тишину -> останавливаем сами.
+     * Порог и выдержка подобраны под адаптивный LevelMeter из ядра (он отдаёт 0..1).
+     */
+    private fun startSilenceWatcher(rec: AudioRecorder) {
+        val thread = Thread {
+            val startedAt = System.currentTimeMillis()
+            var lastSpeechAt = 0L
+            var peak = 0f
+            var lastLogAt = 0L
+            while (capturing && recorder === rec) {
+                val now = System.currentTimeMillis()
+                val level = rec.level
+                if (level > peak) peak = level
+                if (level >= SPEECH_LEVEL) lastSpeechAt = now
+                if (now - lastLogAt >= 1000) {
+                    lastLogAt = now
+                    Log.i(TAG, "уровень записи: %.2f (пик %.2f)".format(level, peak))
+                }
+                val silentFor = if (lastSpeechAt > 0L) now - lastSpeechAt else 0L
+                if (lastSpeechAt > 0L && silentFor >= SILENCE_MS) {
+                    Log.i(TAG, "авто-стоп: тишина " + silentFor + " мс, пик %.2f".format(peak))
+                    break
+                }
+                if (now - startedAt >= MAX_CAPTURE_MS) {
+                    Log.i(TAG, "авто-стоп: предел " + (MAX_CAPTURE_MS / 1000) + " с, пик %.2f".format(peak))
+                    break
+                }
+                try {
+                    Thread.sleep(60)
+                } catch (ie: InterruptedException) {
+                    return@Thread
+                }
+            }
+            if (capturing && recorder === rec) {
+                autoStopCallback?.run()
+            }
+        }
+        thread.isDaemon = true
+        thread.start()
     }
 
     /** Останавливает запись и распознаёт в отдельном потоке (ONNX не мгновенный). */
     fun stopAndTranscribe(onText: TextSink, onError: ErrorSink) {
         val rec = recorder
         recorder = null
+        capturing = false
         val pcm = try {
             rec?.stop() ?: ShortArray(0)
         } catch (t: Throwable) {
@@ -272,6 +364,7 @@ class SpeechEngine(context: Context) {
      * и распознаёт — проверка всего тракта без человека. Результат уходит в JS как onSelfTest.
      */
     fun selfTest(phrase: String, onText: TextSink, onError: ErrorSink) {
+        disableAutoStop()
         Thread {
             var tts: TextToSpeech? = null
             var player: MediaPlayer? = null
@@ -347,6 +440,7 @@ class SpeechEngine(context: Context) {
      * и уходит прямо в распознаватель. Так проверяется модель, словарь и декодер отдельно от акустики.
      */
     fun selfTestDirect(phrase: String, onText: TextSink, onError: ErrorSink) {
+        disableAutoStop()
         Thread {
             var tts: TextToSpeech? = null
             try {
@@ -458,6 +552,7 @@ class SpeechEngine(context: Context) {
     }
 
     fun cancelCapture() {
+        capturing = false
         try {
             recorder?.cancel()
         } catch (t: Throwable) {
@@ -492,5 +587,14 @@ class SpeechEngine(context: Context) {
 
     companion object {
         private const val TAG = "GlassNotes"
+
+        /** Уровень, с которого считаем, что человек говорит. */
+        private const val SPEECH_LEVEL = 0.22f
+
+        /** Сколько тишины после речи = конец фразы. */
+        private const val SILENCE_MS = 1200L
+
+        /** Страховка: дольше этого не пишем ни при каких условиях. */
+        private const val MAX_CAPTURE_MS = 90_000L
     }
 }
