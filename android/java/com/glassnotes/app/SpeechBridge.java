@@ -197,6 +197,7 @@ public class SpeechBridge {
                 if (id == null) return;
                 currentId = null;
                 engine.disableAutoStop();
+                engine.feedback(false);
                 engine.stopAndTranscribe(
                         text -> {
                             js("window.__nativeSpeech.onResult(" + q(id) + "," + q(text) + ",true)");
@@ -242,6 +243,7 @@ public class SpeechBridge {
             gigaMode = true;
             engine.enableAutoStop(() -> stopGigaAndTranscribe());
             if (engine.startCapture()) {
+                engine.feedback(true);
                 js("window.__nativeSpeech.onStart(" + q(id) + ")");
             } else {
                 js("window.__nativeSpeech.onError(" + q(id) + ",'audio-capture')");

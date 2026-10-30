@@ -2,6 +2,11 @@ package com.glassnotes.app
 
 import android.content.Context
 import android.media.AudioManager
+import android.media.ToneGenerator
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.media.MediaPlayer
 import android.speech.tts.TextToSpeech
 import android.net.ConnectivityManager
@@ -276,6 +281,48 @@ class SpeechEngine(context: Context) {
     }
 
     private var capturing = false
+
+    /**
+     * Отклик на начало и конец записи: короткая вибрация + сигнал.
+     * Пользователь должен слышать/чувствовать, что запись пошла и что закончилась.
+     */
+    fun feedback(start: Boolean) {
+        try {
+            if (vibrator != null) {
+                val ms = if (start) 35L else 60L
+                if (Build.VERSION.SDK_INT >= 26) {
+                    vibrator!!.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator!!.vibrate(ms)
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "вибрация: $t")
+        }
+        try {
+            val generator = tone ?: ToneGenerator(AudioManager.STREAM_MUSIC, 80).also { tone = it }
+            generator.startTone(if (start) ToneGenerator.TONE_PROP_BEEP else ToneGenerator.TONE_PROP_BEEP2, 90)
+        } catch (t: Throwable) {
+            Log.w(TAG, "сигнал: $t")
+        }
+    }
+
+    private var tone: ToneGenerator? = null
+
+    private val vibrator: Vibrator? by lazy {
+        try {
+            if (Build.VERSION.SDK_INT >= 31) {
+                val manager = appContext.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                manager?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                appContext.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            }
+        } catch (t: Throwable) {
+            null
+        }
+    }
 
     /** Возвращает false, если микрофон не отдался. */
     fun startCapture(): Boolean {
@@ -637,6 +684,11 @@ class SpeechEngine(context: Context) {
 
     fun close() {
         cancelCapture()
+        try {
+            tone?.release()
+        } catch (ignored: Throwable) {
+        }
+        tone = null
         try {
             recognizer?.close()
         } catch (t: Throwable) {
