@@ -93,25 +93,25 @@
             padding: 0.25rem 0.2rem 0.3rem; transition: opacity 0.2s;
             position: relative; display: flex; flex-direction: column; overflow: hidden;
         }
-        .header-main { display: flex; align-items: center; gap: 8px; width: 100%; padding-bottom: 0.3rem; }
+        .header-main { display: flex; align-items: center; gap: 7px; width: 100%; padding-bottom: 0; }
         .app-logo {
-            position: relative; width: 34px; height: 34px; border-radius: 50%;
+            position: relative; width: 28px; height: 28px; border-radius: 50%;
             flex-shrink: 0; overflow: hidden;
             background: var(--surface-weak); border: 1px solid var(--surface-border);
             display: flex; align-items: center; justify-content: center;
         }
-        .app-logo { font-size: 17px; line-height: 1; }
+        .app-logo { font-size: 15px; line-height: 1; }
         .header-extra {
             display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%;
             margin: 0 -0.6rem; width: calc(100% + 1.2rem);
-            max-height: 90px; opacity: 1; overflow: hidden; margin-top: 4px;
+            max-height: 140px; opacity: 1; overflow: hidden; margin-top: 2px;
             transition: max-height 0.3s ease, opacity 0.25s ease, margin-top 0.3s ease;
         }
         .header.compact .filter-chips { display: none; }
         .header {
             display: flex; align-items: center; justify-content: space-between;
             flex-wrap: wrap; gap: 8px; margin-bottom: 0.5rem;
-            flex-shrink: 0; padding: 0.45rem 0.6rem 0; overflow: hidden;
+            flex-shrink: 0; padding: 0.15rem 0.6rem 0; overflow: hidden;
             /* строка заголовка плотнее фона, но легче карточек */
             background: rgb(var(--glass-rgb) / calc(var(--card-alpha) * 0.75));
             border: 1px solid var(--surface-border); border-radius: 22px;
@@ -130,7 +130,7 @@
         body.light .title .badge { color: rgba(0,0,0,0.4); background: color-mix(in srgb, var(--accent) 8%, transparent); }
         .header-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
         .header-btn {
-            width: 34px; height: 34px; border-radius: 30px;
+            width: 28px; height: 28px; border-radius: 30px;
             border: 1px solid var(--surface-border);
             background: var(--surface-weak); color: var(--text-primary);
             cursor: pointer; transition: transform 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
@@ -138,7 +138,7 @@
         }
         .header-btn:active { transform: scale(0.92); }
         .header-btn.active { background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--accent); }
-        .header-btn svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+        .header-btn svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 
         .filter-chips:empty { padding: 0; }
         .filter-chips {
@@ -205,7 +205,7 @@
         body.light .tabs { background: rgba(255, 255, 255, 0.4); border-color: rgba(0, 0, 0, 0.08); }
         /* Вкладки делят нижнюю часть карточки заголовка пополам и упираются в её границу. */
         .tab {
-            flex: 1 1 0; padding: 2px 4px; border-radius: 0; border: none;
+            flex: 1 1 0; padding: 11px 4px; border-radius: 0; border: none;
             background: color-mix(in srgb, var(--accent) 16%, transparent);
             color: var(--text-primary);
             font-size: 0.76rem; font-weight: 600; cursor: pointer;
