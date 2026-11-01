@@ -20,6 +20,7 @@
             --card-alpha: 0.55;
             --glass-bg: rgb(var(--glass-rgb) / var(--card-alpha));
             --backdrop-blur: 14px;
+            --bg-blur: 14px;               /* сила размытия фона, настраивается ползунком */
             --app-veil: 0.35;              /* матовая подложка под всем приложением, настраивается */
             --surface-weak: rgba(255, 255, 255, 0.06);
             --surface-border: rgba(255, 255, 255, 0.10);
@@ -75,7 +76,11 @@
 
         body {
             min-height: 100vh; height: 100vh;
-            background: transparent;   /* за приложением — обои телефона */
+            /* Фон во весь экран: матовая подложка + размытие обоев (эффект стекла).
+               Стоит на body, а не на контейнере приложения, иначе по краям оставались
+               немытые полосы отступов. */
+            background: rgb(var(--glass-rgb) / var(--app-veil));
+            backdrop-filter: blur(var(--bg-blur)); -webkit-backdrop-filter: blur(var(--bg-blur));
             font-family: system-ui, -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;
             padding: calc(0.35rem + var(--inset-top, 0px)) 0.5rem calc(0.4rem + var(--inset-bottom, 0px));
             display: flex; justify-content: center; align-items: center;
@@ -83,11 +88,7 @@
         }
         .glass-app {
             max-width: 800px; width: 100%; height: 100%; max-height: 100%;
-            margin: 0 auto;
-            /* матовая подложка: без неё на светлых обоях не читался текст */
-            background: rgb(var(--glass-rgb) / var(--app-veil));
-            /* лёгкое размытие: обои за приложением читаются, но не мешают тексту */
-            backdrop-filter: blur(var(--backdrop-blur)); -webkit-backdrop-filter: blur(var(--backdrop-blur));
+            margin: 0 auto; background: transparent;
             border-radius: 0; border: none; box-shadow: none;
             padding: 0.25rem 0.2rem 0.3rem; transition: opacity 0.2s;
             position: relative; display: flex; flex-direction: column; overflow: hidden;
@@ -1282,6 +1283,10 @@
                     <div class="tile" data-theme="dark"><span class="tile-icon">🌙</span> Тёмная</div>
                     <div class="tile" data-theme="light"><span class="tile-icon">☀️</span> Светлая</div>
                 </div>
+            </div>
+
+            <div>
+                <div class="group-title">🪟 Фон и стекло</div>
                 <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;margin-top:10px;">
                     <span style="font-size:0.9rem;color:var(--text-primary);opacity:0.85;">Цвета системы (Material&nbsp;You)</span>
                     <input type="checkbox" id="systemColorsToggle" checked style="width:20px;height:20px;accent-color:var(--accent);cursor:pointer;">
@@ -1300,6 +1305,15 @@
                         <span class="slider-value" id="appVeilValue">35%</span>
                     </div>
                 </div>
+                <div class="slider-card" style="margin-top:10px;">
+                    <div class="slider-label">Размытие фона (стекло)</div>
+                    <div class="slider-row">
+                        <input type="range" id="bgBlurSlider" min="0" max="40" step="2" value="14">
+                        <span class="slider-value" id="bgBlurValue">14px</span>
+                    </div>
+                </div>
+
+            </div>
             </div>
 
             <div>
@@ -3182,6 +3196,25 @@
         });
     }
     applyAppVeil();
+
+    // Сила размытия фона (эффект матового стекла).
+    let bgBlur = parseInt(localStorage.getItem('bgBlur') || '14', 10);
+    const bgBlurSlider = document.getElementById('bgBlurSlider');
+    const bgBlurValue = document.getElementById('bgBlurValue');
+
+    function applyBgBlur() {
+        document.documentElement.style.setProperty('--bg-blur', bgBlur + 'px');
+        if (bgBlurValue) bgBlurValue.textContent = bgBlur + 'px';
+        if (bgBlurSlider) bgBlurSlider.value = bgBlur;
+    }
+    if (bgBlurSlider) {
+        bgBlurSlider.addEventListener('input', function () {
+            bgBlur = parseInt(this.value, 10);
+            localStorage.setItem('bgBlur', String(bgBlur));
+            applyBgBlur();
+        });
+    }
+    applyBgBlur();
 
     const systemColorsToggle = document.getElementById('systemColorsToggle');
     if (systemColorsToggle) {
