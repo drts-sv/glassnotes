@@ -109,6 +109,13 @@ def sync_assets():
             shutil.copy2(src, dst)
     # тексты лицензий сторонних компонентов — внутрь APK (требование MIT/Apache при распространении)
     lic_dir = os.path.join(PROJECT, "licenses")
+    # иконка приложения для шапки (та же, что на лаунчере)
+    for icon_dir in ("mipmap-xxxhdpi", "mipmap-xxhdpi", "mipmap-xhdpi"):
+        icon_src = os.path.join(PROJECT, "res", icon_dir, "ic_launcher.png")
+        if os.path.exists(icon_src):
+            shutil.copy2(icon_src, os.path.join(assets, "app-icon.png"))
+            break
+
     lic_dst = os.path.join(assets, "licenses")
     lic_count = 0
     if os.path.isdir(lic_dir):

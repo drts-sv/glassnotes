@@ -93,6 +93,27 @@
             padding: 0.25rem 0.2rem 0.3rem; transition: opacity 0.2s;
             position: relative; display: flex; flex-direction: column; overflow: hidden;
         }
+        .header-main { display: flex; align-items: center; gap: 8px; width: 100%; }
+        .app-logo {
+            position: relative; width: 34px; height: 34px; border-radius: 50%;
+            flex-shrink: 0; overflow: hidden;
+            background: var(--surface-weak); border: 1px solid var(--surface-border);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .app-logo img { width: 26px; height: 26px; object-fit: contain; display: block; }
+        /* фишка: кольцо прогресса вокруг иконки — доля выполненных записей */
+        .app-logo::after {
+            content: ''; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+            background: conic-gradient(var(--accent) calc(var(--done-share, 0) * 1%), transparent 0);
+            -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
+            mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
+        }
+        .header-extra {
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%;
+            max-height: 90px; opacity: 1; overflow: hidden; margin-top: 8px;
+            transition: max-height 0.3s ease, opacity 0.25s ease, margin-top 0.3s ease;
+        }
+        .header.compact .header-extra { max-height: 0; opacity: 0; margin-top: 0; }
         .header {
             display: flex; align-items: center; justify-content: space-between;
             flex-wrap: wrap; gap: 8px; margin-bottom: 0.5rem;
@@ -106,6 +127,7 @@
             font-size: var(--header-title); font-weight: 700; letter-spacing: -0.3px;
             color: var(--text-primary); text-shadow: 0 1px 2px rgba(0,0,0,0.1);
             user-select: none; display: flex; align-items: center; gap: 10px;
+            flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
         .title .badge {
             font-size: 0.6rem; background: color-mix(in srgb, var(--accent) 20%, transparent);
@@ -176,28 +198,26 @@
         .search-clear.visible { display: flex; }
         .search-clear:active { transform: translateY(-50%) scale(0.9); }
 
-        .tabs {
-            display: flex; gap: 8px; flex-shrink: 0;
-            margin: 0 0.4rem 0.8rem 0.4rem;
-            background: var(--surface-weak);
-            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-            border-radius: 30px; padding: 4px;
-            border: 1px solid var(--surface-border);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 4px 16px rgba(0, 0, 0, 0.08);
-        }
+        /* Вкладки — компактные сегменты прямо в шапке. Раньше подписи были цвета
+           --tab-inactive (белый 0.15), то есть практически невидимыми. */
+        .tabs { display: flex; gap: 4px; flex-shrink: 0; margin: 0; padding: 0;
+            background: transparent; border: none; box-shadow: none; }
         body.light .tabs { background: rgba(255, 255, 255, 0.4); border-color: rgba(0, 0, 0, 0.08); }
         .tab {
-            flex: 1; padding: 8px 16px; border-radius: 26px; border: none;
-            background: transparent; color: var(--tab-inactive);
-            font-size: 0.85rem; font-weight: 600; cursor: pointer;
-            transition: all 0.3s ease; font-family: inherit;
-            display: flex; align-items: center; justify-content: center; gap: 6px;
+            flex: 0 0 auto; padding: 6px 10px; border-radius: 18px;
+            border: 1px solid var(--surface-border); background: var(--surface-weak);
+            color: var(--text-secondary);
+            font-size: 0.78rem; font-weight: 600; cursor: pointer;
+            transition: transform 0.2s ease, color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+            font-family: inherit;
+            display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap;
         }
+        .tab svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+        .tab .count { font-weight: 700; opacity: 0.9; }
         .tab svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
-        .tab.active { background: var(--tab-active); color: white; box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 20%, transparent); }
-        .tab.active[data-tab="done"] { color: var(--tab-done-color); }
-        .tab.active[data-tab="done"] svg { stroke: #fff; }
-        .tab.active[data-tab="done"] .count { color: #fff; }
+        .tab.active { background: var(--tab-active); color: #fff; border-color: transparent;
+            box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 25%, transparent); }
+        .tab.active[data-tab="done"] { background: var(--tab-done-color); color: #fff; }
         .tab:active { transform: scale(0.96); }
         .tab .count { font-weight: 400; opacity: 0.6; font-size: 0.7rem; }
         .tab.active .count { opacity: 0.85; }
@@ -643,8 +663,18 @@
         }
         .modal-close svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; }
         body.light .modal-close { color: rgba(0,0,0,0.3); background: rgba(0,0,0,0.02); }
+        .settings-group-header {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 8px; cursor: pointer; user-select: none; padding: 2px 2px;
+        }
+        .settings-chevron { width: 16px; height: 16px; stroke: var(--text-secondary); fill: none;
+            stroke-width: 2; transition: transform 0.25s ease; flex-shrink: 0; }
+        .settings-group.open .settings-chevron { transform: rotate(90deg); }
+        .settings-group-body { max-height: 0; overflow: hidden;
+            transition: max-height 0.35s ease, padding-top 0.35s ease; }
+        .settings-group.open .settings-group-body { max-height: 3000px; padding-top: 10px; }
         .modal-content {
-            display: flex; flex-direction: column; gap: 14px;
+            display: flex; flex-direction: column; gap: 18px;
             overflow-y: auto; min-height: 0;
         }
         .modal-content::-webkit-scrollbar { width: 3px; }
@@ -1071,13 +1101,25 @@
 </head>
 <body>
 <div class="glass-app" id="appContainer">
-    <div class="header">
-        <div class="title">
-            🎙️ Glass Notes
-            <span class="badge" id="countBadge">0</span>
-        </div>
-        <div class="header-right">
-            <div class="filter-chips" id="filterChips"></div>
+    <div class="header" id="appHeader">
+        <div class="header-main">
+            <div class="app-logo" id="appLogo" title="Прогресс: сколько записей сделано">
+                <img src="app-icon.png" alt="Glass Notes">
+            </div>
+            <div class="title" id="headerTitle">
+                Glass Notes
+                <span class="badge" id="countBadge">0</span>
+            </div>
+            <div class="tabs" id="tabsContainer">
+                <button class="tab active" data-tab="active">
+                    <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg>
+                    Активные <span class="count" id="activeCount">0</span>
+                </button>
+                <button class="tab" data-tab="done">
+                    <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    Выполнено <span class="count" id="doneCount">0</span>
+                </button>
+            </div>
             <button class="header-btn" id="filterBtn" title="Фильтр">
                 <svg viewBox="0 0 24 24"><polygon points="22 3 2 3 10 13 10 21 14 18 14 13 22 3"/></svg>
             </button>
@@ -1087,6 +1129,11 @@
             <button class="header-btn" id="settingsBtn" title="Настройки">
                 <svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
+        </div>
+        <!-- вторая строка нужна редко: фильтры и чипы, сворачивается при прокрутке -->
+        <!-- строка появляется только когда есть активные фильтры -->
+        <div class="header-extra hidden" id="headerExtra">
+            <div class="filter-chips" id="filterChips"></div>
         </div>
     </div>
 
@@ -1098,17 +1145,6 @@
                 <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
         </div>
-    </div>
-
-    <div class="tabs" id="tabsContainer">
-        <button class="tab active" data-tab="active">
-            <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg>
-            Активные <span class="count" id="activeCount">0</span>
-        </button>
-        <button class="tab" data-tab="done">
-            <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            Выполнено <span class="count" id="doneCount">0</span>
-        </button>
     </div>
 
     <div class="list-container" id="listContainer">
@@ -2600,6 +2636,9 @@
         activeCount.textContent = a;
         doneCount.textContent = d;
         countBadge.textContent = todos.length;
+        // кольцо на иконке приложения: доля выполненных записей
+        const share = todos.length ? Math.round((d / todos.length) * 100) : 0;
+        document.documentElement.style.setProperty('--done-share', share);
     }
 
     function renderFilterChips() {
@@ -2625,6 +2664,9 @@
             }
         }
         filterChips.innerHTML = html;
+        // вторая строка шапки нужна только при активных фильтрах
+        const extra = document.getElementById('headerExtra');
+        if (extra) extra.classList.toggle('hidden', html.trim() === '');
     }
 
     filterChips.addEventListener('click', (e) => {
@@ -3299,6 +3341,81 @@
         } catch (_) {}
     }
 
+    // === СВОРАЧИВАНИЕ ШАПКИ ===
+    // Вторая строка (фильтры) нужна редко: при прокрутке вниз шапка ужимается до одной строки,
+    // а тап по названию возвращает её.
+    let headerCompact = false;
+    function setHeaderCompact(compact) {
+        if (headerCompact === compact) return;
+        headerCompact = compact;
+        const header = document.getElementById('appHeader');
+        if (header) header.classList.toggle('compact', compact);
+    }
+    try {
+        if (typeof listScroll !== 'undefined' && listScroll) {
+            listScroll.addEventListener('scroll', () => setHeaderCompact(listScroll.scrollTop > 40), { passive: true });
+        }
+        const headerTitle = document.getElementById('headerTitle');
+        if (headerTitle) headerTitle.addEventListener('click', () => setHeaderCompact(!headerCompact));
+    } catch (_) {}
+
+    // === ГРУППЫ НАСТРОЕК ===
+    // Панель настроек была плотной: восемь блоков подряд. Каждый блок делаем сворачиваемым
+    // и держим открытым только тот, что был открыт у пользователя (по умолчанию — первый).
+    function initSettingsCollapse() {
+        try {
+            const glass = document.querySelector('#settingsModal .modal-glass');
+            const content = document.querySelector('#settingsModal .modal-content');
+            if (!glass || !content) return;
+
+            // Часть блоков настроек лежала СНАРУЖИ прокручиваемого .modal-content (соседями),
+            // из-за чего они налезали друг на друга. Собираем всё в один столбец.
+            Array.from(glass.children).forEach(el => {
+                if (el === content || el.classList.contains('modal-header')) return;
+                if (el.querySelector && el.querySelector('.group-title')) content.appendChild(el);
+            });
+
+            let saved = {};
+            try { saved = JSON.parse(localStorage.getItem('settingsOpen') || '{}'); } catch (_) {}
+            const groups = Array.from(content.children).filter(el => el.querySelector && el.querySelector('.group-title'));
+
+            groups.forEach((group, index) => {
+                if (group.classList.contains('settings-group')) return;
+                const title = group.querySelector('.group-title');
+                if (!title) return;
+                // У блоков со своим «аккордеоном» (Таймеры, Категории, Модель) второго уровня не делаем.
+                if (group.querySelector('.collapsible-header')) return;
+
+                group.classList.add('settings-group');
+                const header = document.createElement('div');
+                header.className = 'settings-group-header';
+                title.parentNode.insertBefore(header, title);
+                header.appendChild(title);
+                const chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                chevron.setAttribute('viewBox', '0 0 24 24');
+                chevron.setAttribute('class', 'settings-chevron');
+                const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+                poly.setAttribute('points', '9 18 15 12 9 6');
+                chevron.appendChild(poly);
+                header.appendChild(chevron);
+
+                const body = document.createElement('div');
+                body.className = 'settings-group-body';
+                while (header.nextSibling) body.appendChild(header.nextSibling);
+                group.appendChild(body);
+
+                const key = title.textContent.trim();
+                const open = saved[key] !== undefined ? !!saved[key] : (index === 0);
+                group.classList.toggle('open', open);
+                header.addEventListener('click', () => {
+                    const isOpen = group.classList.toggle('open');
+                    saved[key] = isOpen;
+                    localStorage.setItem('settingsOpen', JSON.stringify(saved));
+                });
+            });
+        } catch (e) { console.warn('группы настроек:', e); }
+    }
+
     function registerServiceWorker() {
         if ('serviceWorker' in navigator) {
             // Относительный путь: работает и из корня, и из подпапки.
@@ -3690,6 +3807,7 @@
             await loadTodos();
             initVoice();
             registerServiceWorker();
+            initSettingsCollapse();
             warnIfFallbackPort();
             startReminderChecker();
             scheduleSync();
