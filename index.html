@@ -20,6 +20,7 @@
             --card-alpha: 0.55;
             --glass-bg: rgb(var(--glass-rgb) / var(--card-alpha));
             --backdrop-blur: 14px;
+            --app-veil: 0.35;              /* матовая подложка под всем приложением, настраивается */
             --surface-weak: rgba(255, 255, 255, 0.06);
             --surface-border: rgba(255, 255, 255, 0.10);
             --glass-border: rgba(255, 255, 255, 0.10);
@@ -78,15 +79,17 @@
             font-family: system-ui, -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;
             padding: calc(0.35rem + var(--inset-top, 0px)) 0.5rem calc(0.4rem + var(--inset-bottom, 0px));
             display: flex; justify-content: center; align-items: center;
-            transition: background 0.2s; overflow: hidden; margin: 0;
+            transition: opacity 0.2s; overflow: hidden; margin: 0;
         }
         .glass-app {
             max-width: 800px; width: 100%; height: 100%; max-height: 100%;
-            margin: 0 auto; background: transparent;
+            margin: 0 auto;
+            /* матовая подложка: без неё на светлых обоях не читался текст */
+            background: rgb(var(--glass-rgb) / var(--app-veil));
             /* лёгкое размытие: обои за приложением читаются, но не мешают тексту */
             backdrop-filter: blur(var(--backdrop-blur)); -webkit-backdrop-filter: blur(var(--backdrop-blur));
             border-radius: 0; border: none; box-shadow: none;
-            padding: 0.25rem 0.2rem 0.3rem; transition: background 0.2s;
+            padding: 0.25rem 0.2rem 0.3rem; transition: opacity 0.2s;
             position: relative; display: flex; flex-direction: column; overflow: hidden;
         }
         .header {
@@ -1290,6 +1293,13 @@
                         <span class="slider-value" id="glassAlphaValue">55%</span>
                     </div>
                 </div>
+                <div class="slider-card" style="margin-top:10px;">
+                    <div class="slider-label">Затемнение фона</div>
+                    <div class="slider-row">
+                        <input type="range" id="appVeilSlider" min="0" max="90" step="5" value="35">
+                        <span class="slider-value" id="appVeilValue">35%</span>
+                    </div>
+                </div>
             </div>
 
             <div>
@@ -1667,8 +1677,38 @@
         return hour;
     }
 
+    // Ядро распознавания нормализует цифры в слова («4 ноября» → «четвёртого ноября»), а правило
+    // месяца понимает только цифры — из-за этого дата терялась и напоминание уезжало на «завтра 13:00».
+    const ORDINALS = {
+        'первое': 1, 'первого': 1, 'второе': 2, 'второго': 2, 'третье': 3, 'третьего': 3,
+        'четвёртое': 4, 'четвёртого': 4, 'четвертое': 4, 'четвертого': 4, 'пятое': 5, 'пятого': 5,
+        'шестое': 6, 'шестого': 6, 'седьмое': 7, 'седьмого': 7, 'восьмое': 8, 'восьмого': 8,
+        'девятое': 9, 'девятого': 9, 'десятое': 10, 'десятого': 10,
+        'одиннадцатое': 11, 'одиннадцатого': 11, 'двенадцатое': 12, 'двенадцатого': 12,
+        'тринадцатое': 13, 'тринадцатого': 13, 'четырнадцатое': 14, 'четырнадцатого': 14,
+        'пятнадцатое': 15, 'пятнадцатого': 15, 'шестнадцатое': 16, 'шестнадцатого': 16,
+        'семнадцатое': 17, 'семнадцатого': 17, 'восемнадцатое': 18, 'восемнадцатого': 18,
+        'девятнадцатое': 19, 'девятнадцатого': 19, 'двадцатое': 20, 'двадцатого': 20,
+        'двадцать первое': 21, 'двадцать первого': 21, 'двадцать второе': 22, 'двадцать второго': 22,
+        'двадцать третье': 23, 'двадцать третьего': 23, 'двадцать четвёртое': 24, 'двадцать четвёртого': 24,
+        'двадцать пятое': 25, 'двадцать пятого': 25, 'двадцать шестое': 26, 'двадцать шестого': 26,
+        'двадцать седьмое': 27, 'двадцать седьмого': 27, 'двадцать восьмое': 28, 'двадцать восьмого': 28,
+        'двадцать девятое': 29, 'двадцать девятого': 29, 'тридцатое': 30, 'тридцатого': 30,
+        'тридцать первое': 31, 'тридцать первого': 31
+    };
+    const MONTH_STEM = 'январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр';
+    const ORDINAL_RE = new RegExp(
+        '(?<![а-яё])(' + Object.keys(ORDINALS).sort((a, b) => b.length - a.length).join('|') + ')\\s+(?=' + MONTH_STEM + ')', 'gi');
+
+    /** «четвёртого ноября» и «4-го ноября» → «4 ноября». */
+    function normalizeOrdinalDates(text) {
+        return text
+            .replace(new RegExp('(\\d{1,2})\\s*[- ]?\\s*го\\s+(?=' + MONTH_STEM + ')', 'gi'), '$1 ')
+            .replace(ORDINAL_RE, (m, word) => String(ORDINALS[word.toLowerCase()]));
+    }
+
     function parseDateNLU(text, voiceCatEnabled) {
-        let working = stripCommandWords(text);
+        let working = normalizeOrdinalDates(stripCommandWords(text));
         let lower = working.toLowerCase();
         const now = new Date();
         let result = null, timeResult = null, categoryId = null, relativeApplied = false;
@@ -1788,7 +1828,9 @@
                 const periods = [
                     { re: /(?<![а-яё])(утром|с утра|утра)(?![а-яё])/, key: 'morning' },
                     { re: /(?<![а-яё])(до обеда|перед обедом)(?![а-яё])/, key: 'beforeNoon' },
-                    { re: /(?<![а-яё])(в обед|днём|днем|обед)(?![а-яё])/, key: 'noon' },
+                    // «днём» — время суток, но ТОЛЬКО не в «с днём свадьбы / рождения»: иначе
+                    // праздничная фраза получала время 13:00 и уезжала на завтра.
+                    { re: /(?<!с\s)(?<![а-яё])(в обед|днём|днем|обед)(?![а-яё])(?!\s+(?:свадьбы|рождения|рожденья|победы|знаний|матери|отца))/, key: 'noon' },
                     { re: /(?<![а-яё])(после обеда|послеобеденное)(?![а-яё])/, key: 'afterNoon' },
                     { re: /(?<![а-яё])(вечером|под вечер|вечера)(?![а-яё])/, key: 'evening' },
                     { re: /(?<![а-яё])(ночью|ночи)(?![а-яё])/, key: 'night' }
@@ -3121,6 +3163,25 @@
         });
     }
     applyGlassAlpha();
+
+    // Затемнение всей подложки приложения (текст должен читаться на любых обоях).
+    let appVeil = parseInt(localStorage.getItem('appVeil') || '35', 10);
+    const appVeilSlider = document.getElementById('appVeilSlider');
+    const appVeilValue = document.getElementById('appVeilValue');
+
+    function applyAppVeil() {
+        document.documentElement.style.setProperty('--app-veil', (appVeil / 100).toFixed(2));
+        if (appVeilValue) appVeilValue.textContent = appVeil + '%';
+        if (appVeilSlider) appVeilSlider.value = appVeil;
+    }
+    if (appVeilSlider) {
+        appVeilSlider.addEventListener('input', function () {
+            appVeil = parseInt(this.value, 10);
+            localStorage.setItem('appVeil', String(appVeil));
+            applyAppVeil();
+        });
+    }
+    applyAppVeil();
 
     const systemColorsToggle = document.getElementById('systemColorsToggle');
     if (systemColorsToggle) {
