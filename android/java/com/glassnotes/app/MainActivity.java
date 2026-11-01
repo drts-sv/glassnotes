@@ -108,7 +108,13 @@ public class MainActivity extends Activity {
         }
 
         webView = new WebView(this);
-        webView.setBackgroundColor(Color.parseColor("#0A0C12"));
+        // Прозрачные фон и окно: за приложением видны обои рабочего стола, а карточки лежат
+        // «на стекле» — без подложки и рамки вокруг всего приложения.
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
+        getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
+        getWindow().setNavigationBarColor(Color.TRANSPARENT);
+        webView.setBackgroundColor(Color.TRANSPARENT);
         webView.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -301,10 +307,16 @@ public class MainActivity extends Activity {
         pushInsets(top, bottom);
     }
 
-    private void pushInsets(int top, int bottom) {
+    private void pushInsets(int topPx, int bottomPx) {
+        // В CSS нужны css-px, а WindowInsets отдаёт device px: без деления на плотность
+        // статус-бар раздувался в 2.6 раза и над шапкой висело ~2 см пустоты.
+        float density = getResources().getDisplayMetrics().density;
+        int top = Math.round(topPx / density);
+        int bottom = Math.round(bottomPx / density);
         if (top == lastTopInset && bottom == lastBottomInset) return;
         lastTopInset = top;
         lastBottomInset = bottom;
+        Log.i(TAG, "инсеты: верх " + top + "px, низ " + bottom + "px (device " + topPx + "/" + bottomPx + ")");
         final String js = "document.documentElement.style.setProperty('--inset-top','" + top + "px');"
                 + "document.documentElement.style.setProperty('--inset-bottom','" + bottom + "px');";
         if (webView == null) return;
