@@ -1873,8 +1873,74 @@
         } catch (e) { console.warn('Notification ctor:', e); }
     }
 
+    // === СИСТЕМНЫЙ ПЛАНИРОВЩИК НАПОМИНАНИЙ (ветка giga) ===
+    // Раньше момент напоминания стерёг таймер здесь, а в фоне WebView заморожен — уведомления
+    // приходили только при открытом приложении. Теперь расписание отдаём AlarmManager'у.
+    function nativeAlarms() {
+        return (window.NativeAlarms && window.NativeAlarms.schedule) ? window.NativeAlarms : null;
+    }
+
+    let scheduleTimer = null;
+
+    /** Пересобрать расписание в системе (с задержкой: вызывается после каждого изменения заметок). */
+    function scheduleSync() {
+        clearTimeout(scheduleTimer);
+        scheduleTimer = setTimeout(pushSchedule, 400);
+    }
+
+    function pushSchedule() {
+        const api = nativeAlarms();
+        if (!api) return;
+        try {
+            const now = Date.now();
+            const list = todos
+                .filter(t => t.status !== 'done' && t.datetime && !t.notified
+                             && new Date(t.datetime).getTime() > now)
+                .sort((a, b) => new Date(a.datetime) - new Date(b.datetime))
+                .map(t => ({
+                    id: t.id,
+                    at: new Date(t.datetime).getTime(),
+                    title: t.text,
+                    body: formatDateTimeDisplay(t.datetime) + (isImportant(t.categoryIds) ? ' · важно' : '')
+                }));
+            console.log('расписание: ' + api.schedule(JSON.stringify(list)));
+        } catch (e) { console.warn('расписание:', e); }
+    }
+
+    /** Действие из уведомления («Выполнено»): саму заметку меняет приложение, система только просит. */
+    async function consumeNativeAction() {
+        try {
+            if (!(window.NativeNotify && window.NativeNotify.consumeAction)) return;
+            const raw = window.NativeNotify.consumeAction();
+            if (!raw) return;
+            const action = JSON.parse(raw);
+            const note = todos.find(t => t.id === action.id);
+            if (!note) return;
+            if (action.mode === 1 && note.status !== 'done') await markDone(action.id);
+            scheduleSync();
+        } catch (e) { console.warn('действие из уведомления:', e); }
+    }
+
+    /** Просьба разрешить точные алярмы (Android 12+): без него напоминания могут сдвигаться. */
+    function askExactAlarms() {
+        const api = nativeAlarms();
+        if (!api || typeof api.exactAllowed !== 'function') return;
+        try {
+            if (!api.exactAllowed()) {
+                showToast('⚠️ Разрешите точные напоминания для этого приложения', 3500);
+                if (typeof api.requestExactPermission === 'function') api.requestExactPermission();
+            }
+        } catch (_) {}
+    }
+
     function startReminderChecker() {
-        if (reminderInterval) clearInterval(reminderInterval);
+        if (reminderInterval) { clearInterval(reminderInterval); reminderInterval = null; }
+        // В ветке giga напоминания показывает системный планировщик: он работает и когда
+        // приложение закрыто, а таймер внутри WebView в фоне всё равно не тикает.
+        if (nativeAlarms()) {
+            console.log('напоминания: системный планировщик');
+            return;
+        }
         const tick = async () => { try { const n = await getAllNotes(); checkReminders(n); } catch (e) {} };
         reminderInterval = setInterval(tick, 5000);
         // В фоне таймеры душатся: догоняем при возврате в приложение.
@@ -2096,7 +2162,7 @@
                 }
             }
             todos = changed ? await getAllNotes() : raw;
-            renderTodos(); updateCounts(); updateBadge(); checkReminders(todos);
+            renderTodos(); updateCounts(); updateBadge(); checkReminders(todos); scheduleSync();
         } catch (e) { console.error(e); todos = []; renderTodos(); updateCounts(); updateBadge(); }
     }
 
@@ -2241,7 +2307,7 @@
             const id = await addNote(todo);
             todo.id = id;
             todos.unshift(todo);
-            renderTodos(); updateCounts(); updateBadge();
+            renderTodos(); updateCounts(); updateBadge(); scheduleSync();
             const dd = todo.datetime ? formatDateTimeDisplay(todo.datetime) : '';
             const catName = categoryId ? (getCategoryById(categoryId)?.name || '') : '';
             showToast(`✅ "${finalText}"${catName ? ' 🏷 ' + catName : ''}${dd ? ' 🕐 ' + dd : ''}`, 1500);
@@ -2260,6 +2326,7 @@
         try {
             await deleteNote(id);
             todos = todos.filter(t => t.id !== id);
+            scheduleSync();
             renderTodos(); updateCounts(); updateBadge();
             showUndoFab(n);
             showToast('🗑 Удалено', 800);
@@ -2268,11 +2335,11 @@
     }
 
     async function markDone(id) {
-        try { const n = todos.find(t => t.id === id); if (!n) return; await updateNote(id, { status:'done' }); n.status = 'done'; renderTodos(); updateCounts(); updateBadge(); showToast('✅ Выполнено!', 1200); vibrate(20); }
+        try { const n = todos.find(t => t.id === id); if (!n) return; await updateNote(id, { status:'done' }); n.status = 'done'; scheduleSync(); renderTodos(); updateCounts(); updateBadge(); showToast('✅ Выполнено!', 1200); vibrate(20); }
         catch (e) { console.error(e); showToast('❌ Ошибка', 1500); }
     }
     async function undoDone(id) {
-        try { const n = todos.find(t => t.id === id); if (!n) return; await updateNote(id, { status:'active' }); n.status = 'active'; renderTodos(); updateCounts(); updateBadge(); showToast('↩️ Возвращено', 1200); vibrate(20); }
+        try { const n = todos.find(t => t.id === id); if (!n) return; await updateNote(id, { status:'active' }); n.status = 'active'; scheduleSync(); renderTodos(); updateCounts(); updateBadge(); showToast('↩️ Возвращено', 1200); vibrate(20); }
         catch (e) { console.error(e); showToast('❌ Ошибка', 1500); }
     }
 
@@ -2312,6 +2379,7 @@
         addNote(note).then(id => {
             note.id = id;
             todos.unshift(note);
+            scheduleSync();
             renderTodos(); updateCounts(); updateBadge();
             showToast('↩️ Отменено', 1500);
         }).catch(e => { console.error(e); showToast('❌ Ошибка', 1500); });
@@ -2785,7 +2853,7 @@
             if (updates.datetime !== undefined) updates.notified = false;
             await updateNote(editingId, updates);
             Object.assign(note, updates);
-            renderTodos(); updateCounts();
+            renderTodos(); updateCounts(); scheduleSync();
             showToast('✏️ Сохранено', 1000);
         } catch (e) { console.error(e); showToast('❌ Ошибка', 1500); }
         closeEdit();
@@ -3279,6 +3347,12 @@
             initVoice();
             registerServiceWorker();
             startReminderChecker();
+            scheduleSync();
+            consumeNativeAction();
+            askExactAlarms();
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') { consumeNativeAction(); scheduleSync(); }
+            });
             updateSettingsCollapseValues();
             renderFilterChips();
             document.getElementById('appVersion').textContent = APP_VERSION;

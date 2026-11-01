@@ -58,9 +58,49 @@ public class MainActivity extends Activity {
     private android.webkit.ValueCallback<android.net.Uri[]> filePathCallback;
     private static final int REQ_FILE = 1002;
 
+    public static final String EXTRA_NOTE_ID = "note_id";
+    public static final String EXTRA_NOTE_MODE = "note_mode";
+
+    /** Действие из уведомления, которое ждёт обработки в JS (пусто, если ничего нет). */
+    private static volatile String pendingAction = "";
+
+    static String takePendingAction() {
+        String action = pendingAction;
+        pendingAction = "";
+        return action;
+    }
+
+    /** Тап по уведомлению или кнопка «Выполнено» приносят сюда id заметки. */
+    private void captureAction(Intent intent) {
+        try {
+            if (intent == null || !intent.hasExtra(EXTRA_NOTE_ID)) return;
+            long id = intent.getLongExtra(EXTRA_NOTE_ID, 0L);
+            int mode = intent.getIntExtra(EXTRA_NOTE_MODE, 0);
+            intent.removeExtra(EXTRA_NOTE_ID);
+            if (id <= 0L || mode == 0) return;
+            pendingAction = "{\"id\":" + id + ",\"mode\":" + mode + "}";
+            android.util.Log.i("GlassNotes", "действие из уведомления: " + pendingAction);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        captureAction(intent);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        captureAction(getIntent());
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        captureAction(getIntent());
 
         // отладка WebView (chrome://inspect / CDP через adb forward) — нужна для проверки на устройстве
         if (Build.VERSION.SDK_INT >= 19) {
@@ -176,6 +216,7 @@ public class MainActivity extends Activity {
         });
 
         webView.addJavascriptInterface(new NotificationBridge(this), "NativeNotify");
+        webView.addJavascriptInterface(new ReminderScheduler(this), "NativeAlarms");
         webView.addJavascriptInterface(new SaveBridge(this), "NativeSave");
         speechBridge = new SpeechBridge(this, webView);
         autoDownloadModel();

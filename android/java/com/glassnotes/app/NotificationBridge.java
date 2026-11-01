@@ -74,6 +74,12 @@ public class NotificationBridge {
         return permission();
     }
 
+    /** Действие из уведомления («Выполнено») — забираем один раз. */
+    @JavascriptInterface
+    public String consumeAction() {
+        return MainActivity.takePendingAction();
+    }
+
     @JavascriptInterface
     public boolean show(String title, String body, String tag) {
         try {
