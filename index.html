@@ -1008,7 +1008,7 @@
             .glass-app { padding: 1rem 0.5rem 0.8rem; border-radius: 32px; }
             .title { font-size: 1.2rem; }
             .result-card { padding: 0.9rem 1.2rem; }
-            .result-text { font-size: 0.95rem; }
+            :root { --result-text: 0.95rem; }
             .list-scroll { padding: 20px 8px 120px 8px; }
             #toastMessage { font-size: 0.85rem; padding: 10px 20px; bottom: calc(100px + env(safe-area-inset-bottom, 0px) + var(--inset-bottom, 0px)); }
             .cancel-fab { width: 116px; height: 116px; }
@@ -1016,7 +1016,7 @@
             .cancel-fab .fab-text-top { font-size: 1rem; }
         }
         @media (max-width: 400px) {
-            .result-text { font-size: 0.85rem; }
+            :root { --result-text: 0.85rem; }
             #toastMessage { bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
             .cancel-fab { width: 104px; height: 104px; }
             .cancel-fab .cancel-icon { width: 40px; height: 40px; }
@@ -1026,7 +1026,7 @@
         @media (max-height: 700px) {
             #toastMessage { bottom: calc(80px + env(safe-area-inset-bottom, 0px) + var(--inset-bottom, 0px)); }
             .result-card { padding: 0.7rem 1rem; }
-            .result-text { font-size: 0.85rem; }
+            :root { --result-text: 0.85rem; }
             .cancel-fab { width: 96px; height: 96px; }
             .cancel-fab .cancel-icon { width: 36px; height: 36px; }
         }
@@ -2059,7 +2059,24 @@
     function escapeHtml(s) { if (!s) return ''; return s.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;'); }
     let toastTimeout = null;
     function showToast(text, duration = 2000) { toast.textContent = text; toast.classList.add('show'); clearTimeout(toastTimeout); toastTimeout = setTimeout(() => toast.classList.remove('show'), duration); }
-    function vibrate(ms = 30) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (_) {} }
+    // WebView-овский navigator.vibrate на Android срабатывает через раз — дёргаем системный вибратор.
+    function vibrate(ms = 30) {
+        try {
+            if (window.NativeHaptic) {
+                if (ms >= 25) window.NativeHaptic.click(); else window.NativeHaptic.tick();
+                return;
+            }
+            if (navigator.vibrate) navigator.vibrate(ms);
+        } catch (_) {}
+    }
+
+    /** kind = 'tick' (жест) | 'click' (кнопка, подтверждение). */
+    function haptic(kind = 'click') { vibrate(kind === 'tick' ? 10 : 30); }
+
+    // Отклик на все кнопки приложения — один обработчик вместо правок в каждом месте.
+    document.addEventListener('click', function (e) {
+        try { if (e.target.closest('button')) haptic('click'); } catch (_) {}
+    }, true);
     function getRandomColor() { return COLORS[Math.floor(Math.random() * COLORS.length)]; }
 
     function formatDateTimeDisplay(s) {
@@ -2535,6 +2552,7 @@
                 const id = parseInt(wrapper.dataset.id);
                 const n = todos.find(t => t.id === id);
                 if (!n) return;
+                haptic('click');   // смахивание засчитано
                 if (dx > 0) {
                     card.style.transition = 'transform 0.35s cubic-bezier(0.2, 0.9, 0.4, 1), opacity 0.35s ease';
                     card.style.transform = 'translate3d(120%, 0, 0) scale(0.9)';
@@ -2759,7 +2777,8 @@
         updateEditTiles();
         updateCollapsibleValues();
         editOverlay.classList.add('active');
-        setTimeout(() => editTextarea.focus(), 300);
+        // Автофокус убран намеренно: клавиатура выскакивала сама и перекрывала карточку.
+        // Пользователь сам тапает по полю, когда хочет править текст.
     }
 
     function renderCategoryTiles() {

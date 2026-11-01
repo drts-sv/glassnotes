@@ -217,6 +217,7 @@ public class MainActivity extends Activity {
 
         webView.addJavascriptInterface(new NotificationBridge(this), "NativeNotify");
         webView.addJavascriptInterface(new ReminderScheduler(this), "NativeAlarms");
+        webView.addJavascriptInterface(new HapticBridge(this), "NativeHaptic");
         webView.addJavascriptInterface(new SaveBridge(this), "NativeSave");
         speechBridge = new SpeechBridge(this, webView);
         autoDownloadModel();
