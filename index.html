@@ -885,6 +885,22 @@
             word-break: break-word; line-height: 1.3;
             max-height: 2.6em; overflow: hidden;
         }
+        .cat-sheet-chips {
+            display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: center;
+            min-height: 1.9rem; margin: 0.5rem 0 0.2rem;
+        }
+        .entity-chip {
+            display: inline-flex; align-items: center; gap: 0.3rem;
+            padding: 0.28rem 0.7rem; border-radius: 999px;
+            font-size: 0.82rem; font-weight: 500; letter-spacing: 0.1px;
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid var(--glass-border);
+            animation: chipIn 0.22s cubic-bezier(0.2, 0.9, 0.4, 1);
+        }
+        .entity-chip.pending { opacity: 0.75; animation: chipPulse 1.1s ease-in-out infinite; }
+        @keyframes chipIn { from { opacity: 0; transform: translateY(4px) scale(0.96); } to { opacity: 1; transform: none; } }
+        @keyframes chipPulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.9; } }
         .cat-sheet-tiles {
             display: grid; grid-template-columns: 1fr 1fr 1fr;
             gap: 8px; margin-bottom: 14px;
@@ -1125,6 +1141,7 @@
         <div class="cat-sheet-handle"></div>
         <div class="cat-sheet-title">Категории?</div>
         <div class="cat-sheet-text" id="catSheetText"></div>
+        <div class="cat-sheet-chips" id="catSheetChips"></div>
         <div class="cat-sheet-tiles" id="catSheetTiles"></div>
         <button class="cat-skip-btn" id="catSkipBtn">
             <span id="catSkipBtnText">Пропустить</span>
@@ -2050,6 +2067,9 @@
     const catSheetOverlay = document.getElementById('catSheetOverlay');
     const catSheetText = document.getElementById('catSheetText');
     const catSheetTiles = document.getElementById('catSheetTiles');
+    const catSheetChips = document.getElementById('catSheetChips');
+    // сплэш открыт в режиме «распознаю»: настоящий результат придёт чуть позже и заменит содержимое
+    let catSheetProcessing = false;
     const catSkipBtn = document.getElementById('catSkipBtn');
     const catSkipBtnText = document.getElementById('catSkipBtnText');
     const catTimerWrap = document.getElementById('catTimerWrap');
@@ -2158,6 +2178,54 @@
             cancelFabText.textContent = '⏳ Распознаю…';
             cancelRecordingRing.style.display = 'none';
         } catch (_) {}
+        // Чипы показываем сразу по остановке, а не после распознавания: иначе между нажатием
+        // «стоп» и появлением текста повисает пауза в пару секунд.
+        showCatSheetProcessing();
+    }
+
+    /** Сплэш в режиме ожидания результата: таймер не запускаем, иначе он закроет окно раньше текста. */
+    function showCatSheetProcessing() {
+        if (typeof askCategoryAfterRecord !== 'undefined' && !askCategoryAfterRecord) return;
+        if (!catSheetOverlay) return;
+        catSheetProcessing = true;
+        catSheetText.textContent = 'Распознаю запись…';
+        if (catSheetChips) catSheetChips.innerHTML = '<span class="entity-chip pending">слушаю</span>';
+        if (catSheetTiles) catSheetTiles.innerHTML = '';
+        catSheetCurrentSelection = new Set();
+        updateCatSheetButton();
+        catSheetOverlay.classList.add('visible');
+    }
+
+    /** Относительный день для чипа: сегодня / завтра / через N дней / дата. */
+    function relativeDay(d) {
+        const startOf = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+        const days = Math.round((startOf(d) - startOf(new Date())) / 86400000);
+        if (days === 0) return 'сегодня';
+        if (days === 1) return 'завтра';
+        if (days === -1) return 'вчера';
+        if (days > 1 && days <= 7) return 'через ' + days + ' дн.';
+        if (days < -1 && days >= -7) return days * -1 + ' дн. назад';
+        return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+    }
+
+    /** Чипы сущностей: что приложение поняло из фразы. */
+    function entityChips(note) {
+        if (!note) return '';
+        const chips = [];
+        if (note.datetime) {
+            const d = new Date(note.datetime);
+            chips.push({ icon: '🕐', text: d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) });
+            chips.push({ icon: '📅', text: relativeDay(d) });
+            if (d.getTime() < Date.now() && note.status !== 'done') chips.push({ icon: '⏰', text: 'просрочено', color: '#ff6b4a' });
+        } else {
+            chips.push({ icon: '📝', text: 'без срока' });
+        }
+        (note.categoryIds || []).map(getCategoryById).filter(Boolean)
+            .forEach(c => chips.push({ icon: '🏷', text: c.name, color: c.color }));
+        if (isImportant(note.categoryIds)) chips.push({ icon: '🔥', text: 'важное', color: '#ff6b4a' });
+        return chips.map(c => '<span class="entity-chip"' +
+            (c.color ? ' style="border-color:' + hexToRgba(c.color, 0.55) + ';background:' + hexToRgba(c.color, 0.22) + ';"' : '') +
+            '>' + c.icon + ' ' + escapeHtml(c.text) + '</span>').join('');
     }
 
     cancelBtn.addEventListener('click', (e) => {
@@ -2186,13 +2254,19 @@
     // === СПЛЭШ КАТЕГОРИЙ ===
     function queueCategorySheet(noteId, text) {
         catSheetQueue.push({ noteId, text });
-        if (!catSheetOverlay.classList.contains('visible')) openNextCategorySheet();
+        // если сплэш уже открыт «в ожидании» — наполняем его настоящими данными, а не ждём закрытия
+        if (!catSheetOverlay.classList.contains('visible') || catSheetProcessing) {
+            catSheetProcessing = false;
+            openNextCategorySheet();
+        }
     }
 
     function openNextCategorySheet() {
         if (catSheetQueue.length === 0) return;
         const item = catSheetQueue[0];
+        catSheetProcessing = false;
         catSheetText.textContent = item.text;
+        if (catSheetChips) catSheetChips.innerHTML = entityChips(todos.find(t => t.id === item.noteId));
         catSheetCurrentSelection = new Set();
         renderCatSheetTiles();
         updateCatSheetButton();
@@ -3012,6 +3086,20 @@
         });
     }
 
+    // Порт — это origin, а заметки лежат в IndexedDB этого origin. Если прошлый экземпляр
+    // приложения ещё держит 8734, мы поднимаемся на запасном порту и видим пустую базу:
+    // честнее сказать об этом прямо, чем показывать «всё пропало».
+    function warnIfFallbackPort() {
+        try {
+            if (!(window.NativeNotify && window.NativeNotify.port)) return;
+            const port = window.NativeNotify.port();
+            if (port && port !== 8734) {
+                console.warn('резервный порт ' + port + ': заметки этого адреса пустые');
+                showToast('⚠️ Порт 8734 занят: список пуст. Закрой приложение полностью и запусти заново', 6000);
+            }
+        } catch (_) {}
+    }
+
     function registerServiceWorker() {
         if ('serviceWorker' in navigator) {
             // Относительный путь: работает и из корня, и из подпапки.
@@ -3403,6 +3491,7 @@
             await loadTodos();
             initVoice();
             registerServiceWorker();
+            warnIfFallbackPort();
             startReminderChecker();
             scheduleSync();
             consumeNativeAction();

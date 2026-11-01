@@ -74,6 +74,12 @@ public class NotificationBridge {
         return permission();
     }
 
+    /** Порт локального сервера: JS сравнивает с основным и предупреждает при уезде на резервный. */
+    @JavascriptInterface
+    public int port() {
+        return AssetServer.LAST_PORT;
+    }
+
     /** Действие из уведомления («Выполнено») — забираем один раз. */
     @JavascriptInterface
     public String consumeAction() {

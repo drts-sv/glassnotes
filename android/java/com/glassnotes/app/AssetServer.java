@@ -41,9 +41,14 @@ public class AssetServer {
      *  и настройки терялись при каждом запуске приложения. */
     private static final int PREFERRED_PORT = 8734;
     private static final int PORT_ATTEMPTS = 4;
-    /** Повторы на тот же порт: после перезапуска сокет бывает в TIME_WAIT доли секунды. */
-    private static final int PORT_RETRIES = 6;
+    /** Повторы на тот же порт: после перезапуска сокет бывает в TIME_WAIT, а прошлый экземпляр
+     *  приложения успевает дожить пару секунд. Ждём до шести секунд, прежде чем уехать на соседний
+     *  порт, — иначе пользователь видит пустой список, хотя его заметки целы на старом адресе. */
+    private static final int PORT_RETRIES = 24;
     private static final long PORT_RETRY_MS = 250;
+
+    /** Последний поднятый порт: приложение показывает предупреждение, если он не основной. */
+    public static volatile int LAST_PORT = 0;
 
     public int start() throws IOException {
         InetAddress loopback = InetAddress.getByName("127.0.0.1");
@@ -53,6 +58,7 @@ public class AssetServer {
         Thread t = new Thread(this::loop, "asset-server");
         t.setDaemon(true);
         t.start();
+        LAST_PORT = port;
         Log.i(TAG, "AssetServer на порту " + port);
         return port;
     }
