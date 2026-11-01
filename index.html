@@ -100,7 +100,7 @@
             background: var(--surface-weak); border: 1px solid var(--surface-border);
             display: flex; align-items: center; justify-content: center;
         }
-        .app-logo img { width: 26px; height: 26px; object-fit: contain; display: block; }
+        .app-logo { font-size: 17px; line-height: 1; }
         /* фишка: кольцо прогресса вокруг иконки — доля выполненных записей */
         .app-logo::after {
             content: ''; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
@@ -109,11 +109,11 @@
             mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
         }
         .header-extra {
-            display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%;
+            display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%;
             max-height: 90px; opacity: 1; overflow: hidden; margin-top: 8px;
             transition: max-height 0.3s ease, opacity 0.25s ease, margin-top 0.3s ease;
         }
-        .header.compact .header-extra { max-height: 0; opacity: 0; margin-top: 0; }
+        .header.compact .filter-chips { display: none; }
         .header {
             display: flex; align-items: center; justify-content: space-between;
             flex-wrap: wrap; gap: 8px; margin-bottom: 0.5rem;
@@ -136,7 +136,7 @@
         body.light .title .badge { color: rgba(0,0,0,0.4); background: color-mix(in srgb, var(--accent) 8%, transparent); }
         .header-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
         .header-btn {
-            width: 38px; height: 38px; border-radius: 30px;
+            width: 34px; height: 34px; border-radius: 30px;
             border: 1px solid var(--surface-border);
             background: var(--surface-weak); color: var(--text-primary);
             cursor: pointer; transition: transform 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
@@ -212,7 +212,7 @@
             font-family: inherit;
             display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap;
         }
-        .tab svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+        .tab > svg { display: none; }   /* в шапке подписи важнее иконок */
         .tab .count { font-weight: 700; opacity: 0.9; }
         .tab svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
         .tab.active { background: var(--tab-active); color: #fff; border-color: transparent;
@@ -1103,26 +1103,11 @@
 <div class="glass-app" id="appContainer">
     <div class="header" id="appHeader">
         <div class="header-main">
-            <div class="app-logo" id="appLogo" title="Прогресс: сколько записей сделано">
-                <img src="app-icon.png" alt="Glass Notes">
-            </div>
+            <div class="app-logo" id="appLogo" title="Прогресс: сколько записей сделано">🎙️</div>
             <div class="title" id="headerTitle">
                 Glass Notes
                 <span class="badge" id="countBadge">0</span>
             </div>
-            <div class="tabs" id="tabsContainer">
-                <button class="tab active" data-tab="active">
-                    <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg>
-                    Активные <span class="count" id="activeCount">0</span>
-                </button>
-                <button class="tab" data-tab="done">
-                    <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    Выполнено <span class="count" id="doneCount">0</span>
-                </button>
-            </div>
-            <button class="header-btn" id="filterBtn" title="Фильтр">
-                <svg viewBox="0 0 24 24"><polygon points="22 3 2 3 10 13 10 21 14 18 14 13 22 3"/></svg>
-            </button>
             <button class="header-btn" id="searchToggleBtn" title="Поиск">
                 <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             </button>
@@ -1131,8 +1116,14 @@
             </button>
         </div>
         <!-- вторая строка нужна редко: фильтры и чипы, сворачивается при прокрутке -->
-        <!-- строка появляется только когда есть активные фильтры -->
-        <div class="header-extra hidden" id="headerExtra">
+        <div class="header-extra" id="headerExtra">
+            <div class="tabs" id="tabsContainer">
+                <button class="tab active" data-tab="active">Активные <span class="count" id="activeCount">0</span></button>
+                <button class="tab" data-tab="done">Выполнено <span class="count" id="doneCount">0</span></button>
+            </div>
+            <button class="header-btn" id="filterBtn" title="Фильтр">
+                <svg viewBox="0 0 24 24"><polygon points="22 3 2 3 10 13 10 21 14 18 14 13 22 3"/></svg>
+            </button>
             <div class="filter-chips" id="filterChips"></div>
         </div>
     </div>
@@ -2664,9 +2655,6 @@
             }
         }
         filterChips.innerHTML = html;
-        // вторая строка шапки нужна только при активных фильтрах
-        const extra = document.getElementById('headerExtra');
-        if (extra) extra.classList.toggle('hidden', html.trim() === '');
     }
 
     filterChips.addEventListener('click', (e) => {
