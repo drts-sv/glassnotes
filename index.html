@@ -1851,6 +1851,12 @@
 
     function checkReminders(notes) {
         if (!notes || notes.length === 0) return;
+        // Когда есть системный планировщик, уведомления показывает он один: иначе на одну заметку
+        // приходило два уведомления — от ресивера и от этого JS-пути.
+        if (nativeAlarms()) {
+            console.log('напоминания: показывает системный планировщик, JS-путь пропущен');
+            return;
+        }
         const nowTime = Date.now();
         // Берём всё, что уже наступило и ещё не отмечено: иначе пропущенное
         // в фоне напоминание не сработает никогда.
@@ -2411,7 +2417,8 @@
             const catName = categoryId ? (getCategoryById(categoryId)?.name || '') : '';
             showToast(`✅ "${finalText}"${catName ? ' 🏷 ' + catName : ''}${dd ? ' 🕐 ' + dd : ''}`, 1500);
             vibrate(30);
-            if (todo.datetime) {
+            if (todo.datetime && !nativeAlarms()) {
+                // Без системного планировщика (браузер) догоняем таймером; с ним — сработает алярм.
                 const delay = new Date(todo.datetime).getTime() - Date.now();
                 if (delay > 0 && delay < 60000) setTimeout(() => checkReminders([todo]), delay + 1000);
                 setTimeout(() => checkReminders([todo]), 1000);
