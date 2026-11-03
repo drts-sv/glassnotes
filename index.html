@@ -100,9 +100,14 @@
             position: relative; display: flex; flex-direction: column; overflow: hidden;
         }
         .header-main { display: flex; align-items: center; gap: 7px; width: 100%; padding-bottom: 0; padding-top: 8px; }
+        /* Кольцо прогресса вокруг иконки: доля выполненных дел на сегодня (все закрыты — 100%) */
+        .logo-ring { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; transform: rotate(-90deg); }
+        .logo-ring circle { fill: none; stroke-width: 2.5; stroke-linecap: round; }
+        .logo-ring-track { stroke: var(--surface-border); }
+        .logo-ring-done { stroke: var(--accent); stroke-dasharray: 78.54; stroke-dashoffset: 78.54; transition: stroke-dashoffset 0.35s ease; }
         .app-logo {
             position: relative; width: 28px; height: 28px; border-radius: 50%;
-            flex-shrink: 0; overflow: hidden;
+            flex-shrink: 0; overflow: visible;
             background: var(--surface-weak); border: 1px solid var(--surface-border);
             display: flex; align-items: center; justify-content: center;
         }
@@ -1131,7 +1136,13 @@
 <div class="glass-app" id="appContainer">
     <div class="header" id="appHeader">
         <div class="header-main">
-            <div class="app-logo" id="appLogo" title="Прогресс: сколько записей сделано">🎙️</div>
+            <div class="app-logo" id="appLogo" title="Прогресс дел на сегодня">
+                🎙️
+                <svg class="logo-ring" viewBox="0 0 28 28" aria-hidden="true">
+                    <circle class="logo-ring-track" cx="14" cy="14" r="12.5"/>
+                    <circle class="logo-ring-done" id="logoRingDone" cx="14" cy="14" r="12.5"/>
+                </svg>
+            </div>
             <div class="title" id="headerTitle">
                 GlasNote
                 <span class="badge" id="countBadge">0</span>
@@ -3015,7 +3026,37 @@
         resultsContainer.querySelectorAll('.result-card').forEach(c => initSwipe(c));
     }
 
-    function updateBadge() { countBadge.textContent = todos.length; }
+    function updateBadge() { countBadge.textContent = todos.length; updateLogoRing(); }
+
+    /**
+     * Кольцо вокруг иконки: доля выполненных дел НА ТЕКУЩИЙ ДЕНЬ. В счёт идут дела, запланированные
+     * на сегодня, и просроченные (их всё равно закрывать сегодня); дела без срока не считаем, иначе
+     * процент «размывается». Все дела дня закрыты — кольцо полное, 100%.
+     */
+    function updateLogoRing() {
+        const ring = document.getElementById('logoRingDone');
+        const logo = document.getElementById('appLogo');
+        if (!ring) return;
+        const now = Date.now();
+        // начало дня считаем сами: startOfDay объявлена внутри другого блока и отсюда не видна
+        const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+        const today = dayStart(new Date());
+        const ofDay = todos.filter(t => {
+            if (!t.datetime) return false;
+            const at = new Date(t.datetime).getTime();
+            if (dayStart(new Date(at)) === today) return true;
+            return t.status !== 'done' && at < now;
+        });
+        const done = ofDay.filter(t => t.status === 'done').length;
+        const share = ofDay.length ? done / ofDay.length : 0;
+        const circumference = 2 * Math.PI * 12.5;
+        ring.style.strokeDashoffset = String((circumference * (1 - share)).toFixed(2));
+        if (logo) {
+            logo.title = ofDay.length
+                ? 'Выполнено ' + done + ' из ' + ofDay.length + ' дел на сегодня (' + Math.round(share * 100) + '%)'
+                : 'На сегодня дел нет';
+        }
+    }
 
     // === РЕДАКТОР ===
     let editingId = null, editDate = null, editTime = null, editCategoryIds = [];
