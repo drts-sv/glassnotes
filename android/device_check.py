@@ -25,7 +25,8 @@ ADB = os.environ.get("ADB_BIN", r"C:\adb\adb.exe")
 PKG = "com.glassnotes.app"
 PORT = 9222
 # В adb бывает несколько устройств (телефон + ТВ-приставки) — пинуем серийник.
-SERIAL = os.environ.get("ADB_SERIAL", "65041XEA36AFF8")
+# По Wi-Fi стабильное имя — mDNS-служба: порт подключения меняется, а это имя нет.
+SERIAL = os.environ.get("ADB_SERIAL", "adb-65041XEA36AFF8-FabILr._adb-tls-connect._tcp")
 
 
 def adb(*args):
@@ -34,25 +35,50 @@ def adb(*args):
     return (r.stdout or "").strip()
 
 
-def ensure_device():
-    """Беспроводное подключение отваливается само — перед работой переподключаемся.
-
-    Серийник вида host:port означает сеть: без `adb connect` устройство пропадает
-    из списка (device not found) и проверки молча уходят не туда.
-    """
-    if ":" not in SERIAL:
-        return
+def _connected():
     listing = adb("devices")
-    if any(line.startswith(SERIAL) and "\tdevice" in line for line in listing.splitlines()):
+    return any(line.startswith(SERIAL) and "\tdevice" in line for line in listing.splitlines())
+
+
+def _target_from_mdns():
+    """Порт подключения по Wi-Fi меняется при каждом включении отладки — берём его из mDNS."""
+    for line in adb("mdns", "services").splitlines():
+        if "_adb-tls-connect._tcp" not in line:
+            continue
+        for token in line.split():
+            tail = token.split(":")[-1]
+            if ":" in token and tail.isdigit():
+                return token.strip()
+    return None
+
+
+def ensure_device():
+    """Связь по Wi-Fi отваливается сама, а порт ещё и меняется — перед работой переподключаемся.
+
+    Серийник — либо адрес `host:port`, либо имя mDNS-службы. Во втором случае порт подключения
+    ищем сами через `adb mdns services`, чтобы не спрашивать его у пользователя каждый раз.
+    """
+    if _connected():
         return
-    for _ in range(5):
-        subprocess.run([ADB, "connect", SERIAL], capture_output=True, text=True)
+    if ":" in SERIAL:
+        for _ in range(4):
+            subprocess.run([ADB, "connect", SERIAL], capture_output=True, text=True)
+            time.sleep(2)
+            if _connected():
+                print("adb: подключился к " + SERIAL)
+                return
+        print("adb: не удалось подключиться к " + SERIAL)
+        return
+    for _ in range(4):
+        target = _target_from_mdns()
+        if target:
+            subprocess.run([ADB, "connect", target], capture_output=True, text=True)
+            time.sleep(2)
+            if _connected():
+                print("adb: подключился к " + target + " (" + SERIAL + ")")
+                return
         time.sleep(2)
-        listing = adb("devices")
-        if any(line.startswith(SERIAL) and "\tdevice" in line for line in listing.splitlines()):
-            print("adb: подключился к " + SERIAL)
-            return
-    print("adb: не удалось подключиться к " + SERIAL)
+    print("adb: устройство " + SERIAL + " не найдено (включена ли отладка по Wi-Fi?)")
 
 
 def pid_of(package):
