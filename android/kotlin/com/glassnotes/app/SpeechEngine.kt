@@ -63,6 +63,12 @@ class SpeechEngine(context: Context) {
     @Volatile
     private var downloading = false
 
+    /** Текущая громкость речи 0..1 — для анимации записи (0, когда не пишем). */
+    fun currentLevel(): Float = recorder?.level ?: 0f
+
+    /** Идёт ли сейчас запись с микрофона. */
+    fun isCapturing(): Boolean = recorder != null
+
     fun isModelInstalled(): Boolean = modelManager.isInstalled()
 
     fun modelPath(): String = modelManager.modelFile.absolutePath

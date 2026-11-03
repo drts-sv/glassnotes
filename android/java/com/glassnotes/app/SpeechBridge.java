@@ -55,6 +55,16 @@ public class SpeechBridge {
         return true;
     }
 
+    /** Громкость для анимации записи: {"level":0.42,"rec":true}. */
+    @JavascriptInterface
+    public String level() {
+        try {
+            return "{\"level\":" + engine.currentLevel() + ",\"rec\":" + engine.isCapturing() + "}";
+        } catch (Throwable t) {
+            return "{\"level\":0,\"rec\":false}";
+        }
+    }
+
     /** Прогреть распознаватель, чтобы первая фраза не ждала 15 секунд. */
     public void warmUp() {
         engine.warmUp();
