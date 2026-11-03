@@ -241,6 +241,8 @@ public class MainActivity extends Activity {
         webView.addJavascriptInterface(new HapticBridge(this), "NativeHaptic");
         webView.addJavascriptInterface(new ThemeBridge(this), "NativeTheme");
         webView.addJavascriptInterface(new SaveBridge(this), "NativeSave");
+        // заметки и настройки — в базе приложения, а не в хранилище WebView (оно привязано к порту)
+        webView.addJavascriptInterface(StoreBridge.get(this), "NativeStore");
         speechBridge = new SpeechBridge(this, webView);
         autoDownloadModel();
         warmUpRecognizer();

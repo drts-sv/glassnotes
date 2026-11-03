@@ -1742,6 +1742,31 @@
 </div>
 
 <script>
+    // === ХРАНИЛИЩЕ: настройки живут в базе приложения, а не только в localStorage ===
+    // localStorage привязан к origin страницы (http://127.0.0.1:ПОРТ): при смене порта настройки
+    // «терялись» вместе с заметками. Восстанавливаем их из базы ДО первого чтения ниже и дальше
+    // каждое изменение дублируем в базу.
+    (function bootstrapNativeStore() {
+        try {
+            if (!window.NativeStore || String(window.NativeStore.available()) !== 'yes') return;
+            window.__NS = window.NativeStore;
+            let kv = {};
+            try { kv = JSON.parse(window.NativeStore.kvAll() || '{}'); } catch (_) {}
+            Object.keys(kv).forEach(function (k) {
+                try { localStorage.setItem(k, kv[k]); } catch (_) {}
+            });
+            const origSet = Storage.prototype.setItem, origDel = Storage.prototype.removeItem;
+            Storage.prototype.setItem = function (k, v) {
+                origSet.call(this, k, v);
+                try { window.__NS.kvSet(String(k), String(v)); } catch (_) {}
+            };
+            Storage.prototype.removeItem = function (k) {
+                origDel.call(this, k);
+                try { window.__NS.kvRemove(String(k)); } catch (_) {}
+            };
+        } catch (_) {}
+    })();
+
     const APP_VERSION = '1.1-giga';
     const BUILD_DATE = '29.10.2026';
     const MODEL_TITLE = '🧠 GigaAM v3 (int8)';
@@ -2163,11 +2188,62 @@
             request.onerror = (e) => reject(e.target.error);
         });
     }
-    async function getAllNotes() { return new Promise((res, rej) => { if (!db) { rej('no db'); return; } const tx = db.transaction(STORE_NAME, 'readonly'); const r = tx.objectStore(STORE_NAME).getAll(); r.onsuccess = () => res(r.result || []); r.onerror = () => rej(r.error); }); }
-    async function addNote(n) { return new Promise((res, rej) => { if (!db) { rej('no db'); return; } const tx = db.transaction(STORE_NAME, 'readwrite'); const r = tx.objectStore(STORE_NAME).add(n); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
-    async function deleteNote(id) { return new Promise((res, rej) => { if (!db) { rej('no db'); return; } const tx = db.transaction(STORE_NAME, 'readwrite'); const r = tx.objectStore(STORE_NAME).delete(id); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }); }
-    async function updateNote(id, data) { return new Promise((res, rej) => { if (!db) { rej('no db'); return; } const tx = db.transaction(STORE_NAME, 'readwrite'); const s = tx.objectStore(STORE_NAME); const r = s.get(id); r.onsuccess = () => { const note = r.result; if (!note) { rej('not found'); return; } Object.assign(note, data); const ur = s.put(note); ur.onsuccess = () => res(); ur.onerror = () => rej(ur.error); }; r.onerror = () => rej(r.error); }); }
-    async function clearAllNotes() { return new Promise((res, rej) => { if (!db) { rej('no db'); return; } const tx = db.transaction(STORE_NAME, 'readwrite'); const r = tx.objectStore(STORE_NAME).clear(); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }); }
+    // Старое хранилище (IndexedDB) остаётся как откат и как источник для переноса.
+    async function getAllNotesLegacy() { return new Promise((res, rej) => { if (!db) { rej('no db'); return; } const tx = db.transaction(STORE_NAME, 'readonly'); const r = tx.objectStore(STORE_NAME).getAll(); r.onsuccess = () => res(r.result || []); r.onerror = () => rej(r.error); }); }
+    async function addNoteLegacy(n) { return new Promise((res, rej) => { if (!db) { rej('no db'); return; } const tx = db.transaction(STORE_NAME, 'readwrite'); const r = tx.objectStore(STORE_NAME).add(n); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+    async function deleteNoteLegacy(id) { return new Promise((res, rej) => { if (!db) { rej('no db'); return; } const tx = db.transaction(STORE_NAME, 'readwrite'); const r = tx.objectStore(STORE_NAME).delete(id); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }); }
+    async function updateNoteLegacy(id, data) { return new Promise((res, rej) => { if (!db) { rej('no db'); return; } const tx = db.transaction(STORE_NAME, 'readwrite'); const s = tx.objectStore(STORE_NAME); const r = s.get(id); r.onsuccess = () => { const note = r.result; if (!note) { rej('not found'); return; } Object.assign(note, data); const ur = s.put(note); ur.onsuccess = () => res(); ur.onerror = () => rej(ur.error); }; r.onerror = () => rej(r.error); }); }
+    async function clearAllNotesLegacy() { return new Promise((res, rej) => { if (!db) { rej('no db'); return; } const tx = db.transaction(STORE_NAME, 'readwrite'); const r = tx.objectStore(STORE_NAME).clear(); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }); }
+
+    // === ХРАНИЛИЩЕ: источник правды — база приложения (не привязана к порту) ===
+    let NS = window.__NS || null;
+
+    /** Первый запуск на новой схеме: переносим заметки и настройки из старого хранилища. */
+    async function migrateToNative() {
+        if (!NS) { console.log('хранилище: мост недоступен, работаем на IndexedDB'); return 'нет моста'; }
+        let kv = {};
+        try { kv = JSON.parse(NS.kvAll() || '{}'); } catch (_) {}
+        const keys = Object.keys(kv);
+        if (keys.length === 0) {
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                try { NS.kvSet(k, localStorage.getItem(k)); } catch (_) {}
+            }
+        }
+        let nativeCount = 0;
+        try { nativeCount = Number(NS.count()) || 0; } catch (_) {}
+        if (nativeCount > 0) { console.log('хранилище: в базе уже ' + nativeCount + ' заметок'); return 'уже в базе: ' + nativeCount; }
+        let legacy = [];
+        try { if (!db) await openDB(); legacy = await getAllNotesLegacy(); } catch (e) { legacy = []; }
+        if (!legacy.length) { console.log('хранилище: переносить нечего'); return 'переносить нечего'; }
+        let moved = 0;
+        for (const n of legacy) {
+            try { const id = Number(NS.add(JSON.stringify(n))); if (id > 0) moved++; } catch (_) {}
+        }
+        console.log('хранилище: перенесено заметок ' + moved + ' из ' + legacy.length);
+        return 'перенесено: ' + moved;
+    }
+
+    async function getAllNotes() {
+        if (NS) { try { return JSON.parse(NS.all() || '[]'); } catch (_) { return []; } }
+        return getAllNotesLegacy();
+    }
+    async function addNote(n) {
+        if (NS) { const id = Number(NS.add(JSON.stringify(n))); if (!(id > 0)) throw new Error('не записалось'); return id; }
+        return addNoteLegacy(n);
+    }
+    async function deleteNote(id) {
+        if (NS) { NS.remove(String(id)); return; }
+        return deleteNoteLegacy(id);
+    }
+    async function updateNote(id, data) {
+        if (NS) { const r = String(NS.update(String(id), JSON.stringify(data))); if (r !== 'ok') throw new Error(r); return; }
+        return updateNoteLegacy(id, data);
+    }
+    async function clearAllNotes() {
+        if (NS) { NS.clearAll(); return; }
+        return clearAllNotesLegacy();
+    }
 
     function migrateNote(n) {
         const out = { ...n };
@@ -4322,6 +4398,8 @@
     async function init() {
         try {
             await openDB();
+            // заметки и настройки переезжают в базу приложения (порт больше не важен)
+            try { await migrateToNative(); } catch (e) { console.warn('хранилище: перенос', e); }
             initTheme();
             applyFabPosition();
             await loadTodos();
