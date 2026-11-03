@@ -525,15 +525,15 @@
         /* Ряд категорий во время записи: ниже кнопки стоп по слоям (та важнее) */
         .rec-cat-row {
             position: fixed; left: 0; right: 0; z-index: 505;
-            display: none; gap: 6px; padding: 0 10px;
+            display: none; gap: 8px; padding: 0 12px;
             overflow-x: auto; overflow-y: hidden; white-space: nowrap;
             scrollbar-width: none; -webkit-overflow-scrolling: touch;
         }
         .rec-cat-row.visible { display: flex; }
         .rec-cat-row::-webkit-scrollbar { width: 0; height: 0; }
         .rec-cat-chip {
-            flex: 0 0 auto; padding: 7px 13px; border-radius: 8px; font: inherit;
-            font-size: 0.82rem; color: var(--text-primary); cursor: pointer;
+            flex: 0 0 auto; padding: 6px 11px; border-radius: 8px; font: inherit;
+            font-size: 0.78rem; color: var(--text-primary); cursor: pointer;
             background: rgb(var(--glass-rgb) / var(--card-alpha));
             border: 1px solid var(--surface-border);
             backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
@@ -1693,6 +1693,15 @@
     ];
     const REMOVED_CATEGORY_IDS = ['calls', 'home'];
 
+    /**
+     * Слова-подсказки для категории. Замысел пользователя: сказал «купить хлеб» — заметка
+     * «Хлеб» с категорией «Покупки», то есть слово-команда уходит в категорию, а не висит в тексте.
+     * Убираем слово только если в заметке остаётся смысл (иначе «купить» превратилось бы в пустую).
+     */
+    const CATEGORY_KEYWORDS = {
+        shopping: /(?<![а-яё])(?:купить|куплю|купи|покупать|покупаю|сходить\s+в\s+магазин|магазин)(?![а-яё])/i
+    };
+
     let timeDefaults = { ...DEFAULT_TIME_SETTINGS };
     try { const s = localStorage.getItem('timeDefaults'); if (s) timeDefaults = { ...DEFAULT_TIME_SETTINGS, ...JSON.parse(s) }; } catch (_) {}
 
@@ -1859,6 +1868,22 @@
         let result = null, timeResult = null, categoryId = null, relativeApplied = false;
 
         if (voiceCatEnabled) {
+            // По слову-подсказке: без него «купить хлеб» оставалось без категории, хотя
+            // категорию видно из самого слова.
+            if (!categoryId) {
+                for (const id of Object.keys(CATEGORY_KEYWORDS)) {
+                    const m = working.match(CATEGORY_KEYWORDS[id]);
+                    if (!m) continue;
+                    const rest = cutOut(working, m.index, m[0].length).replace(/\s+/g, ' ').trim();
+                    if (rest) {
+                        categoryId = id;
+                        working = rest;
+                        lower = working.toLowerCase();
+                    }
+                    break;
+                }
+            }
+
             const catMatch = working.match(/\s*категория\s+([а-яёa-z]+)\s*[.!?]?\s*$/i);
             if (catMatch) {
                 const word = catMatch[1].toLowerCase();
@@ -2381,7 +2406,10 @@
         cancelFab.style.top  = (vh * FAB_POSITION.y / 100) + 'px';
         try {
             const r = cancelFab.getBoundingClientRect();
-            if (r.height) recCatRow.style.bottom = Math.max(8, vh - r.top + 12) + 'px';
+            if (r.height) {
+                // под кнопкой: 40 px занимает строка времени, плюс запас на пульс кольца (1.4x)
+                recCatRow.style.top = Math.round(Math.min(vh - 90, r.bottom + 74)) + 'px';
+            }
         } catch (_) {}
     }
 
