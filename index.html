@@ -4007,14 +4007,8 @@
     // приложения ещё держит 8734, мы поднимаемся на запасном порту и видим пустую базу:
     // честнее сказать об этом прямо, чем показывать «всё пропало».
     function warnIfFallbackPort() {
-        try {
-            if (!(window.NativeNotify && window.NativeNotify.port)) return;
-            const port = window.NativeNotify.port();
-            if (port && port !== 8734) {
-                console.warn('резервный порт ' + port + ': заметки этого адреса пустые');
-                showToast('⚠️ Порт 8734 занят: список пуст. Закрой приложение полностью и запусти заново', 6000);
-            }
-        } catch (_) {}
+        // Порта больше нет: страница отдаётся из assets по постоянному origin,
+        // а заметки и настройки живут в базе приложения. Предупреждать не о чем.
     }
 
     // === СВОРАЧИВАНИЕ ШАПКИ ===
@@ -4093,6 +4087,9 @@
     }
 
     function registerServiceWorker() {
+        // Страница из assets: сервис-воркер не нужен (файлы локальные), а его кэш только мешает
+        // обновлениям — свежий index.html приходит внутри APK.
+        if (location.hostname === 'appassets.androidplatform.net') return;
         if ('serviceWorker' in navigator) {
             // Относительный путь: работает и из корня, и из подпапки.
             navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW:', err));

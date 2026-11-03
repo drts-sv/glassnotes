@@ -13,11 +13,14 @@ import android.view.ViewGroup;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 
 /**
  * Обёртка Glass Notes: WebView + локальный HTTP-сервер из assets.
@@ -31,7 +34,14 @@ public class MainActivity extends Activity {
     public static final int REQ_PERMS = 1000;
 
     private WebView webView;
-    private AssetServer server;
+    /**
+     * Постоянный origin страницы. Раньше приложение поднимало локальный HTTP-сервер на 127.0.0.1,
+     * и хранилище WebView (IndexedDB, localStorage) зависело от его порта: порт сменился — заметки
+     * «пропадали». Теперь заметки и настройки лежат в базе приложения, а страницу отдаём прямо из
+     * assets по этому адресу: https — доверенный источник, поэтому доступны и localStorage, и
+     * service worker, а порта и потока сервера больше нет.
+     */
+    private static final String ASSET_ORIGIN = "https://appassets.androidplatform.net/";
     private SpeechBridge speechBridge;
 
     /** Прогрев распознавателя отложенно: не мешает загрузке страницы. */
@@ -168,6 +178,14 @@ public class MainActivity extends Activity {
         });
 
         webView.setWebViewClient(new WebViewClient() {
+            /** Отдаём файлы из assets: index.html, sw.js, скрипты, лицензии. */
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                String url = request.getUrl().toString();
+                if (url.startsWith(ASSET_ORIGIN)) return serveAsset(url.substring(ASSET_ORIGIN.length()));
+                return null;
+            }
+
             @Override
             public void onPageFinished(WebView view, String url) {
                 // Слушатель insets успевает сработать раньше, чем появится JS-контекст,
@@ -252,15 +270,7 @@ public class MainActivity extends Activity {
         NotificationBridge.ensureChannel(this);
         requestStartupPermissions();
 
-        try {
-            server = new AssetServer(getAssets());
-            int port = server.start();
-            webView.loadUrl("http://127.0.0.1:" + port + "/index.html");
-        } catch (IOException e) {
-            Log.e(TAG, "не поднялся локальный сервер", e);
-            webView.loadData("<h2>Не удалось запустить локальный сервер</h2><p>" + e.getMessage() + "</p>",
-                    "text/html; charset=utf-8", null);
-        }
+        webView.loadUrl(ASSET_ORIGIN + "index.html");
     }
 
     private void requestStartupPermissions() {
@@ -301,6 +311,44 @@ public class MainActivity extends Activity {
     }
 
     private int lastTopInset = -1, lastBottomInset = -1;
+
+    /** Файл из assets как ответ WebView. Кодировку ставим только тексту, двоичные отдаём как есть. */
+    private WebResourceResponse serveAsset(String path) {
+        try {
+            int q = path.indexOf('?');
+            if (q >= 0) path = path.substring(0, q);
+            if (path.isEmpty() || path.endsWith("/")) path = path + "index.html";
+            InputStream in = getAssets().open(path);
+            String mime = mimeOf(path);
+            boolean text = mime.startsWith("text/") || mime.contains("javascript") || mime.contains("json");
+            WebResourceResponse resp = new WebResourceResponse(mime, text ? "utf-8" : null, in);
+            // Без кэша: файлы лежат в APK, после обновления нужно отдавать свежие, а не старые.
+            java.util.Map<String, String> h = new java.util.HashMap<>();
+            h.put("Cache-Control", "no-store");
+            resp.setResponseHeaders(h);
+            return resp;
+        } catch (Throwable t) {
+            Log.w(TAG, "нет в assets: " + path);
+            return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found",
+                    new java.util.HashMap<String, String>(),
+                    new ByteArrayInputStream(new byte[0]));
+        }
+    }
+
+    private static String mimeOf(String path) {
+        String p = path.toLowerCase();
+        if (p.endsWith(".html") || p.endsWith(".htm")) return "text/html";
+        if (p.endsWith(".js")) return "application/javascript";
+        if (p.endsWith(".css")) return "text/css";
+        if (p.endsWith(".json")) return "application/json";
+        if (p.endsWith(".txt")) return "text/plain";
+        if (p.endsWith(".svg")) return "image/svg+xml";
+        if (p.endsWith(".png")) return "image/png";
+        if (p.endsWith(".jpg") || p.endsWith(".jpeg")) return "image/jpeg";
+        if (p.endsWith(".webp")) return "image/webp";
+        if (p.endsWith(".woff2")) return "font/woff2";
+        return "application/octet-stream";
+    }
 
     private void pushCurrentInsets() {
         int top = 0, bottom = 0;
@@ -357,7 +405,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (speechBridge != null) speechBridge.releaseEngine();
-        if (server != null) server.stop();
         if (webView != null) {
             webView.loadUrl("about:blank");
             webView.destroy();
