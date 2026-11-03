@@ -92,6 +92,28 @@ public class NotificationBridge {
     /** Когда это же уведомление показывали в прошлый раз — чтобы не звонить повторно. */
     private static final Map<String, Long> LAST_SHOWN = new HashMap<>();
 
+    /**
+     * Гасит уведомление напоминания по id заметки: после «Выполнено» оно не должно
+     * оставаться в шторке — иначе висит источник звука, который можно и не заметить.
+     */
+    @JavascriptInterface
+    public String cancelNote(long noteId) {
+        try {
+            NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) {
+                android.util.Log.w("GlassNotes", "отмена: нет NotificationManager");
+                return "нет менеджера";
+            }
+            int id = (int) (noteId & 0x7fffffff);
+            nm.cancel(id);
+            android.util.Log.i("GlassNotes", "отмена уведомления id=" + id);
+            return "ok " + id;
+        } catch (Throwable t) {
+            android.util.Log.e("GlassNotes", "отмена уведомления не удалась", t);
+            return "ошибка: " + t;
+        }
+    }
+
     @JavascriptInterface
     public boolean show(String title, String body, String tag) {
         try {

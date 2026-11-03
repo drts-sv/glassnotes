@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1c1c1e">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Glass Notes — Голосовые напоминания</title>
+    <title>GlasNote — Голосовые напоминания</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icon-192.png" sizes="192x192">
     <style>
@@ -1125,7 +1125,7 @@
         <div class="header-main">
             <div class="app-logo" id="appLogo" title="Прогресс: сколько записей сделано">🎙️</div>
             <div class="title" id="headerTitle">
-                Glass Notes
+                GlasNote
                 <span class="badge" id="countBadge">0</span>
             </div>
             <button class="header-btn" id="filterBtn" title="Фильтр">
@@ -1615,7 +1615,7 @@
             </button>
         </div>
         <div class="modal-content">
-            <div class="info-row"><span class="info-label">📱 Приложение</span><span class="info-value">Glass Notes</span></div>
+            <div class="info-row"><span class="info-label">📱 Приложение</span><span class="info-value">GlasNote</span></div>
             <div class="info-row"><span class="info-label">🏷️ Версия</span><span class="info-value" id="appVersion">1.1-giga</span></div>
             <div class="info-row"><span class="info-label">📅 Сборка</span><span class="info-value" id="appBuildDate">29.10.2026</span></div>
             <div class="info-row"><span class="info-label">🧠 Распознавание</span><span class="info-value" id="infoModel">…</span></div>
@@ -2123,6 +2123,8 @@
             const note = todos.find(t => t.id === action.id);
             if (!note) return;
             if (action.mode === 1 && note.status !== 'done') await markDone(action.id);
+            // Гасим уведомление: иначе после «Выполнено» оно остаётся в шторке источником сигнала.
+            try { if (window.NativeNotify && window.NativeNotify.cancelNote) NativeNotify.cancelNote(action.id); } catch (e) {}
             scheduleSync();
         } catch (e) { console.warn('действие из уведомления:', e); }
     }
@@ -3909,7 +3911,7 @@
             document.getElementById('appBuildDate').textContent = BUILD_DATE;
             wrapDownloadProgress();
             updateModelUI();
-            console.log(`🎙️ Glass Notes v${APP_VERSION}`);
+            console.log(`🎙️ GlasNote v${APP_VERSION}`);
             console.log(`📊 Заметок: ${todos.length}`);
             console.log('📅 Сборка: 25.09.2026');
         } catch (e) { console.error('Init error:', e); showToast('❌ Ошибка инициализации', 3000); }

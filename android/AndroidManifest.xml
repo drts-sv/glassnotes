@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.glassnotes.app"
-    android:versionCode="148"
-    android:versionName="2.38-giga">
+    android:versionCode="151"
+    android:versionName="2.41-giga">
 
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35" />
 
@@ -21,7 +21,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
-        android:label="Glass Notes Giga"
+        android:label="GlasNote"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
         android:hardwareAccelerated="true"

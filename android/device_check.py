@@ -17,11 +17,15 @@ import urllib.request
 
 import websockets
 
-ADB = r"C:\adb\adb.exe"
+import os
+
+# Путь к adb и серийник можно задать снаружи: по Wi-Fi серийник — это host:port,
+# а свежий adb (нужен для `adb pair`) лежит отдельно от старого.
+ADB = os.environ.get("ADB_BIN", r"C:\adb\adb.exe")
 PKG = "com.glassnotes.app"
 PORT = 9222
 # В adb бывает несколько устройств (телефон + ТВ-приставки) — пинуем серийник.
-SERIAL = "65041XEA36AFF8"
+SERIAL = os.environ.get("ADB_SERIAL", "65041XEA36AFF8")
 
 
 def adb(*args):
