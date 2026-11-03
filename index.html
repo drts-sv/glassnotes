@@ -523,10 +523,12 @@
         }
         .cancel-fab.visible { opacity: 1; pointer-events: auto; }
         /* Ряд категорий во время записи: ниже кнопки стоп по слоям (та важнее) */
+        /* Облако категорий: чипы переносятся по строкам и стоят по центру — строку
+           с горизонтальной прокруткой пришлось убрать, в неё всё не влезало и выглядело кучей. */
         .rec-cat-row {
-            position: fixed; left: 0; right: 0; z-index: 505;
-            display: none; gap: 8px; padding: 0 12px;
-            overflow-x: auto; overflow-y: hidden; white-space: nowrap;
+            position: fixed; left: 10px; right: 10px; z-index: 505;
+            display: none; flex-wrap: wrap; gap: 8px; justify-content: center;
+            align-content: flex-start; max-height: 190px; overflow-y: auto;
             scrollbar-width: none; -webkit-overflow-scrolling: touch;
         }
         .rec-cat-row.visible { display: flex; }
@@ -654,7 +656,8 @@
             backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
             padding: 12px 28px; border-radius: 40px;
             color: #ffffff; font-size: 0.95rem; font-weight: 500;
-            z-index: 200; text-align: center;
+            z-index: 1200;   /* выше модальных окон (1000): иначе сообщения не видно из настроек */
+            text-align: center;
             border: 1px solid var(--surface-border);
             box-shadow: 0 8px 40px rgba(0,0,0,0.25);
             opacity: 0;
@@ -947,6 +950,14 @@
             width: 1px; height: 1px; left: -9999px;
         }
 
+        /* Ручное закрытие: таймер здесь только подстраховка, окно должно закрываться и по кнопке */
+        .cat-sheet-x {
+            position: absolute; top: 8px; right: 10px; width: 34px; height: 34px;
+            border-radius: 50%; border: 1px solid var(--surface-border);
+            background: var(--surface-weak); color: var(--text-primary);
+            font-size: 1rem; line-height: 1; cursor: pointer; z-index: 3;
+        }
+        .cat-sheet-x:active { transform: scale(0.94); }
         .cat-sheet-overlay {
             position: fixed; inset: 0;
             background: rgba(0,0,0,0.5);
@@ -958,6 +969,7 @@
         }
         .cat-sheet-overlay.visible { opacity: 1; pointer-events: auto; }
         .cat-sheet {
+            position: relative;   /* без этого ✕ позиционировался бы от всего окна, а не от шторки */
             width: 100%; max-width: 800px;
             background: var(--glass-bg);
             backdrop-filter: blur(32px); -webkit-backdrop-filter: blur(32px);
@@ -1247,6 +1259,7 @@
 <div class="cat-sheet-overlay" id="catSheetOverlay">
     <div class="cat-sheet" id="catSheet">
         <div class="cat-sheet-handle"></div>
+        <button class="cat-sheet-x" id="catSheetCloseBtn" aria-label="Закрыть">✕</button>
         <div class="cat-sheet-title">Категории?</div>
         <div class="cat-sheet-text" id="catSheetText"></div>
         <div class="cat-sheet-chips" id="catSheetChips"></div>
@@ -2670,6 +2683,7 @@
     }
 
     catSheetTiles.addEventListener('click', (e) => {
+        holdCatSheetTimer();
         const btn = e.target.closest('.cat-tile');
         if (!btn) return;
         const catId = btn.dataset.cat;
@@ -2677,9 +2691,35 @@
         else catSheetCurrentSelection.add(catId);
         renderCatSheetTiles();
         updateCatSheetButton();
-        // Перезапускаем таймер при каждом тапе (если включён)
-        startCatSheetTimer();
+        // Таймер НЕ перезапускаем: пользователь уже выбирает, окно должно ждать его решения
+        // (закрыть можно кнопкой ✕, «Готово» или тапом по фону).
     });
+
+    // Ручное закрытие сплэша категорий: применяем выбор и закрываем, счётчик не ждём.
+    const catSheetCloseBtn = document.getElementById('catSheetCloseBtn');
+
+    function closeCatSheetNow() {
+        stopCatSheetTimer();
+        const item = catSheetQueue[0];
+        if (item && catSheetCurrentSelection.size > 0) {
+            assignCategoriesToNote(item.noteId, Array.from(catSheetCurrentSelection));
+        }
+        skipCategorySheet();
+    }
+
+    /** Пользователь взялся выбирать — авто-закрытие больше не мешает: закроет сам. */
+    function holdCatSheetTimer() {
+        if (catSheetProcessing) return;
+        stopCatSheetTimer();
+        if (catTimerWrap) catTimerWrap.classList.remove('visible');
+    }
+
+    if (catSheetCloseBtn) catSheetCloseBtn.addEventListener('click', closeCatSheetNow);
+    if (catSheetOverlay) {
+        catSheetOverlay.addEventListener('click', (e) => {
+            if (e.target === catSheetOverlay && !catSheetProcessing) closeCatSheetNow();
+        });
+    }
 
     catSkipBtn.addEventListener('click', () => {
         const item = catSheetQueue[0];
@@ -3191,6 +3231,12 @@
     function armNoteSheetTimer() {
         clearTimeout(noteSheetTimer);
         noteSheetTimer = setTimeout(() => closeNoteSheet(), 8000);
+        // Касание в карточке — значит пользователь читает/действует: не закрываем у него под руками.
+        const card = document.getElementById('noteSheetCard');
+        if (card && !card.dataset.holdWired) {
+            card.dataset.holdWired = '1';
+            card.addEventListener('pointerdown', () => clearTimeout(noteSheetTimer), { passive: true });
+        }
     }
 
     function openNoteSheet(id) {
@@ -3708,7 +3754,9 @@
                 let binary = '';
                 for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
                 const ok = window.NativeSave.saveFile(fn, 'application/json', btoa(binary));
-                showToast(ok ? '📤 Бэкап в «Загрузках»' : '❌ Не удалось сохранить', 2500);
+                showToast(ok
+                    ? '📤 Бэкап сохранён: ' + fn + ' · папка «Загрузки»'
+                    : '❌ Не удалось сохранить бэкап', ok ? 4500 : 3000);
                 return;
             }
             const a = document.createElement('a');
