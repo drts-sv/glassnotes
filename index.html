@@ -2731,8 +2731,14 @@
         if (!recWave || !cancelFab) return;
         const r = cancelFab.getBoundingClientRect();
         const w = recWave.clientWidth || 360;
+        // Над кнопкой висит подпись «Слушаю…» — поднимаем полосу выше неё, иначе налезает.
+        let topEdge = r.top;
+        if (cancelFabText && cancelFabText.style.display !== 'none') {
+            const lt = cancelFabText.getBoundingClientRect();
+            if (lt.height) topEdge = Math.min(topEdge, lt.top);
+        }
         recWave.style.left = Math.round(r.left + r.width / 2 - w / 2) + 'px';
-        recWave.style.top = Math.max(6, Math.round(r.top - 78)) + 'px';
+        recWave.style.top = Math.max(6, Math.round(topEdge - 74)) + 'px';
     }
 
     function startRecAnimation() {
