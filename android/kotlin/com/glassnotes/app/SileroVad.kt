@@ -32,6 +32,7 @@ class SileroVad(
     private var stateNames: Pair<String, String>? = null
     private var state = FloatArray(2 * STATE_SIZE)
     private var calls = 0
+    private var outputNames: List<String> = emptyList()
 
     override val available: Boolean
         get() = session != null && stateNames != null
@@ -46,10 +47,15 @@ class SileroVad(
             session = created
             val names = created.inputNames
             val shapes = names.joinToString(", ") { name ->
-                name + created.inputInfo[name]?.info?.shape?.joinToString("x", "[", "]") { it.toString() }
+                val info = created.inputInfo[name]?.info
+                val shape = (info as? ai.onnxruntime.TensorInfo)
+                    ?.shape
+                    ?.joinToString("x", "[", "]") { it.toString() }
+                    ?: "?"
+                name + shape
             }
-            val outNames = created.outputNames
-            Log.i(TAG, "VAD: модель загружена, кадр $frameSize; входы: $shapes; выходы: $outNames")
+            outputNames = created.outputNames.toList()
+            Log.i(TAG, "VAD: модель загружена, кадр $frameSize; входы: $shapes; выходы: $outputNames")
             stateNames = if (names.contains("state")) "state" to "stateN" else null
             if (stateNames == null) {
                 Log.w(TAG, "VAD: неизвестный интерфейс модели — авто-стоп останется по уровню")
@@ -100,7 +106,7 @@ class SileroVad(
                 val next = stateTensorNext.value as Array<Array<FloatArray>>
                 if (calls < 3) {
                     calls++
-                    Log.i(TAG, "VAD: кадр $calls -> речь $speech (выходы: ${result.outputNames})")
+                    Log.i(TAG, "VAD: кадр $calls -> речь $speech (выходы: $outputNames)")
                 }
                 var index = 0
                 for (layer in 0 until 2) {
