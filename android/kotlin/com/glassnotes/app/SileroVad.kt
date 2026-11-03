@@ -34,6 +34,13 @@ class SileroVad(
     private var calls = 0
     private var outputNames: List<String> = emptyList()
 
+    /**
+     * Хвост предыдущего кадра: модель ждёт на входе 64 его сэмпла плюс 512 новых. Без этого
+     * окно неполное и сеть отвечает «не речь» на живую громкую речь (проверено: rms 25508,
+     * вероятность 0,00 — вот из-за чего авто-стоп не срабатывал).
+     */
+    private var context = FloatArray(CONTEXT_SIZE)
+
     override val available: Boolean
         get() = session != null && stateNames != null
 
@@ -72,10 +79,15 @@ class SileroVad(
         val names = stateNames ?: return 0f
         if (frame.size != frameSize) return 0f
 
+        val window = FloatArray(context.size + frameSize)
+        System.arraycopy(context, 0, window, 0, context.size)
+        System.arraycopy(frame, 0, window, context.size, frameSize)
+        context = window.copyOfRange(window.size - CONTEXT_SIZE, window.size)
+
         val input = OnnxTensor.createTensor(
             environment,
-            FloatBuffer.wrap(frame),
-            longArrayOf(1L, frameSize.toLong()),
+            FloatBuffer.wrap(window),
+            longArrayOf(1L, window.size.toLong()),
         )
         val stateTensor = OnnxTensor.createTensor(
             environment,
@@ -84,8 +96,7 @@ class SileroVad(
         )
         val rateTensor = OnnxTensor.createTensor(
             environment,
-            LongBuffer.wrap(longArrayOf(SAMPLE_RATE)),
-            longArrayOf(1L),
+            java.lang.Long.valueOf(SAMPLE_RATE),
         )
 
         try {
@@ -130,6 +141,7 @@ class SileroVad(
 
     override fun reset() {
         state = FloatArray(2 * STATE_SIZE)
+        context = FloatArray(CONTEXT_SIZE)
     }
 
     override fun close() {
@@ -145,5 +157,8 @@ class SileroVad(
         const val ASSET = "vad/silero_vad.onnx"
         const val SAMPLE_RATE = 16_000L
         const val STATE_SIZE = 128
+
+        /** 64 сэмпла контекста при 16 кГц, 32 при 8 кГц (см. обёртку Silero). */
+        const val CONTEXT_SIZE = 64
     }
 }
