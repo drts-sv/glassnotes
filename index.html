@@ -94,7 +94,8 @@
                поэтому и то и другое живёт здесь, а отступы переехали внутрь из body. */
             background: rgb(var(--glass-rgb) / var(--app-veil));
             backdrop-filter: blur(var(--bg-blur)); -webkit-backdrop-filter: blur(var(--bg-blur));
-            padding: calc(0.35rem + var(--inset-top, 0px)) 0.5rem calc(0.4rem + var(--inset-bottom, 0px));
+            /* боковые поля шире, иначе карточки (они равны шапке) упираются в край экрана */
+            padding: calc(0.35rem + var(--inset-top, 0px)) 0.8rem calc(0.4rem + var(--inset-bottom, 0px));
             border-radius: 0; border: none; box-shadow: none;
             transition: opacity 0.2s;
             position: relative; display: flex; flex-direction: column; overflow: hidden;
@@ -1160,7 +1161,7 @@
         .note-sheet-x svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; }
         body.light .note-sheet-x { background: rgba(0, 0, 0, 0.06); }
         @media (max-width: 440px) {
-            .glass-app { padding: calc(0.3rem + var(--inset-top, 0px)) 0.35rem calc(0.35rem + var(--inset-bottom, 0px)); }
+            .glass-app { padding: calc(0.3rem + var(--inset-top, 0px)) 0.8rem calc(0.35rem + var(--inset-bottom, 0px)); }
             .title { font-size: 1.2rem; }
             .result-card { padding: 0.9rem 1.2rem; }
             :root { --result-text: 0.95rem; }
