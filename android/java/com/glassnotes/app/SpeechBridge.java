@@ -86,8 +86,6 @@ public class SpeechBridge {
         return true;
     }
 
-    /** Прямой самотест: TTS -> файл -> PCM 16 кГц -> распознаватель, без микрофона. */
-    @JavascriptInterface
     /** Самотест авто-стопа: фраза произносится в динамик, запись должна встать сама по тишине. */
     @JavascriptInterface
     public boolean selfTestAutoStop(String phrase) {
@@ -98,6 +96,8 @@ public class SpeechBridge {
         return true;
     }
 
+    /** Прямой самотест: TTS -> файл -> PCM 16 кГц -> распознаватель, без микрофона. */
+    @JavascriptInterface
     public boolean selfTestDirect(String phrase) {
         jsRaw("window.__selfTestResult=null");
         engine.selfTestDirect(phrase,
