@@ -522,6 +522,23 @@
             padding: 0; margin: 0;
         }
         .cancel-fab.visible { opacity: 1; pointer-events: auto; }
+        /* Ряд категорий во время записи: ниже кнопки стоп по слоям (та важнее) */
+        .rec-cat-row {
+            position: fixed; left: 0; right: 0; z-index: 505;
+            display: none; gap: 6px; padding: 0 10px;
+            overflow-x: auto; overflow-y: hidden; white-space: nowrap;
+            scrollbar-width: none; -webkit-overflow-scrolling: touch;
+        }
+        .rec-cat-row.visible { display: flex; }
+        .rec-cat-row::-webkit-scrollbar { width: 0; height: 0; }
+        .rec-cat-chip {
+            flex: 0 0 auto; padding: 7px 13px; border-radius: 8px; font: inherit;
+            font-size: 0.82rem; color: var(--text-primary); cursor: pointer;
+            background: rgb(var(--glass-rgb) / var(--card-alpha));
+            border: 1px solid var(--surface-border);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        }
+        .rec-cat-chip.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); }
         .cancel-fab .cancel-btn {
             width: 100%; height: 100%; border-radius: 50%;
             border: 2px solid rgba(255,59,48,0.4);
@@ -1206,6 +1223,10 @@
 
 <div class="undo-overlay" id="undoOverlay"></div>
 <div class="voice-overlay" id="voiceOverlay"></div>
+
+<!-- Категории во время записи: видно, что выберется, пока говоришь. Первый чип — «Авто»
+     (категория из фразы). Рядом с кнопкой «Стоп», но выше неё по замеру, чтобы не мешать. -->
+<div class="rec-cat-row" id="recCatRow"></div>
 
 <div class="cancel-fab" id="cancelFab">
     <button class="cancel-btn" id="cancelBtn">
@@ -2189,6 +2210,7 @@
     const voiceBtn = document.getElementById('voiceBtn');
     const voiceOverlay = document.getElementById('voiceOverlay');
     const cancelFab = document.getElementById('cancelFab');
+    const recCatRow = document.getElementById('recCatRow');
     const cancelBtn = document.getElementById('cancelBtn');
     const cancelIcon = document.getElementById('cancelIcon');
     const cancelFabText = document.getElementById('cancelFabText');
@@ -2338,10 +2360,43 @@
         } catch (_) { return false; }
     }
 
+    /**
+     * Ряд категорий ставим ПО ЗАМЕРУ кнопки, а не по её проценту: кнопка квадратная и
+     * центрируется через translate, поэтому «на глаз» легко перекрыть её или уехать за экран.
+     */
     function applyFabPosition() {
         const vw = window.innerWidth, vh = window.innerHeight;
         cancelFab.style.left = (vw * FAB_POSITION.x / 100) + 'px';
         cancelFab.style.top  = (vh * FAB_POSITION.y / 100) + 'px';
+        try {
+            const r = cancelFab.getBoundingClientRect();
+            if (r.height) recCatRow.style.bottom = Math.max(8, vh - r.top + 12) + 'px';
+        } catch (_) {}
+    }
+
+    /** Чипы категорий на время записи: «Авто» первым, дальше категории. */
+    let recCategoryIds = new Set();
+
+    function renderRecCatRow() {
+        if (!recCatRow) return;
+        const авто = `<button class="rec-cat-chip${recCategoryIds.size ? '' : ' selected'}" data-rec-cat="">Авто</button>`;
+        const rows = DEFAULT_CATEGORIES.map(c => {
+            const sel = recCategoryIds.has(c.id) ? ' selected' : '';
+            return `<button class="rec-cat-chip${sel}" data-rec-cat="${c.id}">${c.name}</button>`;
+        }).join('');
+        recCatRow.innerHTML = авто + rows;
+    }
+
+    function showRecCatRow() {
+        if (!recCatRow) return;
+        if (typeof askCategoryAfterRecord !== 'undefined' && !askCategoryAfterRecord) return;
+        renderRecCatRow();
+        applyFabPosition();
+        recCatRow.classList.add('visible');
+    }
+
+    function hideRecCatRow() {
+        if (recCatRow) recCatRow.classList.remove('visible');
     }
 
     const UNDO_ICON_SVG = '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>';
@@ -2359,6 +2414,7 @@
             cancelTimerRing.style.display = 'none';
             cancelTimerText.style.display = 'block';
             cancelTimerText.textContent = '0:00';
+            showRecCatRow();
         } else if (mode === 'undo') {
             cancelFab.classList.remove('recording');
             cancelIcon.innerHTML = UNDO_ICON_SVG;
@@ -2369,6 +2425,7 @@
         }
     }
     function hideCancelFab() {
+        hideRecCatRow();
         cancelFab.classList.remove('visible', 'recording');
         cancelFabText.style.display = 'none';
         cancelRecordingRing.style.display = 'none';
@@ -2379,6 +2436,7 @@
 
     // Распознавание идёт 2-15 с: без подписи кажется, что кнопка стоп не сработала.
     function markRecognizing() {
+        hideRecCatRow();   // дальше выбор идёт на сплэше после распознавания
         try {
             cancelFabText.style.display = 'flex';
             cancelFabText.textContent = '⏳ Распознаю…';
@@ -2432,6 +2490,25 @@
         return chips.map(c => '<span class="entity-chip"' +
             (c.color ? ' style="border-color:' + hexToRgba(c.color, 0.55) + ';background:' + hexToRgba(c.color, 0.22) + ';"' : '') +
             '>' + c.icon + ' ' + escapeHtml(c.text) + '</span>').join('');
+    }
+
+    // Выбор категории во время записи: тап по чипу; «Авто» очищает выбор (категория из фразы).
+    if (recCatRow) {
+        recCatRow.addEventListener('click', (e) => {
+            const chip = e.target.closest('[data-rec-cat]');
+            if (!chip) return;
+            // id категорий — строки ('work', 'important'), поэтому без parseInt
+            const id = chip.getAttribute('data-rec-cat');
+            if (!id) {
+                recCategoryIds.clear();
+            } else if (recCategoryIds.has(id)) {
+                recCategoryIds.delete(id);
+            } else {
+                recCategoryIds.add(id);
+            }
+            renderRecCatRow();
+            vibrate(15);
+        });
     }
 
     cancelBtn.addEventListener('click', (e) => {
@@ -2588,7 +2665,8 @@
         const { parsed, cleanText, categoryId } = parseDateNLU(text, voiceCategoryEnabled);
         const finalText = cleanText || text.trim();
         if (!finalText) return;
-        const catIds = categoryId ? [categoryId] : [];
+        // Выбор, сделанный во время записи, важнее категории из фразы: пользователь ткнул сам.
+        const catIds = recCategoryIds.size ? [...recCategoryIds] : (categoryId ? [categoryId] : []);
         const todo = {
             text: finalText,
             time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }),
@@ -2615,7 +2693,10 @@
                 if (delay > 0 && delay < 60000) setTimeout(() => checkReminders([todo]), delay + 1000);
                 setTimeout(() => checkReminders([todo]), 1000);
             }
-            if (!categoryId && askCategoryAfterRecord) queueCategorySheet(id, finalText);
+            // Если категория уже выбрана во время записи, спрашивать второй раз нечего.
+            recCategoryIds.clear();
+            renderRecCatRow();
+            if (!catIds.length && askCategoryAfterRecord) queueCategorySheet(id, finalText);
         } catch (e) { console.error(e); showToast('❌ Ошибка', 1500); }
     }
 
