@@ -18,6 +18,7 @@ public class ReminderReceiver extends BroadcastReceiver {
     static final String ACTION_REMIND = "com.glassnotes.app.ACTION_REMIND";
     static final String ACTION_SNOOZE = "com.glassnotes.app.ACTION_SNOOZE";
     static final String ACTION_SILENCE = "com.glassnotes.app.ACTION_SILENCE";
+    static final String ACTION_REVIEW = "com.glassnotes.app.ACTION_REVIEW";
 
     private static final String EXTRA_SNOOZE_MIN = "snooze_min";
 
@@ -28,6 +29,14 @@ public class ReminderReceiver extends BroadcastReceiver {
         long id = intent.getLongExtra(ReminderScheduler.EXTRA_ID, 0L);
         String title = intent.getStringExtra(ReminderScheduler.EXTRA_TITLE);
         String body = intent.getStringExtra(ReminderScheduler.EXTRA_BODY);
+
+        if (ACTION_REVIEW.equals(action)) {
+            // Утреннее ревью: показываем напоминание и сразу ставим следующее на завтра.
+            int count = intent.getIntExtra(ReminderScheduler.EXTRA_REVIEW_COUNT, 0);
+            showReview(context, count);
+            new ReminderScheduler(context).rescheduleReview();
+            return;
+        }
 
         if (ACTION_SILENCE.equals(action)) {
             // Аварийный выход: гасим уведомление и снимаем все алярмы приложения — до этого
@@ -74,6 +83,40 @@ public class ReminderReceiver extends BroadcastReceiver {
             Log.i("GlassNotes", "показано напоминание: " + title);
         } catch (Throwable t) {
             Log.e("GlassNotes", "не удалось показать напоминание", t);
+        }
+    }
+
+    /** Уведомление утреннего ревью: тап открывает приложение, оно само покажет список дел. */
+    private void showReview(Context context, int count) {
+        try {
+            NotificationBridge.ensureChannel(context);
+            NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+            android.content.Intent open = new android.content.Intent(context, MainActivity.class);
+            open.setFlags(android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    | android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (android.os.Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+            PendingIntent pi = PendingIntent.getActivity(context, ReminderScheduler.REVIEW_REQUEST, open, flags);
+
+            Notification.Builder b = (android.os.Build.VERSION.SDK_INT >= 26)
+                    ? new Notification.Builder(context, "glass-notes-reminders")
+                    : new Notification.Builder(context);
+            b.setSmallIcon(R.mipmap.ic_launcher)
+                    .setContentTitle("🌅 Утреннее ревью")
+                    .setContentText(count > 0
+                            ? "Дел на сегодня: " + count + " — посмотрите список"
+                            : "На сегодня дел нет")
+                    .setAutoCancel(true)
+                    .setOnlyAlertOnce(true)
+                    .setContentIntent(pi)
+                    .setStyle(new Notification.BigTextStyle().bigText(count > 0
+                            ? "Просроченные, на сегодня и без срока — всё в одном списке"
+                            : "Можно выдохнуть"));
+            nm.notify(ReminderScheduler.REVIEW_REQUEST, b.build());
+            Log.i("GlassNotes", "ревью: уведомление показано, дел " + count);
+        } catch (Throwable t) {
+            Log.e("GlassNotes", "ревью: не удалось показать уведомление", t);
         }
     }
 

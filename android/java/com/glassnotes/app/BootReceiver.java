@@ -17,5 +17,7 @@ public class BootReceiver extends BroadcastReceiver {
         }
         Log.i("GlassNotes", "телефон перезагрузился, поднимаю расписание");
         ReminderScheduler.rescheduleAll(context);
+        // утреннее ревью — отдельный ежедневный алярм, его тоже надо переподнять
+        ReminderScheduler.rescheduleReview(context);
     }
 }

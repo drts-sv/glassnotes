@@ -1074,6 +1074,32 @@
             pointer-events: none;
         }
 
+        /* Утреннее ревью: сплэш со списком дел на текущий день */
+        .review-splash {
+            position: fixed; inset: 0; z-index: 940;
+            display: none; align-items: center; justify-content: center; padding: 18px;
+            background: rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+        }
+        .review-splash.visible { display: flex; }
+        .review-card {
+            position: relative; width: 100%; max-width: 420px; max-height: 82vh;
+            display: flex; flex-direction: column; gap: 10px;
+            padding: 1.4rem 1.2rem; border-radius: 28px;
+            background: var(--glass-bg); border: 1px solid var(--surface-border);
+            backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
+            box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+        }
+        .review-title { font-size: 1.15rem; font-weight: 700; color: var(--text-primary); }
+        .review-date { font-size: 0.85rem; color: var(--text-secondary); }
+        .review-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; }
+        .review-group { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px;
+                        color: var(--text-secondary); font-weight: 600; margin-top: 6px; }
+        .review-item { display: flex; gap: 8px; align-items: flex-start; font-size: 0.92rem;
+                       color: var(--text-primary); line-height: 1.3; }
+        .review-item .mark { color: var(--text-secondary); }
+        .review-empty { font-size: 0.9rem; color: var(--text-secondary); }
+
         .note-sheet {
             position: fixed; inset: 0; z-index: 420;
             display: none; align-items: center; justify-content: center;
@@ -1346,6 +1372,20 @@
     </div>
 </div>
 
+<div class="review-splash" id="reviewSplash">
+    <div class="review-card">
+        <button class="note-sheet-x" id="reviewCloseBtn" aria-label="Закрыть">
+            <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <div class="review-title">🌅 Утреннее ревью</div>
+        <div class="review-date" id="reviewDateText"></div>
+        <div class="review-list" id="reviewList"></div>
+        <div class="note-sheet-actions" style="margin-top:14px;">
+            <button class="note-sheet-btn edit" id="reviewStartBtn">Начать день</button>
+        </div>
+    </div>
+</div>
+
 <div class="note-sheet" id="noteSheet">
     <div class="note-sheet-card" id="noteSheetCard">
         <button class="note-sheet-x" id="noteSheetCloseBtn" aria-label="Закрыть">
@@ -1479,6 +1519,28 @@
                         <div class="time-row"><span class="time-label">🌙 Ночь</span><input type="time" data-default="night" value="21:00"></div>
                         <div class="time-row"><span class="time-label">📅 Сегодня (без вр.)</span><input type="time" data-default="today" value="12:00"></div>
                         <div class="time-row"><span class="time-label">📅 Завтра (без вр.)</span><input type="time" data-default="tomorrow" value="09:00"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div class="collapsible-header" id="reviewHeader">
+                    <div class="group-title">🌅 Утреннее ревью</div>
+                    <span class="collapse-value" id="reviewValue">08:00</span>
+                    <svg class="collapse-icon" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+                <div class="collapsible-body" id="reviewBody">
+                    <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
+                        <span style="font-size:0.9rem;color:var(--text-primary);opacity:0.85;">Показывать дела на день</span>
+                        <input type="checkbox" id="reviewToggle" checked style="width:20px;height:20px;accent-color:var(--accent);cursor:pointer;">
+                    </label>
+                    <div class="time-row" style="margin-top:10px;">
+                        <span class="time-label">⏰ Во сколько</span>
+                        <input type="time" id="reviewTimeInput" value="08:00">
+                    </div>
+                    <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:8px;line-height:1.35;">
+                        Утром приходит напоминание, а при первом открытии после этого времени показывается
+                        список дел на текущий день: просроченные, на сегодня и без срока.
                     </div>
                 </div>
             </div>
@@ -1714,6 +1776,10 @@
     const CATEGORY_KEYWORDS = {
         shopping: /(?<![а-яё])(?:купить|куплю|купи|покупать|покупаю|сходить\s+в\s+магазин|магазин)(?![а-яё])/i
     };
+
+    // Утреннее ревью: сплэш со списком дел на текущий день в заданное время.
+    let reviewEnabled = localStorage.getItem('reviewEnabled') !== 'false';
+    let reviewTime = localStorage.getItem('reviewTime') || '08:00';
 
     let timeDefaults = { ...DEFAULT_TIME_SETTINGS };
     try { const s = localStorage.getItem('timeDefaults'); if (s) timeDefaults = { ...DEFAULT_TIME_SETTINGS, ...JSON.parse(s) }; } catch (_) {}
@@ -2180,6 +2246,7 @@
 
     function pushSchedule() {
         const api = nativeAlarms();
+        pushReviewSchedule();
         if (!api) return;
         try {
             const now = Date.now();
@@ -3188,6 +3255,91 @@
 
     function updateBadge() { countBadge.textContent = todos.length; updateLogoRing(); }
 
+    // === УТРЕННЕЕ РЕВЬЮ ===
+
+    /** Дела на текущий день: просроченные, на сегодня и без срока — то же, что считает кольцо. */
+    function reviewItems(now = Date.now()) {
+        const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+        const today = dayStart(new Date());
+        const overdue = [], todayList = [], noDate = [];
+        todos.filter(t => t.status !== 'done').forEach(t => {
+            if (!t.datetime) { noDate.push(t); return; }
+            const at = new Date(t.datetime).getTime();
+            if (dayStart(new Date(at)) === today) todayList.push(t);
+            else if (at < now) overdue.push(t);
+        });
+        overdue.sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
+        todayList.sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
+        return { overdue, today: todayList, noDate, total: overdue.length + todayList.length };
+    }
+
+    /** Ближайшее наступление времени ревью: сегодня, если ещё не прошло, иначе завтра. */
+    function nextReviewAt() {
+        const [h, m] = (reviewTime || '08:00').split(':').map(Number);
+        const d = new Date();
+        d.setHours(h || 0, m || 0, 0, 0);
+        if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+        return d.getTime();
+    }
+
+    /** Отдаём ревью нативной стороне: она поднимет его уведомлением в заданное время. */
+    function pushReviewSchedule() {
+        const api = nativeAlarms();
+        const enabled = reviewEnabled && typeof api !== 'undefined' && api && api.scheduleReview;
+        try {
+            if (!api || !api.scheduleReview) return;
+            if (!reviewEnabled) { api.scheduleReview(''); return; }
+            const { total } = reviewItems();
+            api.scheduleReview(JSON.stringify({ at: nextReviewAt(), count: total, time: reviewTime }));
+        } catch (e) { console.warn('ревью: расписание', e); }
+    }
+
+    function renderReview() {
+        const list = document.getElementById('reviewList');
+        const dateText = document.getElementById('reviewDateText');
+        if (!list) return;
+        const { overdue, today, noDate } = reviewItems();
+        const day = new Date();
+        const months = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+        if (dateText) {
+            dateText.textContent = day.getDate() + ' ' + months[day.getMonth()] + ', дел на день: ' +
+                (overdue.length + today.length) + (noDate.length ? ' (+' + noDate.length + ' без срока)' : '');
+        }
+        const row = (t, mark) => '<div class="review-item"><span class="mark">' + mark + '</span><span>' +
+            escapeHtml(t.text || '') + '</span></div>';
+        let html = '';
+        if (overdue.length) html += '<div class="review-group">Просрочено · ' + overdue.length + '</div>' +
+            overdue.map(t => row(t, '⚠️')).join('');
+        if (today.length) html += '<div class="review-group">На сегодня · ' + today.length + '</div>' +
+            today.map(t => row(t, '•')).join('');
+        if (noDate.length) html += '<div class="review-group">Без срока · ' + noDate.length + '</div>' +
+            noDate.map(t => row(t, '•')).join('');
+        list.innerHTML = html || '<div class="review-empty">На сегодня дел нет — можно выдохнуть 🙂</div>';
+    }
+
+    function openMorningReview() {
+        renderReview();
+        document.getElementById('reviewSplash').classList.add('visible');
+        const todayKey = new Date().toISOString().slice(0, 10);
+        localStorage.setItem('reviewShownFor', todayKey);
+        pushReviewSchedule();
+    }
+
+    function closeMorningReview() {
+        document.getElementById('reviewSplash').classList.remove('visible');
+    }
+
+    /** Показать ревью при открытии, если время уже прошло и сегодня его ещё не показывали. */
+    function maybeShowMorningReview() {
+        if (!reviewEnabled) return;
+        const [h, m] = (reviewTime || '08:00').split(':').map(Number);
+        const now = new Date();
+        const todayKey = now.toISOString().slice(0, 10);
+        if (localStorage.getItem('reviewShownFor') === todayKey) return;
+        if (now.getHours() * 60 + now.getMinutes() < (h || 0) * 60 + (m || 0)) return;
+        openMorningReview();
+    }
+
     /**
      * Кольцо вокруг иконки: доля выполненных дел НА ТЕКУЩИЙ ДЕНЬ. В счёт идут дела, запланированные
      * на сегодня, и просроченные (их всё равно закрывать сегодня); дела без срока не считаем, иначе
@@ -4071,6 +4223,46 @@
     document.getElementById('licensesCloseBtn').addEventListener('click', () => licensesModal.classList.remove('active'));
     licensesModal.addEventListener('click', (e) => { if (e.target === licensesModal) licensesModal.classList.remove('active'); });
 
+    const reviewHeader = document.getElementById('reviewHeader');
+    const reviewBody = document.getElementById('reviewBody');
+    const reviewToggle = document.getElementById('reviewToggle');
+    const reviewTimeInput = document.getElementById('reviewTimeInput');
+    const reviewValue = document.getElementById('reviewValue');
+
+    function reviewSettingsUI() {
+        if (reviewToggle) reviewToggle.checked = reviewEnabled;
+        if (reviewTimeInput) reviewTimeInput.value = reviewTime;
+        if (reviewValue) reviewValue.textContent = reviewEnabled ? reviewTime : 'выключено';
+    }
+
+    if (reviewHeader && reviewBody) {
+        reviewHeader.addEventListener('click', () => {
+            reviewHeader.classList.toggle('expanded');
+            reviewBody.classList.toggle('expanded');
+        });
+    }
+    if (reviewToggle) {
+        reviewToggle.addEventListener('change', () => {
+            reviewEnabled = reviewToggle.checked;
+            localStorage.setItem('reviewEnabled', String(reviewEnabled));
+            reviewSettingsUI();
+            pushReviewSchedule();
+        });
+    }
+    if (reviewTimeInput) {
+        reviewTimeInput.addEventListener('change', () => {
+            reviewTime = reviewTimeInput.value || '08:00';
+            localStorage.setItem('reviewTime', reviewTime);
+            reviewSettingsUI();
+            pushReviewSchedule();
+        });
+    }
+    const reviewCloseBtn = document.getElementById('reviewCloseBtn');
+    const reviewStartBtn = document.getElementById('reviewStartBtn');
+    if (reviewCloseBtn) reviewCloseBtn.addEventListener('click', closeMorningReview);
+    if (reviewStartBtn) reviewStartBtn.addEventListener('click', closeMorningReview);
+    reviewSettingsUI();
+
     document.getElementById('modelSettingsHeader').addEventListener('click', function () {
         this.classList.toggle('expanded');
         document.getElementById('modelSettingsBody').classList.toggle('expanded');
@@ -4115,7 +4307,7 @@
             consumeNativeAction();
             askExactAlarms();
             document.addEventListener('visibilitychange', () => {
-                if (document.visibilityState === 'visible') { consumeNativeAction(); scheduleSync(); }
+                if (document.visibilityState === 'visible') { consumeNativeAction(); scheduleSync(); maybeShowMorningReview(); }
             });
             updateSettingsCollapseValues();
             renderFilterChips();

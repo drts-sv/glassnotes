@@ -24,6 +24,12 @@ public class ReminderScheduler {
 
     static final String PREFS = "glass_notes_alarms";
     static final String KEY_LIST = "scheduled";
+    static final String KEY_REVIEW = "review";
+
+    /** Свой номер запроса: у напоминаний номера — это id заметок, тут нужен отдельный. */
+    static final int REVIEW_REQUEST = 7001;
+    static final String EXTRA_REVIEW_COUNT = "review_count";
+    static final String EXTRA_REVIEW_TIME = "review_time";
 
     static final String EXTRA_ID = "note_id";
     static final String EXTRA_TITLE = "note_title";
@@ -97,6 +103,113 @@ public class ReminderScheduler {
 
     private String exactState() {
         return exactAllowed() ? ", точные" : ", нет разрешения на точные (сдвиг возможен)";
+    }
+
+    /**
+     * Утреннее ревью: одно ежедневное напоминание со списком дел на день. Пустая строка — выключить.
+     * Алярм один, поэтому его нельзя путать с напоминаниями заметок — отсюда свой requestCode.
+     */
+    @JavascriptInterface
+    public String scheduleReview(String json) {
+        AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) return "нет планировщика";
+        try {
+            am.cancel(reviewIntent(0, ""));
+        } catch (Throwable ignored) {
+        }
+
+        if (json == null || json.isEmpty()) {
+            prefs().edit().remove(KEY_REVIEW).apply();
+            Log.i("GlassNotes", "ревью: выключено");
+            return "ревью выключено";
+        }
+
+        try {
+            JSONObject item = new JSONObject(json);
+            long at = item.optLong("at", 0L);
+            if (at <= System.currentTimeMillis()) return "ревью: время уже прошло";
+            String time = item.optString("time", "08:00");
+            int count = item.optInt("count", 0);
+            prefs().edit().putString(KEY_REVIEW, json).apply();
+            armReview(am, at, count, time);
+            Log.i("GlassNotes", "ревью: поставлено на " + new java.util.Date(at) + ", дел на день " + count);
+            return "ревью поставлено";
+        } catch (Throwable t) {
+            Log.e("GlassNotes", "ревью: не удалось поставить", t);
+            return "ошибка: " + t;
+        }
+    }
+
+    /** Для BootReceiver: состояние ревью лежит в prefs, нужен только контекст. */
+    public static void rescheduleReview(Context ctx) {
+        new ReminderScheduler(ctx).rescheduleReview();
+    }
+
+    /** Переподнять ревью на следующий день: после срабатывания и после перезагрузки телефона. */
+    public void rescheduleReview() {
+        String saved = prefs().getString(KEY_REVIEW, null);
+        if (saved == null || saved.isEmpty()) return;
+        try {
+            JSONObject item = new JSONObject(saved);
+            String time = item.optString("time", "08:00");
+            int count = item.optInt("count", 0);
+            long at = nextReviewAt(time);
+            AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+            if (am == null) return;
+            armReview(am, at, count, time);
+            Log.i("GlassNotes", "ревью: переподнято на " + new java.util.Date(at));
+        } catch (Throwable t) {
+            Log.e("GlassNotes", "ревью: не удалось переподнять", t);
+        }
+    }
+
+    /** Ближайшее наступление времени ревью: сегодня, если ещё не прошло, иначе завтра. */
+    static long nextReviewAt(String time) {
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        int hour = 8, minute = 0;
+        try {
+            String[] parts = (time == null ? "08:00" : time).split(":");
+            hour = Integer.parseInt(parts[0]);
+            if (parts.length > 1) minute = Integer.parseInt(parts[1]);
+        } catch (Throwable ignored) {
+        }
+        c.set(java.util.Calendar.HOUR_OF_DAY, hour);
+        c.set(java.util.Calendar.MINUTE, minute);
+        c.set(java.util.Calendar.SECOND, 0);
+        c.set(java.util.Calendar.MILLISECOND, 0);
+        if (c.getTimeInMillis() <= System.currentTimeMillis()) {
+            c.add(java.util.Calendar.DAY_OF_YEAR, 1);
+        }
+        return c.getTimeInMillis();
+    }
+
+    private void armReview(AlarmManager am, long at, int count, String time) {
+        PendingIntent pi = reviewIntent(count, time);
+        try {
+            if (Build.VERSION.SDK_INT >= 31) {
+                if (am.canScheduleExactAlarms()) {
+                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
+                } else {
+                    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
+                }
+            } else if (Build.VERSION.SDK_INT >= 23) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
+            } else {
+                am.setExact(AlarmManager.RTC_WAKEUP, at, pi);
+            }
+        } catch (Throwable t) {
+            Log.e("GlassNotes", "ревью: алярм не поставлен", t);
+        }
+    }
+
+    private PendingIntent reviewIntent(int count, String time) {
+        Intent intent = new Intent(ctx, ReminderReceiver.class);
+        intent.setAction(ReminderReceiver.ACTION_REVIEW);
+        intent.putExtra(EXTRA_REVIEW_COUNT, count);
+        intent.putExtra(EXTRA_REVIEW_TIME, time);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+        return PendingIntent.getBroadcast(ctx, REVIEW_REQUEST, intent, flags);
     }
 
     private SharedPreferences prefs() {
