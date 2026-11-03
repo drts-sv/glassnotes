@@ -34,6 +34,27 @@ def adb(*args):
     return (r.stdout or "").strip()
 
 
+def ensure_device():
+    """Беспроводное подключение отваливается само — перед работой переподключаемся.
+
+    Серийник вида host:port означает сеть: без `adb connect` устройство пропадает
+    из списка (device not found) и проверки молча уходят не туда.
+    """
+    if ":" not in SERIAL:
+        return
+    listing = adb("devices")
+    if any(line.startswith(SERIAL) and "\tdevice" in line for line in listing.splitlines()):
+        return
+    for _ in range(5):
+        subprocess.run([ADB, "connect", SERIAL], capture_output=True, text=True)
+        time.sleep(2)
+        listing = adb("devices")
+        if any(line.startswith(SERIAL) and "\tdevice" in line for line in listing.splitlines()):
+            print("adb: подключился к " + SERIAL)
+            return
+    print("adb: не удалось подключиться к " + SERIAL)
+
+
 def pid_of(package):
     out = adb("shell", "pidof", package)
     return out.split()[0] if out else None
@@ -119,6 +140,7 @@ CHECKS = [
 
 
 async def main():
+    ensure_device()
     pid = pid_of(PKG)
     if not pid:
         launch()

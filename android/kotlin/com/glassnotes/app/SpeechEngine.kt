@@ -446,6 +446,99 @@ class SpeechEngine(context: Context) {
     }
 
     /**
+     * Самотест авто-стопа: телефон сам произносит фразу в динамик, пишет её микрофоном и
+     * должен остановиться САМ по тишине — проверка без человека. Отличие от [selfTest]:
+     * включён авто-стоп, то есть путь ровно такой же, как при обычной записи (в selfTest
+     * авто-стоп выключен, поэтому этот путь там не проверяется).
+     * Результат — в JS: текст распознанного или «авто-стоп не сработал».
+     */
+    fun selfTestAutoStop(phrase: String, onText: TextSink, onError: ErrorSink) {
+        Thread {
+            var tts: TextToSpeech? = null
+            var player: MediaPlayer? = null
+            try {
+                val wav = java.io.File(appContext.cacheDir, "auto_stop_test.wav")
+                if (wav.exists()) wav.delete()
+                var ready = false
+                tts = TextToSpeech(appContext) { status -> ready = status == TextToSpeech.SUCCESS }
+                tts.language = java.util.Locale("ru", "RU")
+                for (i in 0 until 60) {
+                    if (ready) break
+                    Thread.sleep(100)
+                }
+                tts.synthesizeToFile(phrase, null, wav, "auto_stop_test")
+                var last = -1L
+                for (i in 0 until 100) {
+                    Thread.sleep(100)
+                    val size = wav.length()
+                    if (size > 1000L && size == last) break
+                    last = size
+                }
+                if (wav.length() < 1000L) {
+                    onError.onError("tts: файл не создан")
+                    return@Thread
+                }
+
+                val stopped = java.util.concurrent.CountDownLatch(1)
+                var stoppedAt = 0L
+                val startedAt = System.currentTimeMillis()
+                enableAutoStop {
+                    stoppedAt = System.currentTimeMillis()
+                    stopped.countDown()
+                }
+                if (!startCapture()) {
+                    disableAutoStop()
+                    onError.onError("audio-capture")
+                    return@Thread
+                }
+                Log.i(TAG, "тест авто-стопа: запись пошла, говорю фразу")
+
+                val am = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC), 0)
+                player = MediaPlayer()
+                player.setDataSource(wav.absolutePath)
+                player.prepare()
+                player.start()
+                val speechMs = player.duration
+                Log.i(TAG, "тест авто-стопа: фраза ${speechMs} мс")
+
+                val fired = stopped.await(
+                    speechMs + 15_000L,
+                    java.util.concurrent.TimeUnit.MILLISECONDS,
+                )
+                try {
+                    player.release()
+                } catch (ignored: Throwable) {
+                }
+                player = null
+
+                disableAutoStop()
+                if (!fired) {
+                    Log.w(TAG, "тест авто-стопа: НЕ сработал (фраза кончилась, записи не прекратил)")
+                    stopAndTranscribe({ _ -> onError.onError("авто-стоп не сработал") }, onError)
+                    return@Thread
+                }
+                Log.i(
+                    TAG,
+                    "тест авто-стопа: остановился сам через ${stoppedAt - startedAt} мс " +
+                        "(фраза кончилась на ${speechMs} мс, ждал тишины ${SILENCE_MS} мс)",
+                )
+                stopAndTranscribe(onText, onError)
+            } catch (t: Throwable) {
+                Log.e(TAG, "тест авто-стопа сорвался", t)
+                onError.onError((t.javaClass.simpleName + ": " + (t.message ?: "?")).take(80))
+            } finally {
+                disableAutoStop()
+                try {
+                    player?.release()
+                    tts?.shutdown()
+                } catch (ignored: Throwable) {
+                }
+            }
+        }.start()
+    }
+
+    /**
      * Самотест на устройстве: телефон сам произносит фразу своим TTS, пишет её микрофоном
      * и распознаёт — проверка всего тракта без человека. Результат уходит в JS как onSelfTest.
      */
