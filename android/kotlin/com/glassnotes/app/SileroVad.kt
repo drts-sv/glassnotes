@@ -31,6 +31,7 @@ class SileroVad(
     private var session: OrtSession? = null
     private var stateNames: Pair<String, String>? = null
     private var state = FloatArray(2 * STATE_SIZE)
+    private var calls = 0
 
     override val available: Boolean
         get() = session != null && stateNames != null
@@ -44,7 +45,11 @@ class SileroVad(
             options.close()
             session = created
             val names = created.inputNames
-            Log.i(TAG, "VAD: модель загружена, входы $names, кадр $frameSize сэмплов")
+            val shapes = names.joinToString(", ") { name ->
+                name + created.inputInfo[name]?.info?.shape?.joinToString("x", "[", "]") { it.toString() }
+            }
+            val outNames = created.outputNames
+            Log.i(TAG, "VAD: модель загружена, кадр $frameSize; входы: $shapes; выходы: $outNames")
             stateNames = if (names.contains("state")) "state" to "stateN" else null
             if (stateNames == null) {
                 Log.w(TAG, "VAD: неизвестный интерфейс модели — авто-стоп останется по уровню")
@@ -86,9 +91,17 @@ class SileroVad(
                 ),
             ).use { result ->
                 @Suppress("UNCHECKED_CAST")
-                val speech = (result[0].value as Array<FloatArray>)[0][0]
+                val speechTensor = (result.get("output").orElse(null) as? OnnxTensor) ?: result[0]
                 @Suppress("UNCHECKED_CAST")
-                val next = result[1].value as Array<Array<FloatArray>>
+                val stateTensorNext = (result.get("stateN").orElse(null) as? OnnxTensor) ?: result[1]
+                @Suppress("UNCHECKED_CAST")
+                val speech = (speechTensor.value as Array<FloatArray>)[0][0]
+                @Suppress("UNCHECKED_CAST")
+                val next = stateTensorNext.value as Array<Array<FloatArray>>
+                if (calls < 3) {
+                    calls++
+                    Log.i(TAG, "VAD: кадр $calls -> речь $speech (выходы: ${result.outputNames})")
+                }
                 var index = 0
                 for (layer in 0 until 2) {
                     for (batch in 0 until 1) {

@@ -238,9 +238,11 @@
             scroll-behavior: smooth; touch-action: pan-y;
             padding: 14px 2px 140px 2px; margin: -10px -2px;
         }
-        .list-scroll::-webkit-scrollbar { width: 3px; }
-        .list-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 10px; }
-        body.light .list-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); }
+        /* Полосу прокрутки не рисуем сами: стилизованная полоса занимает место в раскладке
+           (3 px), из-за чего карточка была на 2 px уже шапки. На телефоне системная полоса
+           появляется при скролле и места не отнимает. */
+        .list-scroll { scrollbar-width: none; }
+        .list-scroll::-webkit-scrollbar { width: 0; height: 0; }
 
         .section-label {
             font-size: 0.75rem;
