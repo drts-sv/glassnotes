@@ -1946,6 +1946,11 @@
         let lower = working.toLowerCase();
         const now = new Date();
         let result = null, timeResult = null, categoryId = null, relativeApplied = false;
+        // Дата без названного часа = дело на весь день. Раньше подставлялся дефолтный час
+        // (сегодня — 12:00), и заметка к вечеру сама уезжала в «Просроченные».
+        let allDay = false;
+        // Назван ли день словами («сегодня», «завтра», «4 ноября»): если да, день не переносим.
+        let dateNamed = false;
 
         if (voiceCatEnabled) {
             // По слову-подсказке: без него «купить хлеб» оставалось без категории, хотя
@@ -2000,6 +2005,7 @@
                         const date = p.parse(match);
                         if (!isNaN(date.getTime())) {
                             result = date;
+                            dateNamed = true;
                             working = cutOut(working, match.index, match[0].length);
                             lower = working.toLowerCase();
                             break;
@@ -2009,9 +2015,9 @@
             }
         }
         if (!result) {
-            if (lower.indexOf('послезавтра') >= 0) { const d = new Date(now); d.setDate(d.getDate()+2); result = d; working = cutOut(working, lower.indexOf('послезавтра'), 11); }
-            else if (lower.indexOf('завтра') >= 0) { const d = new Date(now); d.setDate(d.getDate()+1); result = d; working = cutOut(working, lower.indexOf('завтра'), 6); }
-            else if (lower.indexOf('сегодня') >= 0) { result = new Date(now); working = cutOut(working, lower.indexOf('сегодня'), 7); }
+            if (lower.indexOf('послезавтра') >= 0) { const d = new Date(now); d.setDate(d.getDate()+2); result = d; dateNamed = true; working = cutOut(working, lower.indexOf('послезавтра'), 11); }
+            else if (lower.indexOf('завтра') >= 0) { const d = new Date(now); d.setDate(d.getDate()+1); result = d; dateNamed = true; working = cutOut(working, lower.indexOf('завтра'), 6); }
+            else if (lower.indexOf('сегодня') >= 0) { result = new Date(now); dateNamed = true; working = cutOut(working, lower.indexOf('сегодня'), 7); }
             lower = working.toLowerCase();
         }
         if (!result) {
@@ -2024,7 +2030,7 @@
                     const td = i+1; let cd = now.getDay(); if (cd === 0) cd = 7;
                     let diff = td - cd; if (diff < 0) diff += 7; if (diff === 0) diff = 7;
                     if (match[1]) diff += 7;
-                    const d = new Date(now); d.setDate(d.getDate()+diff); result = d;
+                    const d = new Date(now); d.setDate(d.getDate()+diff); result = d; dateNamed = true;
                     working = cutOut(working, match.index, match[0].length);
                     break;
                 }
@@ -2106,12 +2112,13 @@
             if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1);
             result = d;
         } else if (result && !timeResult && !relativeApplied) {
-            const isToday = result.toDateString() === now.toDateString();
-            const def = parseTimeStr(isToday ? timeDefaults.today : timeDefaults.tomorrow);
-            result.setHours(def.hours, def.minutes, 0, 0);
+            allDay = true;
+            result.setHours(0, 0, 0, 0);
         }
         // «названо только время, и оно уже прошло» → переносим на завтра
-        if (result && timeResult && result.getTime() <= now.getTime() && result.toDateString() === now.toDateString()) {
+        // Переносим на завтра только «голое» время («в 18:00» без дня). Если день назван
+        // словами — оставляем его: «сегодня вечером» должно остаться сегодняшним.
+        if (result && timeResult && !dateNamed && result.getTime() <= now.getTime() && result.toDateString() === now.toDateString()) {
             const d = new Date(result);
             d.setDate(d.getDate() + 1);
             result = d;
@@ -2133,7 +2140,7 @@
         // GigaAM выдаёт текст с пунктуацией: хвостовая точка в самой заметке не нужна
         cleanText = cleanText.replace(/[\s.,;:!?]+$/, '').replace(/\s{2,}/g, ' ').trim();
 
-        return { parsed: result, cleanText, categoryId };
+        return { parsed: result, cleanText, categoryId, allDay: allDay && !!result };
     }
     // === NLU END ===
 
@@ -2252,7 +2259,7 @@
         try {
             const now = Date.now();
             const list = todos
-                .filter(t => t.status !== 'done' && t.datetime && !t.notified
+                .filter(t => t.status !== 'done' && t.datetime && !t.notified && !t.allDay
                              && new Date(t.datetime).getTime() > now)
                 .sort((a, b) => new Date(a.datetime) - new Date(b.datetime))
                 .map(t => ({
@@ -2444,7 +2451,7 @@
     }, true);
     function getRandomColor() { return COLORS[Math.floor(Math.random() * COLORS.length)]; }
 
-    function formatDateTimeDisplay(s) {
+    function formatDateTimeDisplay(s, allDay) {
         if (!s) return '';
         const d = new Date(s), now = new Date();
         const t = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -2456,13 +2463,27 @@
         else if (dd.getTime() === tm.getTime()) l = 'Завтра';
         else if (dd.getTime() === af.getTime()) l = 'Послезавтра';
         else l = d.toLocaleDateString('ru-RU', { day:'numeric', month:'short', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+        // Дело на весь день: часа нет, поэтому подпись — только день.
+        if (allDay) return l;
         const ts = d.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' });
         return `${l} ${ts}`;
     }
     function isDateToday(s) { if (!s) return false; const d = new Date(s), n = new Date(); return d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate(); }
     function isDateTomorrow(s) { if (!s) return false; const d = new Date(s), t = new Date(); t.setDate(t.getDate()+1); return d.getFullYear()===t.getFullYear()&&d.getMonth()===t.getMonth()&&d.getDate()===t.getDate(); }
-    function isDatePast(s) { if (!s) return false; return new Date(s) < new Date(); }
-    function getCardType(item) { if (item.status === 'done') return 'done'; if (!item.datetime) return 'no-date'; if (new Date(item.datetime) < new Date()) return 'past'; return 'active'; }
+    /** Просрочено: у дела на весь день — только со следующего дня, у дела с часом — по времени. */
+    function isDatePast(s, allDay) {
+        if (!s) return false;
+        const at = new Date(s);
+        if (!allDay) return at < new Date();
+        const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+        return day(at) < day(new Date());
+    }
+    function getCardType(item) {
+        if (item.status === 'done') return 'done';
+        if (!item.datetime) return 'no-date';
+        if (isDatePast(item.datetime, item.allDay)) return 'past';
+        return 'active';
+    }
     function toLocalInputValue(date) { const d = new Date(date); const p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
 
     async function copyText(text) {
@@ -2809,7 +2830,7 @@
 
     async function addTodo(text) {
         if (!text || text.trim() === '') return;
-        const { parsed, cleanText, categoryId } = parseDateNLU(text, voiceCategoryEnabled);
+        const { parsed, cleanText, categoryId, allDay } = parseDateNLU(text, voiceCategoryEnabled);
         const finalText = cleanText || text.trim();
         if (!finalText) return;
         // Выбор, сделанный во время записи, важнее категории из фразы: пользователь ткнул сам.
@@ -2818,6 +2839,7 @@
             text: finalText,
             time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }),
             datetime: parsed ? parsed.toISOString() : null,
+            allDay: !!allDay,
             timestamp: Date.now(),
             status: 'active',
             color: getRandomColor(),
@@ -2830,7 +2852,7 @@
             todo.id = id;
             todos.unshift(todo);
             renderTodos(); updateCounts(); updateBadge(); scheduleSync();
-            const dd = todo.datetime ? formatDateTimeDisplay(todo.datetime) : '';
+            const dd = todo.datetime ? formatDateTimeDisplay(todo.datetime, todo.allDay) : '';
             const catName = categoryId ? (getCategoryById(categoryId)?.name || '') : '';
             showToast(`✅ "${finalText}"${catName ? ' 🏷 ' + catName : ''}${dd ? ' 🕐 ' + dd : ''}`, 1500);
             vibrate(30);
@@ -2921,7 +2943,7 @@
             case 'tomorrow': f = f.filter(t => t.datetime && isDateTomorrow(t.datetime)); break;
             case 'with_date': f = f.filter(t => t.datetime); break;
             case 'no_date': f = f.filter(t => !t.datetime); break;
-            case 'past': f = f.filter(t => t.datetime && isDatePast(t.datetime)); break;
+            case 'past': f = f.filter(t => t.datetime && isDatePast(t.datetime, t.allDay)); break;
         }
         if (currentCategoryFilter) {
             f = f.filter(t => (t.categoryIds || []).includes(currentCategoryFilter));
@@ -3165,8 +3187,10 @@
             if (isImportant(item.categoryIds)) return 'important';
             if (!item.datetime) return 'no-date';
             const at = new Date(item.datetime);
-            if (at.getTime() < Date.now()) return 'past';
             const days = Math.round((startOfDay(at) - startOfDay(new Date())) / 86400000);
+            // Дело на весь день в «Просроченные» не попадает до следующего дня
+            if (!item.allDay && at.getTime() < Date.now()) return 'past';
+            if (item.allDay && days < 0) return 'past';
             if (days <= 0) return 'today';
             if (days === 1) return 'tomorrow';
             if (days <= 7) return 'week';
@@ -3181,7 +3205,7 @@
         });
 
         function renderCard(item) {
-            const dd = item.datetime ? formatDateTimeDisplay(item.datetime) : '';
+            const dd = item.datetime ? formatDateTimeDisplay(item.datetime, item.allDay) : '';
             const ct = item.status === 'done' ? 'done' : getCardType(item);
             const catIds = item.categoryIds || [];
             const firstCat = catIds.length ? getCategoryById(catIds[0]) : null;
@@ -3400,7 +3424,7 @@
 
         const whenEl = document.getElementById('noteSheetWhen');
         if (note.datetime) {
-            whenEl.textContent = formatDateTimeDisplay(note.datetime);
+            whenEl.textContent = formatDateTimeDisplay(note.datetime, note.allDay);
             whenEl.classList.remove('no-date');
         } else {
             whenEl.textContent = 'Без даты';
@@ -3534,16 +3558,18 @@
         const newText = editTextarea.value.trim();
         const note = todos.find(t => t.id === editingId);
         if (!note) { closeEdit(); return; }
-        let newDatetime = null;
+        let newDatetime = null, newAllDay = false;
         if (editDate) {
             const d = new Date(editDate);
+            // Час назван явно — ставим его; иначе дело на весь день (без часа)
             if (editTime) d.setHours(editTime.hours, editTime.minutes, 0, 0);
-            else { const def = parseTimeStr(timeDefaults.today); d.setHours(def.hours, def.minutes, 0, 0); }
+            else { d.setHours(0, 0, 0, 0); newAllDay = true; }
             newDatetime = d.toISOString();
         }
         const updates = {};
         if (newText && newText !== note.text) updates.text = newText;
         if (newDatetime !== note.datetime) updates.datetime = newDatetime;
+        if (newAllDay !== !!note.allDay) updates.allDay = newAllDay;
         const newCatIds = [...editCategoryIds];
         const oldCatIds = note.categoryIds || [];
         if (JSON.stringify(newCatIds) !== JSON.stringify(oldCatIds)) updates.categoryIds = newCatIds;
