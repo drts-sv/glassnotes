@@ -56,6 +56,10 @@ class SpeechEngine(context: Context) {
     private var recognizer: GigaAmOnnxRecognizer? = null
     private var recorder: AudioRecorder? = null
 
+    /** Определитель речи для авто-стопа: держим один экземпляр, модель мелкая (~2 МБ). */
+    @Volatile
+    private var vad: SileroVad? = null
+
     @Volatile
     private var downloading = false
 
@@ -280,6 +284,15 @@ class SpeechEngine(context: Context) {
         autoStopCallback = null
     }
 
+    /** VAD для авто-стопа: грузим один раз, при неудаче авто-стоп остаётся по уровню. */
+    private fun obtainVad(): SileroVad {
+        val existing = vad
+        if (existing != null && existing.available) return existing
+        val created = SileroVad(appContext)
+        vad = created
+        return created
+    }
+
     private var capturing = false
 
     /**
@@ -328,6 +341,7 @@ class SpeechEngine(context: Context) {
     fun startCapture(): Boolean {
         return try {
             val rec = AudioRecorder()
+            rec.detector = obtainVad()
             recorder = rec
             val started = rec.start()
             capturing = started
@@ -351,14 +365,32 @@ class SpeechEngine(context: Context) {
             var lastSpeechAt = 0L
             var peak = 0
             var lastLogAt = 0L
+            // Речь ищем нейросетью: порог по громкости в шуме не работает (в шумной комнате
+            // «тишина» не наступает никогда, и запись не останавливается сама).
+            val byVad = rec.detector?.available == true
+            Log.i(
+                TAG,
+                if (byVad) {
+                    "авто-стоп: по VAD (тишина ${SILENCE_MS} мс, минимальная речь ${MIN_SPEECH_MS} мс)"
+                } else {
+                    "авто-стоп: VAD недоступен, считаю по уровню (rms >= $SPEECH_RMS)"
+                },
+            )
             while (capturing && recorder === rec) {
                 val now = System.currentTimeMillis()
                 val rms = rec.rms
                 if (rms > peak) peak = rms
-                if (rms >= SPEECH_RMS) lastSpeechAt = now
+                val speech = if (byVad) rec.speechProb >= VAD_SPEECH_PROB else rms >= SPEECH_RMS
+                if (speech) lastSpeechAt = now
                 if (now - lastLogAt >= 1000) {
                     lastLogAt = now
-                    Log.i(TAG, "уровень записи: rms=$rms (пик $peak, адаптивный %.2f)".format(rec.level))
+                    Log.i(
+                        TAG,
+                        "уровень записи: rms=$rms (пик $peak, адаптивный %.2f, речь %.2f)".format(
+                            rec.level,
+                            rec.speechProb,
+                        ),
+                    )
                 }
                 val silentFor = if (lastSpeechAt > 0L) now - lastSpeechAt else 0L
                 val speechMs = if (lastSpeechAt > 0L) lastSpeechAt - startedAt else 0L
@@ -703,11 +735,17 @@ class SpeechEngine(context: Context) {
         /** rms, с которого считаем, что человек говорит (тихая комната даёт ~150, речь — тысячи). */
         private const val SPEECH_RMS = 400
 
-        /** Сколько речи должно накопиться, прежде чем разрешим авто-стоп. */
-        private const val MIN_SPEECH_MS = 500L
+        /** Сколько речи должно накопиться, прежде чем разрешим авто-стоп (щелчок не в счёт). */
+        private const val MIN_SPEECH_MS = 250L
 
-        /** Сколько тишины после речи = конец фразы. */
-        private const val SILENCE_MS = 1200L
+        /**
+         * Сколько тишины после речи = конец фразы. Для диктовки берём 1.8 с: человек,
+         * проговаривая мысль, делает паузы до 1.5 с, и на 1.2 с фраза рвалась посередине.
+         */
+        private const val SILENCE_MS = 1800L
+
+        /** С какого значения вероятности VAD считаем, что человек говорит. */
+        private const val VAD_SPEECH_PROB = 0.5f
 
         /** Страховка: дольше этого не пишем ни при каких условиях. */
         private const val MAX_CAPTURE_MS = 90_000L

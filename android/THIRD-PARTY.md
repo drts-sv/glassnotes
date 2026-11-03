@@ -22,3 +22,14 @@
 
 - Microsoft, лицензия MIT — https://github.com/microsoft/onnxruntime
 - Android AAR 1.31.1: `classes.jar` + `lib/arm64-v8a/libonnxruntime.so`
+
+## Silero VAD (определение речи)
+
+| Файл | Автор | Лицензия |
+|---|---|---|
+| `assets/vad/silero_vad.onnx`, `kotlin/com/glassnotes/app/SileroVad.kt` | Silero Team (https://github.com/snakers4/silero-vad) | MIT |
+
+Что изменено: сама модель и её ядро взяты как есть (~2.2 МБ, sha256 `1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3`,
+источник — `src/silero_vad/data/silero_vad.onnx` из репозитория); написан только свой вызов модели
+(обёртка `SileroVad.kt` и накопитель кадров в `AudioRecorder`). Текст лицензии — `android/licenses/silero-vad-MIT.txt`.
+Назначение: авто-стоп записи по тишине в шумной обстановке (порог по громкости в шуме не работает).

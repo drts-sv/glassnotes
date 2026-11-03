@@ -57,6 +57,22 @@ class AudioRecorder(
     var rms: Int = 0
         private set
 
+    /**
+     * Определитель речи (нейросетевой VAD, см. `SpeechDetector`). Если его нет,
+     * авто-стоп в приложении работает по уровню rms — как раньше.
+     */
+    @Volatile
+    var detector: SpeechDetector? = null
+
+    /** Вероятность речи по последнему кадру детектора, -1 если детектора нет. */
+    @Volatile
+    var speechProb: Float = -1f
+        private set
+
+    /** Накопитель кадра детектора: читаем по 20 мс, а кадр VAD — 32 мс. */
+    private val detectorFrame = FloatArray(SpeechDetector.FRAME_SAMPLES_16K)
+    private var detectorFilled = 0
+
     fun start(): Boolean {
         synchronized(lock) {
             if (recording) {
@@ -145,6 +161,9 @@ class AudioRecorder(
         // the voice. One read of the whole buffer is a quarter of a second, and the wave lagged.
         val buffer = ByteArray(min(bufferSize, READ_CHUNK_BYTES))
         val startedAt = SystemClock.elapsedRealtime()
+        detector?.reset()
+        detectorFilled = 0
+        speechProb = if (detector == null) -1f else 0f
 
         try {
             while (recording) {
@@ -177,6 +196,7 @@ class AudioRecorder(
                         }
                         level = meter.levelOf(buffer, count)
                         rms = rmsOf(buffer, count)
+                        feedDetector(buffer, count)
                     }
 
                     count == AudioRecord.ERROR_DEAD_OBJECT -> {
@@ -196,6 +216,30 @@ class AudioRecorder(
             recording = false
             level = 0f
             rms = 0
+            speechProb = -1f
+            detectorFilled = 0
+        }
+    }
+
+    /**
+     * Копит прочитанные куски в кадр детектора и спрашивает его о речи.
+     * Вероятность сглаживается: одиночный кадр не должен дёргать конец фразы.
+     */
+    private fun feedDetector(
+        bytes: ByteArray,
+        count: Int,
+    ) {
+        val current = detector ?: return
+        var index = 0
+        while (index + 1 < count) {
+            val sample = ((bytes[index].toInt() and 0xFF) or (bytes[index + 1].toInt() shl 8)) / 32768f
+            detectorFrame[detectorFilled++] = sample
+            index += 2
+            if (detectorFilled == detectorFrame.size) {
+                val probability = current.probability(detectorFrame)
+                speechProb = if (speechProb < 0f) probability else speechProb * 0.6f + probability * 0.4f
+                detectorFilled = 0
+            }
         }
     }
 
