@@ -236,7 +236,7 @@
             overflow-y: auto; overflow-x: hidden;
             -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
             scroll-behavior: smooth; touch-action: pan-y;
-            padding: 20px 12px 140px 12px; margin: -10px -2px;
+            padding: 14px 2px 140px 2px; margin: -10px -2px;
         }
         .list-scroll::-webkit-scrollbar { width: 3px; }
         .list-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 10px; }
@@ -255,10 +255,10 @@
         .section-label:first-child { padding-top: 0; }
 
         .result-card-wrapper {
-            position: relative; margin-top: 12px; overflow: visible;   /* шаг списка по M3 */
+            position: relative; margin-top: 8px; overflow: visible;   /* шаг списка: плотнее, чем в M3 */
             border-radius: 28px; user-select: none; -webkit-user-select: none;
             width: 100%; transform: translateZ(0); padding: 2px 0;
-            margin-left: -2px; margin-right: -2px; touch-action: pan-y;
+            margin-left: 0; margin-right: 0; touch-action: pan-y;
         }
         .result-card {
             backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
@@ -652,6 +652,12 @@
             z-index: 1000; padding: 1rem;
         }
         .modal-overlay.active { display: flex; }
+        /* Лицензии открываются из окна «О приложении», а оно идёт в разметке позже:
+           при равном z-index оно перекрывало лицензии. Поднимаем окно лицензий выше. */
+        #licensesModal { z-index: 1060; }
+        /* Текст лицензий читается в обеих темах: цвет берём из темы, а не по умолчанию браузера */
+        #licensesContent pre { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
+        #licensesContent .group-title { color: var(--text-secondary); }
         .modal-glass {
             background: rgba(30, 32, 44, 0.92);
             backdrop-filter: blur(32px); -webkit-backdrop-filter: blur(32px);
@@ -1096,7 +1102,7 @@
             .title { font-size: 1.2rem; }
             .result-card { padding: 0.9rem 1.2rem; }
             :root { --result-text: 0.95rem; }
-            .list-scroll { padding: 20px 8px 120px 8px; }
+            .list-scroll { padding: 14px 2px 120px 2px; }
             #toastMessage { font-size: 0.85rem; padding: 10px 20px; bottom: calc(100px + env(safe-area-inset-bottom, 0px) + var(--inset-bottom, 0px)); }
             .cancel-fab { width: 116px; height: 116px; }
             .cancel-fab .cancel-icon { width: 46px; height: 46px; }
@@ -1324,16 +1330,12 @@
         </div>
         <div class="modal-content">
             <div>
-                <div class="group-title">🎨 Тема</div>
+                <div class="group-title">🎨 Тема и стекло</div>
                 <div class="tiles-3" id="themeTiles">
                     <div class="tile active pulse" data-theme="auto"><span class="tile-icon">🌓</span> Авто</div>
                     <div class="tile" data-theme="dark"><span class="tile-icon">🌙</span> Тёмная</div>
                     <div class="tile" data-theme="light"><span class="tile-icon">☀️</span> Светлая</div>
                 </div>
-            </div>
-
-            <div>
-                <div class="group-title">🪟 Фон и стекло</div>
                 <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;margin-top:10px;">
                     <span style="font-size:0.9rem;color:var(--text-primary);opacity:0.85;">Цвета системы (Material&nbsp;You)</span>
                     <input type="checkbox" id="systemColorsToggle" checked style="width:20px;height:20px;accent-color:var(--accent);cursor:pointer;">
@@ -1360,7 +1362,6 @@
                     </div>
                 </div>
 
-            </div>
             </div>
 
             <div>
@@ -3828,7 +3829,8 @@
         ['GigaAM — модель и репозиторий (MIT, © 2024 GigaChat Team)', 'licenses/gigaam-MIT.txt'],
         ['giga-pisar-android — код распознавания (MIT, © 2026 moznoazachem)', 'licenses/giga-pisar-android-MIT.txt'],
         ['ONNX Runtime (MIT, © Microsoft Corporation)', 'licenses/onnxruntime-MIT.txt'],
-        ['Kotlin, kotlinx.coroutines (Apache-2.0, © JetBrains)', 'licenses/kotlin-Apache-2.0.txt']
+        ['Kotlin, kotlinx.coroutines (Apache-2.0, © JetBrains)', 'licenses/kotlin-Apache-2.0.txt'],
+        ['Silero VAD — определение речи (MIT, © Silero Team)', 'licenses/silero-vad-MIT.txt']
     ];
 
     async function fillLicenses() {
