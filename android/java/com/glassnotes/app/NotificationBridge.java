@@ -11,6 +11,9 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.webkit.JavascriptInterface;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * Мост уведомлений: в WebView нет Notification API, поэтому страница получает
  * шим (native-shim.js), который зовёт эти методы, а они кладут настоящее
@@ -86,6 +89,9 @@ public class NotificationBridge {
         return MainActivity.takePendingAction();
     }
 
+    /** Когда это же уведомление показывали в прошлый раз — чтобы не звонить повторно. */
+    private static final Map<String, Long> LAST_SHOWN = new HashMap<>();
+
     @JavascriptInterface
     public boolean show(String title, String body, String tag) {
         try {
@@ -103,11 +109,24 @@ public class NotificationBridge {
                     .setContentTitle(title)
                     .setContentText(body)
                     .setAutoCancel(true)
+                    .setOnlyAlertOnce(true)   // повторный показ того же не должен звучать снова
                     .setContentIntent(pi)
                     .setStyle(new Notification.BigTextStyle().bigText(body));
 
             NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
-            int id = (tag != null && !tag.isEmpty()) ? tag.hashCode() : (int) (System.currentTimeMillis() & 0x7fffffff);
+            // Стабильный id: то же уведомление должно ЗАМЕНЯТЬ себя, а не копиться в шторке.
+            // Раньше id считался от текущего времени, поэтому каждое повторное срабатывание
+            // добавляло новое уведомление: звук шёл бесконечно, смахивание убирало только одно.
+            String key = (tag != null && !tag.isEmpty()) ? tag : (title + "|" + body);
+            int id = key.hashCode() & 0x7fffffff;
+
+            long now = System.currentTimeMillis();
+            Long prev = LAST_SHOWN.get(key);
+            if (prev != null && now - prev < 30000L) {
+                android.util.Log.i("GlassNotes", "уведомление повторено раньше 30 с — пропускаю");
+                return false;
+            }
+            LAST_SHOWN.put(key, now);
             nm.notify(id, b.build());
             return true;
         } catch (Throwable t) {

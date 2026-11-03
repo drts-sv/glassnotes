@@ -80,6 +80,21 @@ public class MainActivity extends Activity {
             if (id <= 0L || mode == 0) return;
             pendingAction = "{\"id\":" + id + ",\"mode\":" + mode + "}";
             android.util.Log.i("GlassNotes", "действие из уведомления: " + pendingAction);
+            // Страница могла быть уже загружена (приложение на переднем плане) — тогда
+            // visibilitychange не сработает, и кнопка «Выполнено» выглядела нерабочей.
+            if (webView != null) {
+                webView.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            webView.evaluateJavascript(
+                                    "(function(){ if (typeof consumeNativeAction === 'function') consumeNativeAction(); })()",
+                                    null);
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                });
+            }
         } catch (Throwable ignored) {
         }
     }

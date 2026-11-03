@@ -17,6 +17,7 @@ public class ReminderReceiver extends BroadcastReceiver {
 
     static final String ACTION_REMIND = "com.glassnotes.app.ACTION_REMIND";
     static final String ACTION_SNOOZE = "com.glassnotes.app.ACTION_SNOOZE";
+    static final String ACTION_SILENCE = "com.glassnotes.app.ACTION_SILENCE";
 
     private static final String EXTRA_SNOOZE_MIN = "snooze_min";
 
@@ -27,6 +28,15 @@ public class ReminderReceiver extends BroadcastReceiver {
         long id = intent.getLongExtra(ReminderScheduler.EXTRA_ID, 0L);
         String title = intent.getStringExtra(ReminderScheduler.EXTRA_TITLE);
         String body = intent.getStringExtra(ReminderScheduler.EXTRA_BODY);
+
+        if (ACTION_SILENCE.equals(action)) {
+            // Аварийный выход: гасим уведомление и снимаем все алярмы приложения — до этого
+            // единственным способом остановить зацикленный сигнал была перезагрузка телефона.
+            cancel(context, id);
+            new ReminderScheduler(context).cancelAll();
+            android.util.Log.i("GlassNotes", "тишина: уведомление и расписание сняты");
+            return;
+        }
 
         if (ACTION_SNOOZE.equals(action)) {
             int minutes = intent.getIntExtra(EXTRA_SNOOZE_MIN, 15);
@@ -49,12 +59,16 @@ public class ReminderReceiver extends BroadcastReceiver {
                     .setContentText(body == null ? "" : body)
                     .setStyle(new Notification.BigTextStyle().bigText(body == null ? "" : body))
                     .setAutoCancel(true)
+                    .setOnlyAlertOnce(true)   // повторная выдача не звенит заново
                     .setCategory(Notification.CATEGORY_ALARM)
                     .setPriority(Notification.PRIORITY_HIGH)
                     .setContentIntent(openApp(context, id, 0))
-                    .addAction(0, "Отложить 15 мин", snooze(context, id, title, body, 15))
-                    .addAction(0, "Отложить 1 час", snooze(context, id, title, body, 60))
-                    .addAction(0, "Выполнено", openApp(context, id, 1));
+                    // Короткие подписи: длинные «Отложить 15 минут» Android обрезал до «Отлож…»,
+                    // и было не понять, чем кнопки отличаются.
+                    .addAction(0, "+15 мин", snooze(context, id, title, body, 15))
+                    .addAction(0, "+1 час", snooze(context, id, title, body, 60))
+                    .addAction(0, "Выполнено", openApp(context, id, 1))
+                    .addAction(0, "Тишина", silence(context, id));
 
             nm.notify((int) (id & 0x7fffffff), b.build());
             Log.i("GlassNotes", "показано напоминание: " + title);
@@ -74,6 +88,16 @@ public class ReminderReceiver extends BroadcastReceiver {
         if (android.os.Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
         // различаем кнопки не только extras: requestCode должен быть своим у каждой
         return PendingIntent.getBroadcast(ctx, (int) ((id & 0x3fffff) * 10 + minutes % 10), intent, flags);
+    }
+
+    /** «Тишина»: гасит уведомление и все алярмы приложения. */
+    private PendingIntent silence(Context ctx, long id) {
+        Intent intent = new Intent(ctx, ReminderReceiver.class);
+        intent.setAction(ACTION_SILENCE);
+        intent.putExtra(ReminderScheduler.EXTRA_ID, id);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (android.os.Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+        return PendingIntent.getBroadcast(ctx, (int) ((id & 0x1fffff) * 10 + 7), intent, flags);
     }
 
     private PendingIntent openApp(Context ctx, long id, int mode) {

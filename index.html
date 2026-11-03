@@ -99,7 +99,7 @@
             transition: opacity 0.2s;
             position: relative; display: flex; flex-direction: column; overflow: hidden;
         }
-        .header-main { display: flex; align-items: center; gap: 7px; width: 100%; padding-bottom: 0; }
+        .header-main { display: flex; align-items: center; gap: 7px; width: 100%; padding-bottom: 0; padding-top: 8px; }
         .app-logo {
             position: relative; width: 28px; height: 28px; border-radius: 50%;
             flex-shrink: 0; overflow: hidden;
@@ -212,7 +212,7 @@
         /* Вкладки делят нижнюю часть карточки заголовка пополам и упираются в её границу. */
         .tab {
             flex: 1 1 0; padding: 11px 4px; border-radius: 0; border: none;
-            background: color-mix(in srgb, var(--accent) 16%, transparent);
+            background: transparent;   /* неактивная вкладка — цвет верхней части карточки */
             color: var(--text-primary);
             font-size: 0.76rem; font-weight: 600; cursor: pointer;
             /* Перехода нет намеренно: и фон, и цвет зависят от акцента системы,
@@ -220,7 +220,7 @@
             font-family: inherit;
             display: flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap;
         }
-        .tab[data-tab="done"] { background: color-mix(in srgb, var(--tab-done-color) 9%, transparent); }
+        .tab[data-tab="done"] { background: transparent; }
         .tab > svg { display: none; }   /* в шапке подписи важнее иконок */
         .tab .count { font-weight: 700; opacity: 0.9; }
         .tab svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
