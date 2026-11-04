@@ -181,6 +181,83 @@ public class StoreBridge extends SQLiteOpenHelper {
         }
     }
 
+    // ===== счёт для утреннего ревью =====
+
+    /**
+     * Сколько дел на сегодня и сколько без срока — считается ЗДЕСЬ и СЕЙЧАС, по базе.
+     *
+     * Число для уведомления нельзя брать в момент постановки алярма: оно считается вчера,
+     * когда «сегодня» — другой день, и утром пользователь видел «0 дел», хотя дела есть
+     * (сплэш считает заново и потому показывал верно).
+     * Определения те же, что в JS reviewItems(): на день = просроченные + сегодняшние,
+     * отдельно — без срока; у дела на весь день просрочка начинается со следующего дня.
+     */
+    public String reviewCounts() {
+        int today = 0, noDate = 0;
+        Cursor c = null;
+        try {
+            long now = System.currentTimeMillis();
+            long todayKey = dayKey(now);
+            c = getReadableDatabase().rawQuery("SELECT json FROM notes", null);
+            while (c.moveToNext()) {
+                try {
+                    JSONObject o = new JSONObject(c.getString(0));
+                    if ("done".equals(o.optString("status"))) continue;
+                    String dt = o.optString("datetime", "");
+                    if (dt.isEmpty() || "null".equals(dt)) { noDate++; continue; }
+                    long at = isoToMillis(dt);
+                    if (at <= 0L) { noDate++; continue; }
+                    long key = dayKey(at);
+                    if (key == todayKey) { today++; continue; }
+                    boolean allDay = o.optBoolean("allDay", false);
+                    if (allDay ? key < todayKey : at < now) today++;
+                } catch (Throwable ignored) {
+                }
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "хранилище: счёт ревью", t);
+        } finally {
+            if (c != null) c.close();
+        }
+        try {
+            JSONObject out = new JSONObject();
+            out.put("today", today);
+            out.put("noDate", noDate);
+            return out.toString();
+        } catch (Throwable t) {
+            return "{\"today\":0,\"noDate\":0}";
+        }
+    }
+
+    /** Ключ дня вида 20261104 по местному времени. */
+    private static long dayKey(long millis) {
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        c.setTimeInMillis(millis);
+        return c.get(java.util.Calendar.YEAR) * 10000L
+                + (c.get(java.util.Calendar.MONTH) + 1) * 100L
+                + c.get(java.util.Calendar.DAY_OF_MONTH);
+    }
+
+    /** Разбор ISO-даты заметки. С «Z» — это UTC (так пишет JS), без «Z» — местное время. */
+    private static long isoToMillis(String iso) {
+        try {
+            java.util.TimeZone tz = iso.endsWith("Z")
+                    ? java.util.TimeZone.getTimeZone("UTC")
+                    : java.util.TimeZone.getDefault();
+            java.util.Calendar c = java.util.Calendar.getInstance(tz);
+            c.clear();
+            c.set(Integer.parseInt(iso.substring(0, 4)),
+                    Integer.parseInt(iso.substring(5, 7)) - 1,
+                    Integer.parseInt(iso.substring(8, 10)),
+                    Integer.parseInt(iso.substring(11, 13)),
+                    Integer.parseInt(iso.substring(14, 16)),
+                    Integer.parseInt(iso.substring(17, 19)));
+            return c.getTimeInMillis();
+        } catch (Throwable t) {
+            return 0L;
+        }
+    }
+
     // ===== настройки (ключ/значение) =====
 
     @JavascriptInterface

@@ -70,6 +70,8 @@ public class MainActivity extends Activity {
 
     public static final String EXTRA_NOTE_ID = "note_id";
     public static final String EXTRA_NOTE_MODE = "note_mode";
+    /** «Показать» из уведомления утреннего ревью: открыть приложение сразу на сплэше. */
+    public static final String EXTRA_REVIEW = "review_open";
 
     /** Действие из уведомления, которое ждёт обработки в JS (пусто, если ничего нет). */
     private static volatile String pendingAction = "";
@@ -83,6 +85,13 @@ public class MainActivity extends Activity {
     /** Тап по уведомлению или кнопка «Выполнено» приносят сюда id заметки. */
     private void captureAction(Intent intent) {
         try {
+            if (intent != null && intent.getBooleanExtra(EXTRA_REVIEW, false)) {
+                intent.removeExtra(EXTRA_REVIEW);
+                pendingAction = "{\"review\":1}";
+                android.util.Log.i("GlassNotes", "действие из уведомления: показать утреннее ревью");
+                nudgePage();
+                return;
+            }
             if (intent == null || !intent.hasExtra(EXTRA_NOTE_ID)) return;
             long id = intent.getLongExtra(EXTRA_NOTE_ID, 0L);
             int mode = intent.getIntExtra(EXTRA_NOTE_MODE, 0);
@@ -92,21 +101,25 @@ public class MainActivity extends Activity {
             android.util.Log.i("GlassNotes", "действие из уведомления: " + pendingAction);
             // Страница могла быть уже загружена (приложение на переднем плане) — тогда
             // visibilitychange не сработает, и кнопка «Выполнено» выглядела нерабочей.
-            if (webView != null) {
-                webView.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            webView.evaluateJavascript(
-                                    "(function(){ if (typeof consumeNativeAction === 'function') consumeNativeAction(); })()",
-                                    null);
-                        } catch (Throwable ignored) {
-                        }
-                    }
-                });
-            }
+            nudgePage();
         } catch (Throwable ignored) {
         }
+    }
+
+    /** Заставляем страницу забрать действие: сама она об этом не узнает (visibilitychange не сработает). */
+    private void nudgePage() {
+        if (webView == null) return;
+        webView.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    webView.evaluateJavascript(
+                            "(function(){ if (typeof consumeNativeAction === 'function') consumeNativeAction(); })()",
+                            null);
+                } catch (Throwable ignored) {
+                }
+            }
+        });
     }
 
     @Override

@@ -8,6 +8,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
 
+import org.json.JSONObject;
+
 /**
  * Показывает напоминание по алярму — работает и когда приложение закрыто.
  * Кнопки: отложить на 15 минут, отложить на час, отметить выполненным.
@@ -19,6 +21,7 @@ public class ReminderReceiver extends BroadcastReceiver {
     static final String ACTION_SNOOZE = "com.glassnotes.app.ACTION_SNOOZE";
     static final String ACTION_SILENCE = "com.glassnotes.app.ACTION_SILENCE";
     static final String ACTION_REVIEW = "com.glassnotes.app.ACTION_REVIEW";
+    static final String ACTION_REVIEW_CANCEL = "com.glassnotes.app.ACTION_REVIEW_CANCEL";
 
     private static final String EXTRA_SNOOZE_MIN = "snooze_min";
 
@@ -33,8 +36,30 @@ public class ReminderReceiver extends BroadcastReceiver {
         if (ACTION_REVIEW.equals(action)) {
             // Утреннее ревью: показываем напоминание и сразу ставим следующее на завтра.
             int count = intent.getIntExtra(ReminderScheduler.EXTRA_REVIEW_COUNT, 0);
-            showReview(context, count);
+            int noDate = intent.getIntExtra(ReminderScheduler.EXTRA_REVIEW_NODATE, 0);
+            // Пересчитываем по базе: сохранённое число устаревает за ночь и врало («0 дел»).
+            try {
+                JSONObject live = new JSONObject(StoreBridge.get(context).reviewCounts());
+                count = live.optInt("today", count);
+                noDate = live.optInt("noDate", noDate);
+            } catch (Throwable t) {
+                Log.w("GlassNotes", "ревью: пересчёт не вышел, беру сохранённый", t);
+            }
+            if (count + noDate > 0) showReview(context, count, noDate);
+            else Log.i("GlassNotes", "ревью: дел нет — уведомление не показываю");
             new ReminderScheduler(context).rescheduleReview();
+            return;
+        }
+
+        if (ACTION_REVIEW_CANCEL.equals(action)) {
+            // «Отменить» — просто убираем напоминание из шторки; ревью в приложении остаётся.
+            try {
+                NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm != null) nm.cancel(ReminderScheduler.REVIEW_REQUEST);
+                Log.i("GlassNotes", "ревью: уведомление отменено вручную");
+            } catch (Throwable t) {
+                Log.e("GlassNotes", "ревью: не удалось отменить", t);
+            }
             return;
         }
 
@@ -87,7 +112,7 @@ public class ReminderReceiver extends BroadcastReceiver {
     }
 
     /** Уведомление утреннего ревью: тап открывает приложение, оно само покажет список дел. */
-    private void showReview(Context context, int count) {
+    private void showReview(Context context, int count, int noDate) {
         try {
             NotificationBridge.ensureChannel(context);
             NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -102,22 +127,43 @@ public class ReminderReceiver extends BroadcastReceiver {
             Notification.Builder b = (android.os.Build.VERSION.SDK_INT >= 26)
                     ? new Notification.Builder(context, "glass-notes-reminders")
                     : new Notification.Builder(context);
+            // Цифр в уведомлении нет намеренно: число устаревало за ночь и врало («0 дел»),
+            // а список всё равно показывает сплэш. Здесь только приглашение и две кнопки.
+            String text = "Посмотрите дела на сегодня";
+            Log.i("GlassNotes", "ревью: уведомление — " + text + " (дел на день " + count + ", без срока " + noDate + ")");
             b.setSmallIcon(R.mipmap.ic_launcher)
                     .setContentTitle("🌅 Утреннее ревью")
-                    .setContentText(count > 0
-                            ? "Дел на сегодня: " + count + " — посмотрите список"
-                            : "На сегодня дел нет")
+                    .setContentText(text)
                     .setAutoCancel(true)
                     .setOnlyAlertOnce(true)
                     .setContentIntent(pi)
-                    .setStyle(new Notification.BigTextStyle().bigText(count > 0
-                            ? "Просроченные, на сегодня и без срока — всё в одном списке"
-                            : "Можно выдохнуть"));
+                    .addAction(0, "Показать", reviewOpen(context))
+                    .addAction(0, "Отменить", reviewCancel(context))
+                    .setStyle(new Notification.BigTextStyle().bigText("Просроченные, на сегодня и без срока — всё в одном списке"));
             nm.notify(ReminderScheduler.REVIEW_REQUEST, b.build());
             Log.i("GlassNotes", "ревью: уведомление показано, дел " + count);
         } catch (Throwable t) {
             Log.e("GlassNotes", "ревью: не удалось показать уведомление", t);
         }
+    }
+
+    /** «Показать» — открыть приложение сразу на сплэше ревью. */
+    private PendingIntent reviewOpen(Context ctx) {
+        Intent intent = new Intent(ctx, MainActivity.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.putExtra(MainActivity.EXTRA_REVIEW, true);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (android.os.Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+        return PendingIntent.getActivity(ctx, ReminderScheduler.REVIEW_REQUEST + 1, intent, flags);
+    }
+
+    /** «Отменить» — убрать уведомление, не открывая приложение. */
+    private PendingIntent reviewCancel(Context ctx) {
+        Intent intent = new Intent(ctx, ReminderReceiver.class);
+        intent.setAction(ACTION_REVIEW_CANCEL);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (android.os.Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+        return PendingIntent.getBroadcast(ctx, ReminderScheduler.REVIEW_REQUEST + 2, intent, flags);
     }
 
     private PendingIntent snooze(Context ctx, long id, String title, String body, int minutes) {

@@ -29,6 +29,7 @@ public class ReminderScheduler {
     /** Свой номер запроса: у напоминаний номера — это id заметок, тут нужен отдельный. */
     static final int REVIEW_REQUEST = 7001;
     static final String EXTRA_REVIEW_COUNT = "review_count";
+    static final String EXTRA_REVIEW_NODATE = "review_nodate";
     static final String EXTRA_REVIEW_TIME = "review_time";
 
     static final String EXTRA_ID = "note_id";
@@ -114,7 +115,7 @@ public class ReminderScheduler {
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
         if (am == null) return "нет планировщика";
         try {
-            am.cancel(reviewIntent(0, ""));
+            am.cancel(reviewIntent(0, 0, ""));
         } catch (Throwable ignored) {
         }
 
@@ -130,9 +131,11 @@ public class ReminderScheduler {
             if (at <= System.currentTimeMillis()) return "ревью: время уже прошло";
             String time = item.optString("time", "08:00");
             int count = item.optInt("count", 0);
+            int noDate = item.optInt("noDate", 0);
             prefs().edit().putString(KEY_REVIEW, json).apply();
-            armReview(am, at, count, time);
-            Log.i("GlassNotes", "ревью: поставлено на " + new java.util.Date(at) + ", дел на день " + count);
+            armReview(am, at, count, noDate, time);
+            Log.i("GlassNotes", "ревью: поставлено на " + new java.util.Date(at)
+                    + ", дел на день " + count + ", без срока " + noDate);
             return "ревью поставлено";
         } catch (Throwable t) {
             Log.e("GlassNotes", "ревью: не удалось поставить", t);
@@ -153,10 +156,11 @@ public class ReminderScheduler {
             JSONObject item = new JSONObject(saved);
             String time = item.optString("time", "08:00");
             int count = item.optInt("count", 0);
+            int noDate = item.optInt("noDate", 0);
             long at = nextReviewAt(time);
             AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
             if (am == null) return;
-            armReview(am, at, count, time);
+            armReview(am, at, count, noDate, time);
             Log.i("GlassNotes", "ревью: переподнято на " + new java.util.Date(at));
         } catch (Throwable t) {
             Log.e("GlassNotes", "ревью: не удалось переподнять", t);
@@ -183,8 +187,8 @@ public class ReminderScheduler {
         return c.getTimeInMillis();
     }
 
-    private void armReview(AlarmManager am, long at, int count, String time) {
-        PendingIntent pi = reviewIntent(count, time);
+    private void armReview(AlarmManager am, long at, int count, int noDate, String time) {
+        PendingIntent pi = reviewIntent(count, noDate, time);
         try {
             if (Build.VERSION.SDK_INT >= 31) {
                 if (am.canScheduleExactAlarms()) {
@@ -202,10 +206,11 @@ public class ReminderScheduler {
         }
     }
 
-    private PendingIntent reviewIntent(int count, String time) {
+    private PendingIntent reviewIntent(int count, int noDate, String time) {
         Intent intent = new Intent(ctx, ReminderReceiver.class);
         intent.setAction(ReminderReceiver.ACTION_REVIEW);
         intent.putExtra(EXTRA_REVIEW_COUNT, count);
+        intent.putExtra(EXTRA_REVIEW_NODATE, noDate);
         intent.putExtra(EXTRA_REVIEW_TIME, time);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;

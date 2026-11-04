@@ -2374,6 +2374,7 @@
             const raw = window.NativeNotify.consumeAction();
             if (!raw) return;
             const action = JSON.parse(raw);
+            if (action.review) { openMorningReview(); return; }   // «Показать» из уведомления ревью
             const note = todos.find(t => t.id === action.id);
             if (!note) return;
             if (action.mode === 1 && note.status !== 'done') await markDone(action.id);
@@ -3517,8 +3518,10 @@
         try {
             if (!api || !api.scheduleReview) return;
             if (!reviewEnabled) { api.scheduleReview(''); return; }
-            const { total } = reviewItems();
-            api.scheduleReview(JSON.stringify({ at: nextReviewAt(), count: total, time: reviewTime }));
+            const { total, noDate } = reviewItems();
+            // noDate тоже нужен: сплэш показывает и «Без срока», и уведомление должно говорить
+            // то же самое, иначе выходит «0 дел», а в ревью список с заметками.
+            api.scheduleReview(JSON.stringify({ at: nextReviewAt(), count: total, noDate: noDate.length, time: reviewTime }));
         } catch (e) { console.warn('ревью: расписание', e); }
     }
 
