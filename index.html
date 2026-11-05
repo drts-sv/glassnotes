@@ -2668,6 +2668,15 @@
     const recWave = document.getElementById('recWave');
     const recCtx = recWave ? recWave.getContext('2d') : null;
     const REC_BARS = 36;
+    // #79: громкость от микрофона адаптивная, поэтому в тишине полосы стоят высокими и график
+    // выглядит сплошным. Рисуем не абсолютный уровень, а «громче фона»: вычитаем медиану
+    // последних ~2 секунд, тянем результат коэффициентом и кривой — тогда в тишине почти плоско,
+    // а на речи видно движение. Коэффициенты подбираются на телефоне.
+    const REC_HISTORY = 180;        // ~3 с при 60 кадрах/с
+    const REC_GAIN = 1.6;           // насколько растянуть разницу с фоном (больше — чувствительнее)
+    const REC_CURVE = 0.85;         // < 1 — подтягивает слабые значения
+    const REC_FLOOR_PCT = 0.6;      // фон = 60-й процентиль: устойчив к одиночным всплескам
+    let recHist = [], recFloor = 0;
     let recRaf = null, recRing = new Array(REC_BARS).fill(0), recEnv = 0;
     let recFrames = 0, recLevelMax = 0, recRawMax = 0;
     // Экран телефона обновляется 90-120 раз в секунду, для анимации хватает 60:
@@ -2715,19 +2724,34 @@
         recCtx.globalAlpha = 1;
     }
 
+    /** «Фон» — процентиль уровня за последние ~3 с (шум комнаты, усиленный адаптивным метром). */
+    function recFloorOf() {
+        if (!recHist.length) return 0;
+        const a = recHist.slice().sort(function (x, y) { return x - y; });
+        return a[Math.min(a.length - 1, Math.floor(a.length * REC_FLOOR_PCT))];
+    }
+
     function recTick(ts) {
         recRaf = requestAnimationFrame(recTick);
         if (ts && recLastTs && ts - recLastTs < REC_FRAME_MS - 1) return;   // не чаще 60 кадров/с
         if (ts) recLastTs = ts;
         const raw = recLevelRaw();
         if (raw > recRawMax) recRawMax = raw;
+
+        recHist.push(raw);
+        while (recHist.length > REC_HISTORY) recHist.shift();
+        if (recFrames % 10 === 0) recFloor = recFloorOf();   // фон считаем не каждый кадр
+
         const k = raw > recEnv ? 0.55 : 0.12;   // подъём быстрее спада
         recEnv += (raw - recEnv) * k;
-        recRing.push(recEnv);
+        const rel = Math.max(0, recEnv - recFloor);                 // громче фона
+        const shown = Math.min(1, Math.pow(rel * REC_GAIN, REC_CURVE));
+        if (rel > recLevelMax) recLevelMax = rel;
+
+        recRing.push(shown);
         while (recRing.length > REC_BARS) recRing.shift();
         recFrames++;
-        if (recEnv > recLevelMax) recLevelMax = recEnv;
-        if (cancelFab) cancelFab.style.setProperty('--level', recEnv.toFixed(3));
+        if (cancelFab) cancelFab.style.setProperty('--level', shown.toFixed(3));
         recDraw();
     }
 
@@ -3563,6 +3587,11 @@
     /** Показать ревью при открытии, если время уже прошло и сегодня его ещё не показывали. */
     function maybeShowMorningReview() {
         if (!reviewEnabled) return;
+        // Уведомление смахнули (или нажали «Отменить») — значит на сегодня тему закрыли.
+        try {
+            if (window.NativeAlarms && window.NativeAlarms.reviewDismissedToday
+                    && window.NativeAlarms.reviewDismissedToday()) return;
+        } catch (_) {}
         const [h, m] = (reviewTime || '08:00').split(':').map(Number);
         const now = new Date();
         const todayKey = now.toISOString().slice(0, 10);

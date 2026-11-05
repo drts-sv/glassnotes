@@ -88,6 +88,13 @@ public class MainActivity extends Activity {
             if (intent != null && intent.getBooleanExtra(EXTRA_REVIEW, false)) {
                 intent.removeExtra(EXTRA_REVIEW);
                 pendingAction = "{\"review\":1}";
+                // #75: уведомление должно исчезнуть из шторки, как только ревью открылось.
+                try {
+                    android.app.NotificationManager nm =
+                            (android.app.NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                    if (nm != null) nm.cancel(ReminderScheduler.REVIEW_REQUEST);
+                } catch (Throwable ignored) {
+                }
                 android.util.Log.i("GlassNotes", "действие из уведомления: показать утреннее ревью");
                 nudgePage();
                 return;

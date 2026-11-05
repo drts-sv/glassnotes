@@ -22,6 +22,8 @@ public class ReminderReceiver extends BroadcastReceiver {
     static final String ACTION_SILENCE = "com.glassnotes.app.ACTION_SILENCE";
     static final String ACTION_REVIEW = "com.glassnotes.app.ACTION_REVIEW";
     static final String ACTION_REVIEW_CANCEL = "com.glassnotes.app.ACTION_REVIEW_CANCEL";
+    /** Смахивание уведомления ревью: показывать сплэш сегодня больше не нужно. */
+    static final String ACTION_REVIEW_DISMISS = "com.glassnotes.app.ACTION_REVIEW_DISMISS";
 
     private static final String EXTRA_SNOOZE_MIN = "snooze_min";
 
@@ -51,14 +53,16 @@ public class ReminderReceiver extends BroadcastReceiver {
             return;
         }
 
-        if (ACTION_REVIEW_CANCEL.equals(action)) {
-            // «Отменить» — просто убираем напоминание из шторки; ревью в приложении остаётся.
+        if (ACTION_REVIEW_CANCEL.equals(action) || ACTION_REVIEW_DISMISS.equals(action)) {
+            // И кнопка «Отменить», и смахивание означают одно: сегодня тему закрыли.
+            // Уведомление гасим и запоминаем дату — сплэш сам больше не появится (#77).
             try {
                 NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
                 if (nm != null) nm.cancel(ReminderScheduler.REVIEW_REQUEST);
-                Log.i("GlassNotes", "ревью: уведомление отменено вручную");
+                new ReminderScheduler(context).markReviewDismissedToday();
+                Log.i("GlassNotes", "ревью: уведомление убрано, на сегодня закрыто");
             } catch (Throwable t) {
-                Log.e("GlassNotes", "ревью: не удалось отменить", t);
+                Log.e("GlassNotes", "ревью: не удалось убрать уведомление", t);
             }
             return;
         }
@@ -136,9 +140,12 @@ public class ReminderReceiver extends BroadcastReceiver {
                     .setContentText(text)
                     .setAutoCancel(true)
                     .setOnlyAlertOnce(true)
-                    .setContentIntent(pi)
+                    // #77: тап по самому уведомлению (не только по кнопке) открывает ревью...
+                    .setContentIntent(reviewOpen(context))
+                    // ...а смахивание закрывает тему на сегодня
+                    .setDeleteIntent(reviewDismiss(context))
                     .addAction(0, "Показать", reviewOpen(context))
-                    .addAction(0, "Отменить", reviewCancel(context))
+                    .addAction(0, "Отменить", reviewDismiss(context))
                     .setStyle(new Notification.BigTextStyle().bigText("Просроченные, на сегодня и без срока — всё в одном списке"));
             nm.notify(ReminderScheduler.REVIEW_REQUEST, b.build());
             Log.i("GlassNotes", "ревью: уведомление показано, дел " + count);
@@ -157,10 +164,10 @@ public class ReminderReceiver extends BroadcastReceiver {
         return PendingIntent.getActivity(ctx, ReminderScheduler.REVIEW_REQUEST + 1, intent, flags);
     }
 
-    /** «Отменить» — убрать уведомление, не открывая приложение. */
-    private PendingIntent reviewCancel(Context ctx) {
+    /** Смахивание уведомления или «Отменить» — убрать уведомление и закрыть тему на сегодня. */
+    private PendingIntent reviewDismiss(Context ctx) {
         Intent intent = new Intent(ctx, ReminderReceiver.class);
-        intent.setAction(ACTION_REVIEW_CANCEL);
+        intent.setAction(ACTION_REVIEW_DISMISS);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (android.os.Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
         return PendingIntent.getBroadcast(ctx, ReminderScheduler.REVIEW_REQUEST + 2, intent, flags);

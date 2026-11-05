@@ -25,6 +25,7 @@ public class ReminderScheduler {
     static final String PREFS = "glass_notes_alarms";
     static final String KEY_LIST = "scheduled";
     static final String KEY_REVIEW = "review";
+    static final String KEY_REVIEW_DISMISSED = "review_dismissed";
 
     /** Свой номер запроса: у напоминаний номера — это id заметок, тут нужен отдельный. */
     static final int REVIEW_REQUEST = 7001;
@@ -141,6 +142,29 @@ public class ReminderScheduler {
             Log.e("GlassNotes", "ревью: не удалось поставить", t);
             return "ошибка: " + t;
         }
+    }
+
+    /**
+     * Смахивание уведомления утреннего ревью = «на сегодня закрыто».
+     * Храним дату: завтра ревью снова работает.
+     */
+    void markReviewDismissedToday() {
+        prefs().edit().putString(KEY_REVIEW_DISMISSED, todayKey()).apply();
+        Log.i("GlassNotes", "ревью: отмечено как закрытое на сегодня");
+    }
+
+    /** Спрашивает страница перед автопоказом сплэша. */
+    @JavascriptInterface
+    public boolean reviewDismissedToday() {
+        try {
+            return todayKey().equals(prefs().getString(KEY_REVIEW_DISMISSED, ""));
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static String todayKey() {
+        return new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(new java.util.Date());
     }
 
     /** Для BootReceiver: состояние ревью лежит в prefs, нужен только контекст. */
