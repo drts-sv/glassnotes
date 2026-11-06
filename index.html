@@ -2672,11 +2672,25 @@
     // выглядит сплошным. Рисуем не абсолютный уровень, а «громче фона»: вычитаем медиану
     // последних ~2 секунд, тянем результат коэффициентом и кривой — тогда в тишине почти плоско,
     // а на речи видно движение. Коэффициенты подбираются на телефоне.
-    const REC_HISTORY = 180;        // ~3 с при 60 кадрах/с
-    const REC_GAIN = 1.6;           // насколько растянуть разницу с фоном (больше — чувствительнее)
     const REC_CURVE = 0.85;         // < 1 — подтягивает слабые значения
-    const REC_FLOOR_PCT = 0.6;      // фон = 60-й процентиль: устойчив к одиночным всплескам
-    let recHist = [], recFloor = 0;
+    // Автомасштаб в два шага.
+    // 1) Фон комнаты. Раньше он считался процентилем за 3 с — и при ДЛИТЕЛЬНОЙ громкой речи
+    //    сам поднимался до голоса, после чего «громче фона» становилось нулём и полосы падали.
+    //    Теперь фон подтягивается к сигналу ТОЛЬКО когда сигнал у самого фона (тишина),
+    //    а в речи стоит на месте (и очень медленно опускается).
+    // 2) Недавний пик: шкала растягивается под него, поэтому громкая речь идёт почти до верха.
+    //    Раньше коэффициент был угадан, и при максимальной громкости полосы доходили до трети.
+    const REC_PEAK_DECAY = 0.994;   // пик забывается примерно за 3–4 секунды
+    const REC_MIN_PEAK = 0.10;      // ниже этого пик не опускаем — иначе шум раздувает шкалу
+    const REC_NOISE_GATE = 0.05;    // мёртвая зона: колебания тишины не должны рисовать полосы
+    // Окно фона — 10 секунд и НИЗКИЙ процентиль (10-й). Почему так:
+    //  • процентиль по ровному окну равен самому сигналу — значит на старте фон сразу верный;
+    //  • при длинной речи паузы остаются в окне, поэтому низкий процентиль держится на тишине
+    //    и полосы не проседают (на 60-м процентиле за 3 с именно это и происходило);
+    //  • когда речь стихла, окно за 10 секунд наполняется тишиной и полосы возвращаются к нулю.
+    const REC_HISTORY = 600;        // 10 с при 60 кадрах/с
+    const REC_FLOOR_PCT = 0.10;     // фон = 10-й процентиль: почти всегда «самое тихое» в окне
+    let recHist = [], recFloor = -1, recPeak = 0;   // recFloor = -1 значит «ещё не измерен»
     let recRaf = null, recRing = new Array(REC_BARS).fill(0), recEnv = 0;
     let recFrames = 0, recLevelMax = 0, recRawMax = 0;
     // Экран телефона обновляется 90-120 раз в секунду, для анимации хватает 60:
@@ -2686,6 +2700,10 @@
 
     function recLevelRaw() {
         try {
+            // Отладочный вход: подставляется только вручную (из проверки), в обычной работе его нет.
+            if (typeof window.__recTestLevel === 'number') {
+                return Math.max(0, Math.min(1, window.__recTestLevel));
+            }
             if (!window.NativeSpeech || !window.NativeSpeech.level) return 0;
             const d = JSON.parse(window.NativeSpeech.level() || '{}');
             return Math.max(0, Math.min(1, Number(d.level) || 0));
@@ -2724,7 +2742,7 @@
         recCtx.globalAlpha = 1;
     }
 
-    /** «Фон» — процентиль уровня за последние ~3 с (шум комнаты, усиленный адаптивным метром). */
+    /** «Фон» — 10-й процентиль огибающей за последние 10 с: тише этого в окне почти не бывает. */
     function recFloorOf() {
         if (!recHist.length) return 0;
         const a = recHist.slice().sort(function (x, y) { return x - y; });
@@ -2738,14 +2756,19 @@
         const raw = recLevelRaw();
         if (raw > recRawMax) recRawMax = raw;
 
-        recHist.push(raw);
-        while (recHist.length > REC_HISTORY) recHist.shift();
-        if (recFrames % 10 === 0) recFloor = recFloorOf();   // фон считаем не каждый кадр
-
         const k = raw > recEnv ? 0.55 : 0.12;   // подъём быстрее спада
         recEnv += (raw - recEnv) * k;
-        const rel = Math.max(0, recEnv - recFloor);                 // громче фона
-        const shown = Math.min(1, Math.pow(rel * REC_GAIN, REC_CURVE));
+
+        // В окно пишем огибающую (а не сырые значения — так фон не дёргается от щелчков).
+        recHist.push(recEnv);
+        while (recHist.length > REC_HISTORY) recHist.shift();
+        if (recFloor < 0 || recFrames % 10 === 0) recFloor = recFloorOf();
+
+        const rel = Math.max(0, recEnv - recFloor - REC_NOISE_GATE);     // громче фона, с мёртвой зоной
+        recPeak = Math.max(rel, recPeak * REC_PEAK_DECAY);               // недавний пик, медленно забывается
+        const shown = rel > 0
+            ? Math.min(1, Math.pow(rel / Math.max(recPeak, REC_MIN_PEAK), REC_CURVE))
+            : 0;
         if (rel > recLevelMax) recLevelMax = rel;
 
         recRing.push(shown);
@@ -2773,7 +2796,7 @@
     function startRecAnimation() {
         if (recRaf) return;
         recRing = new Array(REC_BARS).fill(0); recEnv = 0; recFrames = 0; recLevelMax = 0; recRawMax = 0;
-        recLastTs = 0; recAccent = ''; recAccentFrame = -999;
+        recLastTs = 0; recAccent = ''; recAccentFrame = -999; recPeak = 0; recFloor = -1;
         recResize();
         recPlace();
         if (recWave) recWave.classList.add('visible');

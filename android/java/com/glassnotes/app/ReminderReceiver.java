@@ -133,8 +133,25 @@ public class ReminderReceiver extends BroadcastReceiver {
                     : new Notification.Builder(context);
             // Цифр в уведомлении нет намеренно: число устаревало за ночь и врало («0 дел»),
             // а список всё равно показывает сплэш. Здесь только приглашение и две кнопки.
-            String text = "Посмотрите дела на сегодня";
+            String text = "Нажмите, чтобы посмотреть задачи на день";
             Log.i("GlassNotes", "ревью: уведомление — " + text + " (дел на день " + count + ", без срока " + noDate + ")");
+            // Значок приложения берём через PackageManager и рисуем на канве: иконка у нас
+            // адаптивная (mipmap-anydpi-v26/ic_launcher.xml), и BitmapFactory.decodeResource
+            // для неё возвращает null — на этом первая попытка и провалилась.
+            android.graphics.Bitmap bigIcon = null;
+            try {
+                android.graphics.drawable.Drawable d = context.getPackageManager()
+                        .getApplicationIcon(context.getPackageName());
+                int w = d.getIntrinsicWidth() > 0 ? d.getIntrinsicWidth() : 144;
+                int h = d.getIntrinsicHeight() > 0 ? d.getIntrinsicHeight() : 144;
+                bigIcon = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
+                android.graphics.Canvas cv = new android.graphics.Canvas(bigIcon);
+                d.setBounds(0, 0, w, h);
+                d.draw(cv);
+            } catch (Throwable t) {
+                Log.w("GlassNotes", "ревью: значок приложения не получился", t);
+            }
+            Log.i("GlassNotes", "ревью: крупная иконка " + (bigIcon != null ? "есть" : "не нашлась"));
             b.setSmallIcon(R.mipmap.ic_launcher)
                     .setContentTitle("🌅 Утреннее ревью")
                     .setContentText(text)
@@ -147,6 +164,8 @@ public class ReminderReceiver extends BroadcastReceiver {
                     .addAction(0, "Показать", reviewOpen(context))
                     .addAction(0, "Отменить", reviewDismiss(context))
                     .setStyle(new Notification.BigTextStyle().bigText("Просроченные, на сегодня и без срока — всё в одном списке"));
+            // крупная иконка — узнаваемый значок приложения слева от заголовка
+            if (bigIcon != null) b.setLargeIcon(bigIcon);
             nm.notify(ReminderScheduler.REVIEW_REQUEST, b.build());
             Log.i("GlassNotes", "ревью: уведомление показано, дел " + count);
         } catch (Throwable t) {
