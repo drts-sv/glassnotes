@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.Image
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,6 +51,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
@@ -72,6 +74,7 @@ import kotlin.math.roundToInt
 fun NotesScreen(
     store: NotesStore,
     accent: Color,
+    onRecord: () -> Unit = {},
 ) {
     var notes by remember { mutableStateOf<List<NoteRow>>(emptyList()) }
     var tab by remember { mutableStateOf("active") }
@@ -110,13 +113,14 @@ fun NotesScreen(
         return
     }
 
-    Column(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.systemBars)
-                .padding(start = Design.padSide, end = Design.padSide, top = Design.padTop),
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(start = Design.padSide, end = Design.padSide, top = Design.padTop),
+        ) {
         HeaderCard(
             notes = notes,
             accent = accent,
@@ -157,7 +161,8 @@ fun NotesScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 24.dp),
+                // Нижний отступ больше: под списком стоит кнопка микрофона.
+                contentPadding = PaddingValues(bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(shown, key = { it.id }) { note ->
@@ -182,6 +187,43 @@ fun NotesScreen(
                 }
             }
         }
+        }
+
+        // Кнопка записи — в правом нижнем углу: по ней открывается окно записи.
+        RecordButton(
+            accent = accent,
+            onClick = onRecord,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = Design.padSide, bottom = 20.dp),
+        )
+    }
+}
+
+/** Кнопка микрофона: красная, круглая, в правом нижнем углу. */
+@Composable
+private fun RecordButton(
+    accent: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val view = LocalView.current
+    Box(
+        modifier =
+            modifier
+                .size(Design.fab * 0.62f)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(Design.stopRed.copy(alpha = 0.9f))
+                .clickable {
+                    Haptics.longPress(view)
+                    onClick()
+                },
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_mic),
+            contentDescription = "Записать",
+            colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.White),
+            modifier = Modifier.size(26.dp),
+        )
     }
 }
 
@@ -213,23 +255,32 @@ private fun HeaderCard(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
                 .background(Design.glassRgb.copy(alpha = Design.cardAlpha))
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             LogoRing(done = done, total = notes.size, accent = accent)
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(8.dp))
             Text(
                 text = "GlasNote",
                 color = Design.textPrimary,
-                fontSize = 20.sp,
+                fontSize = 17.sp,
                 fontWeight = FontWeight.Medium,
             )
+            Spacer(Modifier.width(6.dp))
+            // Счётчик активных дел — как значок рядом с названием в боевом приложении.
+            Text(
+                text = active.toString(),
+                color = Design.textSecondary.copy(alpha = 0.8f),
+                fontSize = 13.sp,
+            )
             Spacer(Modifier.weight(1f))
-            HeaderButton("🔎", searchOpen, onToggleSearch)
-            HeaderButton("🏷", filtersOpen, onToggleFilters)
-            HeaderButton("⚙", false, onOpenSettings)
+            HeaderButton(R.drawable.ic_search, searchOpen, onToggleSearch)
+            HeaderButton(R.drawable.ic_filter, filtersOpen, onToggleFilters)
+            HeaderButton(R.drawable.ic_settings, false, onOpenSettings)
         }
 
+        // Вкладки и отборы — только когда открыт отбор: в боевом вторая строка шапки свёрнута,
+        // поэтому карточка заголовка компактная.
         if (filtersOpen) {
             FlowRow(
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
@@ -263,7 +314,7 @@ private fun LogoRing(
     accent: Color,
 ) {
     val fraction = if (total == 0) 0f else done.toFloat() / total
-    Canvas(modifier = Modifier.size(26.dp)) {
+    Canvas(modifier = Modifier.size(22.dp)) {
         val stroke = 2.6.dp.toPx()
         val inset = stroke / 2
         drawArc(
@@ -291,24 +342,29 @@ private fun LogoRing(
 
 @Composable
 private fun HeaderButton(
-    label: String,
+    icon: Int,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
     val view = LocalView.current
-    Text(
-        text = label,
-        fontSize = 16.sp,
+    Box(
         modifier =
             Modifier
-                .padding(start = 6.dp)
+                .padding(start = 4.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(if (selected) Design.textPrimary.copy(alpha = 0.12f) else Color.Transparent)
                 .clickable {
                     Haptics.tick(view)
                     onClick()
-                }.padding(horizontal = 8.dp, vertical = 6.dp),
-    )
+                }.padding(horizontal = 7.dp, vertical = 6.dp),
+    ) {
+        Image(
+            painter = painterResource(icon),
+            contentDescription = null,
+            colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.textPrimary.copy(alpha = 0.9f)),
+            modifier = Modifier.size(19.dp),
+        )
+    }
 }
 
 @Composable
@@ -381,7 +437,12 @@ private fun SearchField(
                 .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = "🔎", fontSize = 14.sp)
+        Image(
+            painter = painterResource(R.drawable.ic_search),
+            contentDescription = null,
+            colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.textSecondary.copy(alpha = 0.9f)),
+            modifier = Modifier.size(17.dp),
+        )
         Spacer(Modifier.width(8.dp))
         Box(modifier = Modifier.weight(1f)) {
             if (query.isEmpty()) {
@@ -400,11 +461,15 @@ private fun SearchField(
             )
         }
         if (query.isNotEmpty()) {
-            Text(
-                text = "✕",
-                color = Design.textSecondary.copy(alpha = 0.8f),
-                fontSize = 14.sp,
-                modifier = Modifier.clickable { onQuery("") }.padding(start = 6.dp),
+            Image(
+                painter = painterResource(R.drawable.ic_close),
+                contentDescription = "Очистить",
+                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.textSecondary.copy(alpha = 0.8f)),
+                modifier =
+                    Modifier
+                        .size(15.dp)
+                        .clickable { onQuery("") }
+                        .padding(start = 6.dp),
             )
         }
     }
