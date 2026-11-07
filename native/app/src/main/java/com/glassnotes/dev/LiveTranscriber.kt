@@ -86,8 +86,13 @@ class LiveTranscriber(
         }
 
         val pending = synchronized(buffer) { buffer.size }
+        val pendingMs = pending / 16 // миллисекунды при 16 кГц
         val pauseFound = speechMs >= MIN_SPEECH_MS && silenceMs >= MIN_PAUSE_MS
-        if (pauseFound || pending > MAX_SAMPLES) {
+        // Второе условие — для длинного монолога: полной паузы может не быть вовсе (шумный фон),
+        // и кусок разрастался до 10+ секунд, распознаваясь заметно хуже. Режем длинный кусок
+        // по короткой паузе.
+        val longChunk = pendingMs >= LONG_CUT_MS && silenceMs >= SHORT_PAUSE_MS
+        if (pauseFound || longChunk || pending > MAX_SAMPLES) {
             flush()
         }
     }
@@ -150,6 +155,10 @@ class LiveTranscriber(
         private const val SPEECH_ON = 0.5f
         private const val MIN_SPEECH_MS = 400
         private const val MIN_PAUSE_MS = 600
+
+        /** Длинный кусок: хватает короткой паузы, чтобы не тащить 10 секунд в распознавание. */
+        private const val LONG_CUT_MS = 7_000
+        private const val SHORT_PAUSE_MS = 250
         private const val OVERLAP_SAMPLES = 16000 * 3 / 10
         private const val MAX_SAMPLES = 16000 * 20
     }
