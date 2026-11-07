@@ -55,6 +55,7 @@ fun SettingsScreen(
     var reviewTime by remember { mutableStateOf(store.getKv(Reminders.REVIEW_TIME_KEY) ?: Reminders.DEFAULT_REVIEW_TIME) }
     var threads by remember { mutableFloatStateOf(store.getKv("threads")?.toFloatOrNull() ?: 1f) }
     var voiceCategory by remember { mutableStateOf(store.getKv("voiceCategory") ?: "вкл") }
+    var silenceSec by remember { mutableFloatStateOf(store.getKv("silenceSec")?.toFloatOrNull() ?: 3f) }
     var notesCount by remember { mutableStateOf(store.count()) }
 
     // Любое изменение пишем в базу сразу: настройки должны переживать перезапуск.
@@ -67,6 +68,10 @@ fun SettingsScreen(
     LaunchedEffect(threads) {
         store.setKv("threads", threads.toString())
         Log.i("GlasNotesDev", "настройки: потоков распознавания %d".format(threads.toInt()))
+    }
+    LaunchedEffect(silenceSec) {
+        store.setKv("silenceSec", silenceSec.toString())
+        Log.i("GlasNotesDev", "настройки: авто-остановка по тишине %.0f с".format(silenceSec))
     }
     LaunchedEffect(Unit) {
         notesCount = store.count()
@@ -187,6 +192,30 @@ fun SettingsScreen(
             }
             Text(
                 text = "«купить хлеб» → категория «Покупки», как в боевом приложении.",
+                color = Design.textSecondary.copy(alpha = 0.7f),
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+
+        SettingsCard("⏹ Окончание записи") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = if (silenceSec <= 0f) "авто-остановка выключена" else "Тишина: %.0f с".format(silenceSec),
+                    color = Design.textPrimary,
+                    fontSize = 16.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                Stepper("−") {
+                    silenceSec = (silenceSec - 1f).coerceAtLeast(0f)
+                }
+                Stepper("+") {
+                    silenceSec = (silenceSec + 1f).coerceAtMost(10f)
+                }
+            }
+            Text(
+                text = "Если после речи тишина дольше этого времени, запись останавливается сама, " +
+                    "заметка сохраняется и окно записи закрывается. 0 — только вручную.",
                 color = Design.textSecondary.copy(alpha = 0.7f),
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 6.dp),

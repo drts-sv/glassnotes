@@ -89,9 +89,22 @@ fun NotesScreen(
     // Отклик в диалоге: LocalView читаем здесь — внутри clickable его вызывать нельзя.
     val screenView = LocalView.current
 
-    // Правка текста заметки: открывается из меню по долгому нажатию.
+    // Лист заметки: открывается нажатием на карточку. Меняются текст, дата/время, категория —
+    // как в боевом приложении (там это openNoteSheet + openEdit).
     var editNote by remember { mutableStateOf<NoteRow?>(null) }
     var editText by remember { mutableStateOf("") }
+    var editWhen by remember { mutableStateOf("") }
+    var editCats by remember { mutableStateOf(emptySet<String>()) }
+    val whenFormat = java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.US)
+
+    /** «Сегодня»/«Завтра» в том же формате, что поле даты. */
+    fun dayText(plusDays: Int): String {
+        val cal = java.util.Calendar.getInstance()
+        cal.add(java.util.Calendar.DAY_OF_MONTH, plusDays)
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 9)
+        cal.set(java.util.Calendar.MINUTE, 0)
+        return whenFormat.format(cal.time)
+    }
 
     LaunchedEffect(revision) {
         notes = store.recent(200).mapNotNull { parseNote(it) }
@@ -124,17 +137,94 @@ fun NotesScreen(
             onDismissRequest = { editNote = null },
             title = { Text("Текст заметки", color = Design.textPrimary, fontSize = 16.sp) },
             text = {
-                BasicTextField(
-                    value = editText,
-                    onValueChange = { editText = it },
-                    textStyle = TextStyle(color = Design.textPrimary, fontSize = 16.sp),
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Design.glassRgb.copy(alpha = 0.5f))
-                            .padding(10.dp),
-                )
+                Column {
+                    Text("Когда", color = Design.textSecondary.copy(alpha = 0.8f), fontSize = 12.sp)
+                    Spacer(Modifier.height(4.dp))
+                    BasicTextField(
+                        value = editWhen,
+                        onValueChange = { editWhen = it },
+                        singleLine = true,
+                        textStyle = TextStyle(color = Design.textPrimary, fontSize = 15.sp),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Design.glassRgb.copy(alpha = 0.5f))
+                                .padding(10.dp),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("Сегодня" to 0, "Завтра" to 1).forEach { (title, days) ->
+                            Text(
+                                text = title,
+                                color = accent.copy(alpha = 0.9f),
+                                fontSize = 12.sp,
+                                modifier =
+                                    Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Design.glassRgb.copy(alpha = 0.45f))
+                                        .clickable {
+                                            Haptics.tick(screenView)
+                                            editWhen = dayText(days)
+                                        }.padding(horizontal = 8.dp, vertical = 4.dp),
+                            )
+                        }
+                        Text(
+                            text = "Без даты",
+                            color = Design.textSecondary.copy(alpha = 0.9f),
+                            fontSize = 12.sp,
+                            modifier =
+                                Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Design.glassRgb.copy(alpha = 0.45f))
+                                    .clickable {
+                                        Haptics.tick(screenView)
+                                        editWhen = ""
+                                    }.padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    Text("Текст", color = Design.textSecondary.copy(alpha = 0.8f), fontSize = 12.sp)
+                    Spacer(Modifier.height(4.dp))
+                    BasicTextField(
+                        value = editText,
+                        onValueChange = { editText = it },
+                        textStyle = TextStyle(color = Design.textPrimary, fontSize = 16.sp),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 56.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Design.glassRgb.copy(alpha = 0.5f))
+                                .padding(10.dp),
+                    )
+
+                    Spacer(Modifier.height(10.dp))
+                    Text("Категория", color = Design.textSecondary.copy(alpha = 0.8f), fontSize = 12.sp)
+                    Spacer(Modifier.height(4.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Categories.names.forEach { pair ->
+                            val id = pair.first
+                            val on = id in editCats
+                            Text(
+                                text = pair.second,
+                                color = Design.textPrimary.copy(alpha = if (on) 0.98f else 0.8f),
+                                fontSize = 12.sp,
+                                modifier =
+                                    Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(
+                                            (Categories.colors[id] ?: Design.glassRgb)
+                                                .copy(alpha = if (on) 0.45f else 0.14f),
+                                        ).clickable {
+                                            Haptics.tick(screenView)
+                                            editCats = if (on) editCats - id else editCats + id
+                                        }.padding(horizontal = 8.dp, vertical = 4.dp),
+                            )
+                        }
+                    }
+                }
             },
             confirmButton = {
                 Text(
@@ -145,10 +235,34 @@ fun NotesScreen(
                         Modifier.clickable {
                             Haptics.tick(screenView)
                             val value = editText.trim()
-                            if (value.isNotEmpty() && value != note.text) {
+                            if (value.isNotEmpty()) {
+                                // Дата: сначала точный формат, затем разбор естественной речи.
+                                val cal =
+                                    runCatching {
+                                        java.util.Calendar.getInstance().apply { time = whenFormat.parse(editWhen.trim())!! }
+                                    }.getOrNull() ?: parseDateNlu(editWhen).datetime
+                                val at = cal?.timeInMillis
+                                val allDay =
+                                    cal != null &&
+                                        cal.get(java.util.Calendar.HOUR_OF_DAY) == 0 &&
+                                        cal.get(java.util.Calendar.MINUTE) == 0
                                 store.setText(note.id, value)
+                                store.setCategories(note.id, editCats.toList())
+                                store.setDatetime(note.id, at, allDay)
+                                Reminders.cancel(context, note.id)
+                                if (at != null && at > System.currentTimeMillis()) {
+                                    Reminders.schedule(context, note.id, at, value, editCats.firstOrNull(), allDay)
+                                }
                                 revision++
-                                Log.i("GlasNotesDev", "текст заметки #%d изменён".format(note.id))
+                                Log.i(
+                                    "GlasNotesDev",
+                                    "заметка #%d изменена: текст %d симв., дата %s, категорий %d".format(
+                                        note.id,
+                                        value.length,
+                                        at?.let { whenFormat.format(java.util.Date(it)) } ?: "нет",
+                                        editCats.size,
+                                    ),
+                                )
                             }
                             editNote = null
                         }.padding(8.dp),
@@ -248,6 +362,8 @@ fun NotesScreen(
                         },
                         onEdit = {
                             editText = note.text
+                            editCats = note.categoryIds.toSet()
+                            editWhen = note.datetime?.let { whenFormat.format(java.util.Date(it)) } ?: ""
                             editNote = note
                         },
                         onDelete = {

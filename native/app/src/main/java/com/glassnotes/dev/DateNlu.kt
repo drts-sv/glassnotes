@@ -588,7 +588,9 @@ fun parseDateNlu(
         result = d
     } else if (result != null && !timeResult && !relativeApplied) {
         allDay = true
-        result.set(Calendar.HOUR_OF_DAY, 0)
+        // Владелец: «сказал в понедельник — поставило на 00 00». Если час не назван, напоминание
+        // ставим на утро (09:00 — как «утро» в боевых DEFAULT_TIME_SETTINGS), а не на полночь.
+        result.set(Calendar.HOUR_OF_DAY, 9)
         result.set(Calendar.MINUTE, 0)
         result.set(Calendar.SECOND, 0)
         result.set(Calendar.MILLISECOND, 0)

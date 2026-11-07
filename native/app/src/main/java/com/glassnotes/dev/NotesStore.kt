@@ -97,6 +97,37 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
         patch(id) { it.put("text", text) }
     }
 
+    /** Заменить список категорий заметки (в редакторе можно выбрать несколько). */
+    fun setCategories(
+        id: Long,
+        categoryIds: List<String>,
+    ) {
+        patch(id) { json ->
+            val arr = org.json.JSONArray()
+            categoryIds.forEach { arr.put(it) }
+            json.put("categoryIds", arr)
+            json.put("color", categoryIds.firstOrNull() ?: "")
+        }
+    }
+
+    /** Сменить дату и время заметки (null — «без даты»). */
+    fun setDatetime(
+        id: Long,
+        datetime: Long?,
+        allDay: Boolean,
+    ) {
+        patch(id) { json ->
+            if (datetime == null) {
+                json.put("datetime", org.json.JSONObject.NULL)
+                json.put("allDay", false)
+            } else {
+                json.put("datetime", datetime)
+                json.put("allDay", allDay)
+                json.put("time", java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(datetime)))
+            }
+        }
+    }
+
     /** Сменить категорию заметки (цвет карточки меняется сразу). */
     fun setCategory(
         id: Long,

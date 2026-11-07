@@ -176,6 +176,10 @@ fun RecordingScreen(
 
     val scope = rememberCoroutineScope()
 
+    /** Когда пришла последняя распознанная фраза и когда началась запись — для авто-остановки. */
+    var lastPhraseAt by remember { mutableStateOf(0L) }
+    var startedAt by remember { mutableStateOf(0L) }
+
     /** Сохранить надиктованное одной заметкой и очистить сеанс. Пустой текст не сохраняем. */
     fun saveSession() {
         val text = session.toString().trim()
@@ -212,6 +216,43 @@ fun RecordingScreen(
         }
     }
     var notesCount by remember { mutableIntStateOf(0) }
+
+    /** Остановить запись и сохранить заметку: путь общий для кнопки и авто-остановки. */
+    fun stopAndSave() {
+        recorder.stop()
+        transcriber?.finish()
+        recording = false
+        Log.i(TAG, "запись остановлена на %d с".format(seconds))
+        scope.launch {
+            val engine = transcriber
+            var waited = 0
+            while (engine?.busy == true && waited < 15000) {
+                delay(200)
+                waited += 200
+            }
+            delay(300)
+            Log.i(TAG, "распознавание успокоилось через %d мс".format(waited))
+            saveSession()
+            onClose()
+        }
+    }
+
+    // Авто-остановка: владелец «окончание записи автоматом не детектирует». Если после речи
+    // тишина дольше настройки (silenceSec, по умолчанию 3 с) — останавливаемся сами.
+    LaunchedEffect(recording) {
+        if (!recording) return@LaunchedEffect
+        val silenceMs = ((store.getKv("silenceSec")?.toFloatOrNull() ?: 3f) * 1000L).toLong()
+        if (silenceMs <= 0L) return@LaunchedEffect
+        while (true) {
+            delay(250)
+            val since = System.currentTimeMillis() - maxOf(lastPhraseAt, startedAt)
+            if (session.isNotEmpty() && since > silenceMs) {
+                Log.i(TAG, "тишина %.1f с — авто-остановка".format(since / 1000f))
+                stopAndSave()
+                break
+            }
+        }
+    }
     var transcriber by remember { mutableStateOf<LiveTranscriber?>(null) }
     var vad by remember { mutableStateOf<SileroVad?>(null) }
     var showDev by remember { mutableStateOf(false) }
@@ -308,6 +349,8 @@ fun RecordingScreen(
                         // Фразу только копим: заметка сохраняется одна, при остановке записи.
                         if (session.isNotEmpty()) session.append(' ')
                         session.append(text)
+                        // Отмечаем время речи: по нему работает авто-остановка.
+                        lastPhraseAt = System.currentTimeMillis()
                     }.also { transcriber = it }
                 recorder.onChunk = { bytes, count -> live.onChunk(bytes, count, recorder.speechProb) }
                 Log.i(TAG, "распознавание на ходу готово (VAD доступен: %s)".format(detector.available))
@@ -657,26 +700,12 @@ fun RecordingScreen(
                             .clickable {
                                 Haptics.tick(hapticView)
                                 if (recording) {
-                                    recorder.stop()
-                                    transcriber?.finish()
-                                    recording = false
-                                    Log.i(TAG, "запись остановлена на %d с".format(seconds))
-                                    // ВАЖНО: finish() только просит движок доработать остаток, а фразы
-                                    // приходят ещё какое-то время. Раньше заметка сохранялась сразу и
-                                    // выходила пустой — теперь ждём, пока распознавание успокоится.
-                                    scope.launch {
-                                        val engine = transcriber
-                                        var waited = 0
-                                        while (engine?.busy == true && waited < 15000) {
-                                            delay(200)
-                                            waited += 200
-                                        }
-                                        delay(300)
-                                        Log.i(TAG, "распознавание успокоилось через %d мс".format(waited))
-                                        saveSession()
-                                        onClose()
-                                    }
+                                    stopAndSave()
                                 } else if (granted) {
+                                    startedAt = System.currentTimeMillis()
+                                    lastPhraseAt = startedAt
+                                    session.setLength(0)
+                                    phrases.clear()
                                     recording = recorder.start()
                                     Log.i(TAG, "запись запущена: %s".format(recording))
                                 }
