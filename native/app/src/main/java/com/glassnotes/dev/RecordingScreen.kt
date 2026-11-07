@@ -166,11 +166,17 @@ fun RecordingScreen(autoStart: Boolean = false) {
     }
 
     val cores = remember { Runtime.getRuntime().availableProcessors() }
-    var asrThreads by remember { mutableFloatStateOf(GigaAmOnnxRecognizer.intraOpThreads.toFloat()) }
+    var asrThreads by remember {
+        // По умолчанию 1 поток: у onnxruntime 0 значит «сам реши», а на этом телефоне быстрее всего
+        // именно один поток (замеры 06.11.2026: 1 поток 322 мс против 61183 мс на 7).
+        mutableFloatStateOf(store.getKv("threads")?.toFloatOrNull() ?: 1f)
+    }
     var engineVersion by remember { mutableIntStateOf(0) }
-    var dbWindow by remember { mutableFloatStateOf(wave.dbWindow) }
-    var noiseGate by remember { mutableFloatStateOf(wave.noiseGate) }
-    var curve by remember { mutableFloatStateOf(wave.curve) }
+    // Настройки берём из базы (таблица kv), а не только из памяти: иначе подобранные
+    // значения сбрасывались при каждом перезапуске. Нет записи — берём значение алгоритма.
+    var dbWindow by remember { mutableFloatStateOf(store.getKv("dbWindow")?.toFloatOrNull() ?: wave.dbWindow) }
+    var noiseGate by remember { mutableFloatStateOf(store.getKv("noiseGate")?.toFloatOrNull() ?: wave.noiseGate) }
+    var curve by remember { mutableFloatStateOf(store.getKv("curve")?.toFloatOrNull() ?: wave.curve) }
     var lastParamLog by remember { mutableStateOf(0L) }
 
     val askPermission =
@@ -185,6 +191,36 @@ fun RecordingScreen(autoStart: Boolean = false) {
             recording = recorder.start()
             Log.i(TAG, "запись запущена из интента: %s".format(recording))
         }
+    }
+
+    LaunchedEffect(Unit) {
+        Log.i(
+            TAG,
+            "настройки загружены из базы: шкала %.1f дБ, порог %.3f, кривая %.2f, потоков %d".format(
+                dbWindow,
+                noiseGate,
+                curve,
+                asrThreads.toInt(),
+            ),
+        )
+    }
+
+    // Сохраняем с задержкой, чтобы не писать в базу на каждое движение ползунка.
+    LaunchedEffect(dbWindow, noiseGate, curve, asrThreads) {
+        delay(500)
+        store.setKv("dbWindow", dbWindow.toString())
+        store.setKv("noiseGate", noiseGate.toString())
+        store.setKv("curve", curve.toString())
+        store.setKv("threads", asrThreads.toString())
+        Log.i(
+            TAG,
+            "настройки сохранены: шкала %.1f дБ, порог %.3f, кривая %.2f, потоков %d".format(
+                dbWindow,
+                noiseGate,
+                curve,
+                asrThreads.toInt(),
+            ),
+        )
     }
 
     LaunchedEffect(dbWindow, noiseGate, curve) {

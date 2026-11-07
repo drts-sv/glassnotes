@@ -112,6 +112,20 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
         writableDatabase.update("notes", values, "id = ?", arrayOf(id.toString()))
     }
 
+    /** Настройки — в таблице kv той же базы. Ключи короткие и совпадают с названиями полей. */
+    fun getKv(key: String): String? =
+        readableDatabase
+            .rawQuery("SELECT v FROM kv WHERE k = ?", arrayOf(key))
+            .use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+
+    fun setKv(
+        key: String,
+        value: String,
+    ) {
+        val values = ContentValues().apply { put("k", key); put("v", value) }
+        writableDatabase.insertWithOnConflict("kv", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
     fun count(): Int =
         readableDatabase.rawQuery("SELECT COUNT(*) FROM notes", null).use { cursor ->
             if (cursor.moveToFirst()) cursor.getInt(0) else 0

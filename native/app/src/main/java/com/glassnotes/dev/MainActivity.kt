@@ -71,6 +71,24 @@ class MainActivity : ComponentActivity() {
         intent?.getStringExtra("asr_file")?.let { name -> thread(name = "AsrFile") { recognizeWhole(name) } }
         intent?.getStringExtra("asr_replay")?.let { name -> thread(name = "AsrReplay") { replayThroughLive(name) } }
 
+        if (intent?.getBooleanExtra("settings_probe", false) == true) {
+            // Пишем набор значений и читаем его обратно — тем же кодом, что и экран записи.
+            val store = NotesStore(applicationContext)
+            store.setKv("dbWindow", "71.5")
+            store.setKv("noiseGate", "0.19")
+            store.setKv("curve", "0.61")
+            store.setKv("threads", "3")
+            Log.i(
+                TAG,
+                "settings_probe: шкала %s, порог %s, кривая %s, потоков %s".format(
+                    store.getKv("dbWindow"),
+                    store.getKv("noiseGate"),
+                    store.getKv("curve"),
+                    store.getKv("threads"),
+                ),
+            )
+        }
+
         if (intent?.getBooleanExtra("edit_test", false) == true) {
             // Проверка правок без ручных нажатий: те же методы, что вызывают тап и меню.
             val store = NotesStore(applicationContext)
