@@ -85,10 +85,10 @@ private data class TraceLayer(
 /** Главная огибающая и вторичные следы со сдвигом по фазе. */
 private val LAYERS =
     listOf(
-        TraceLayer(0, 1.00f, 1.00f, 2.2f),
-        TraceLayer(4, 0.96f, 0.36f, 1.7f),
-        TraceLayer(8, 0.90f, 0.24f, 1.5f),
-        TraceLayer(12, 0.84f, 0.15f, 1.3f),
+        TraceLayer(0, 1.00f, 0.72f, 2.0f),
+        TraceLayer(4, 0.96f, 0.20f, 1.5f),
+        TraceLayer(8, 0.90f, 0.13f, 1.3f),
+        TraceLayer(12, 0.84f, 0.08f, 1.1f),
     )
 
 /** Категории как в боевом приложении (DEFAULT_CATEGORIES). */
@@ -237,7 +237,8 @@ fun RecordingScreen(autoStart: Boolean = false) {
                     ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.weight(1f))
+            // Развёртка стоит в верхней трети экрана (просьба владельца): сверху только небольшой отступ.
+            Spacer(Modifier.height(18.dp))
 
             // Развёртка (симметричный контур, вторичные следы со сдвигом по фазе).
             Canvas(
@@ -303,9 +304,9 @@ fun RecordingScreen(autoStart: Boolean = false) {
                         Brush.verticalGradient(
                             colors =
                                 listOf(
-                                    accent.copy(alpha = 0.05f),
-                                    accent.copy(alpha = 0.20f),
-                                    accent.copy(alpha = 0.05f),
+                                    accent.copy(alpha = 0.03f),
+                                    accent.copy(alpha = 0.12f),
+                                    accent.copy(alpha = 0.03f),
                                 ),
                             startY = 0f,
                             endY = size.height,
@@ -345,20 +346,23 @@ fun RecordingScreen(autoStart: Boolean = false) {
                 contentAlignment = Alignment.Center,
             ) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
-                    val glow = Design.glowRadiusMin.toPx() +
-                        (Design.glowRadiusMax - Design.glowRadiusMin).toPx() * level
+                    // Свечение намеренно тихое: в боевом приложении это box-shadow, то есть размытие,
+                    // а не сплошное пятно акцента. Прежние 0.22+0.7·уровень владелец назвал слишком яркими.
+                    val glowAlpha = Design.glowAlphaMin + Design.glowAlphaRange * level
+                    val glowRadius = size.minDimension * 0.62f +
+                        (Design.glowRadiusMin + (Design.glowRadiusMax - Design.glowRadiusMin) * level).toPx()
                     drawCircle(
                         brush =
                             Brush.radialGradient(
                                 colors =
                                     listOf(
-                                        accent.copy(alpha = Design.glowAlpha(level)),
+                                        accent.copy(alpha = glowAlpha),
                                         accent.copy(alpha = 0f),
                                     ),
                                 center = center,
-                                radius = size.minDimension + glow,
+                                radius = glowRadius,
                             ),
-                        radius = size.minDimension + glow,
+                        radius = glowRadius,
                     )
 
                     // Кольцо таймера: в боевом приложении смещено на −6px и повёрнуто на −90°.

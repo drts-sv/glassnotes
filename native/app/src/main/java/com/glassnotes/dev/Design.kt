@@ -71,8 +71,13 @@ object Design {
     val chipGap = 9.dp
     val chipFont = 14.4.sp
 
-    /** свечение кнопки: opacity 0.22 + 0.7*level, радиус 10px + 30px*level */
-    fun glowAlpha(level: Float) = 0.22f + 0.7f * level
+    /**
+     * Свечение кнопки. В приложении это box-shadow (`0 0 calc(10px + 30px*level) accent`), то есть
+     * мягкое размытие; владелец сказал, что сплошное пятно по формуле 0.22 + 0.7·уровень слишком яркое,
+     * поэтому здесь тише: 0.04 … 0.18.
+     */
+    const val glowAlphaMin = 0.04f
+    const val glowAlphaRange = 0.14f
     val glowRadiusMin = 10.dp
     val glowRadiusMax = 40.dp
 }
