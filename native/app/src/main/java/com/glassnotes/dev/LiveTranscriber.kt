@@ -49,6 +49,11 @@ class LiveTranscriber(
     var busy = false
         private set
 
+    /** Сколько заняло распознавание последней фразы, мс — показываем на экране. */
+    @Volatile
+    var lastPhraseMs: Int = 0
+        private set
+
     private val buffer = ArrayList<Short>(16000 * 20)
     private var speechMs = 0
     private var silenceMs = 0
@@ -121,6 +126,7 @@ class LiveTranscriber(
                 val started = System.currentTimeMillis()
                 val text = recognizer.transcribe(piece)
                 val spent = System.currentTimeMillis() - started
+                lastPhraseMs = spent.toInt()
                 if (text.isNotBlank()) {
                     Log.i(
                         TAG,

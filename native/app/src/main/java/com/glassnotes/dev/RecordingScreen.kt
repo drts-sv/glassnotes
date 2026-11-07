@@ -575,8 +575,8 @@ fun RecordingScreen(autoStart: Boolean = false) {
             if (showDev) {
                 Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                     Text(
-                        text = "rms %d · сырая %.3f · фон %.3f · пик %.3f · полоса %.3f · %d к/с"
-                            .format(rawRms, raw, wave.floor, wave.peak, level, fps),
+                        text = "rms %d · сырая %.3f · фон %.3f · пик %.3f · полоса %.3f · %d к/с · фраза %d мс"
+                            .format(rawRms, raw, wave.floor, wave.peak, level, fps, transcriber?.lastPhraseMs ?: 0),
                         color = Design.textSecondary.copy(alpha = 0.8f),
                         fontSize = 11.sp,
                         modifier = Modifier.padding(top = 8.dp),
