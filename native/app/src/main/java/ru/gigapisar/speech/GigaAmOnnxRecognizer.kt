@@ -127,14 +127,12 @@ class GigaAmOnnxRecognizer(
         val options =
             OrtSession.SessionOptions()
 
-        options.setIntraOpNumThreads(
-            max(
-                2,
-                Runtime
-                    .getRuntime()
-                    .availableProcessors() - 1,
-            ),
-        )
+        // Потоков не больше трёх. Было «ядер − 1»: на 8-ядерном телефоне распознавание забирало
+        // 7 потоков, и кадры развёртки проседали — владелец это и заметил как «немного тормозит».
+        // Распознавание от этого чуть медленнее, но экран остаётся живым.
+        val cores = Runtime.getRuntime().availableProcessors()
+        options.setIntraOpNumThreads((cores / 2).coerceIn(2, 3))
+        options.setInterOpNumThreads(1)
 
         val created =
             environment.createSession(

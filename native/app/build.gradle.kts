@@ -14,8 +14,8 @@ android {
         applicationId = "com.glassnotes.dev"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.16-dev"
+        versionCode = 17
+        versionName = "0.17-dev"
     }
 
     buildTypes {

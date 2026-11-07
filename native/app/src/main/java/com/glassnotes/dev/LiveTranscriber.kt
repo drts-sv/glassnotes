@@ -29,7 +29,23 @@ class LiveTranscriber(
     private val recognizer = GigaAmOnnxRecognizer(context, modelManager)
 
     /** Одна нить и очередь: две сессии onnxruntime одновременно — лишняя память и риск гонки. */
-    private val worker = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "LiveAsr") }
+    private val worker =
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(
+                {
+                    // Распознавание — фоновая работа: без этого система не отдаёт кадры экрану,
+                    // пока считает сеть, и развёртка дёргается.
+                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                    runnable.run()
+                },
+                "LiveAsr",
+            )
+        }
+
+    /** Идёт ли распознавание прямо сейчас (для лога кадров: видно, отчего проседает). */
+    @Volatile
+    var busy = false
+        private set
 
     private val buffer = ArrayList<Short>(16000 * 20)
     private var speechMs = 0
@@ -98,6 +114,7 @@ class LiveTranscriber(
         overlap = samples.copyOfRange(max(0, samples.size - OVERLAP_SAMPLES), samples.size)
 
         worker.execute {
+            busy = true
             try {
                 val started = System.currentTimeMillis()
                 val text = recognizer.transcribe(piece)
@@ -113,6 +130,8 @@ class LiveTranscriber(
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "фраза не распозналась", t)
+            } finally {
+                busy = false
             }
         }
     }
@@ -122,7 +141,7 @@ class LiveTranscriber(
         private const val CHUNK_MS = 20
         private const val SPEECH_ON = 0.5f
         private const val MIN_SPEECH_MS = 400
-        private const val MIN_PAUSE_MS = 700
+        private const val MIN_PAUSE_MS = 600
         private const val OVERLAP_SAMPLES = 16000 * 3 / 10
         private const val MAX_SAMPLES = 16000 * 20
     }

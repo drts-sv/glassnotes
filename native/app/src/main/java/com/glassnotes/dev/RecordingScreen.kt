@@ -59,6 +59,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -255,6 +256,13 @@ fun RecordingScreen(autoStart: Boolean = false) {
             while (trace.size > TRACE) trace.removeFirst()
             level = shown
             version++
+
+            if (frame % 120 == 0) {
+                Log.i(
+                    TAG,
+                    "кадры: %d/с, распознаёт: %s, фраз: %d".format(fps, if (transcriber?.busy == true) "да" else "нет", phrases.size),
+                )
+            }
         }
     }
 
@@ -391,19 +399,22 @@ fun RecordingScreen(autoStart: Boolean = false) {
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .height(64.dp)
-                            .padding(top = 6.dp),
+                            .height(112.dp)
+                            .padding(top = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Bottom,
                 ) {
-                    val tail = phrases.takeLast(4)
+                    val tail = phrases.takeLast(3)
                     tail.forEachIndexed { index, phrase ->
                         val age = (tail.size - 1 - index).toFloat()
                         Text(
                             text = phrase,
-                            color = Design.textPrimary.copy(alpha = (0.60f - 0.15f * age).coerceAtLeast(0.12f)),
-                            fontSize = 13.sp,
+                            color = Design.textPrimary.copy(alpha = (0.85f - 0.25f * age).coerceAtLeast(0.25f)),
+                            fontSize = 20.sp,
+                            textAlign = TextAlign.Center,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }
