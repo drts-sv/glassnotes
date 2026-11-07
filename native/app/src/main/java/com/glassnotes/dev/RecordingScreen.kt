@@ -428,14 +428,18 @@ fun RecordingScreen(autoStart: Boolean = false) {
                     band.lineTo(i * stepX, centerY + sm[i] * maxAmp)
                 }
                 band.close()
+                // Заливка контура. На прозрачном фоне (обои) она была почти невидимой — 0.05…0.11.
+                // Кладём её на тёмную подложку и делаем плотнее: форма читается на любых обоях,
+                // но прозрачности экрана это не отменяет — подложка только под контуром.
+                drawPath(path = band, color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.20f))
                 drawPath(
                     path = band,
                     brush =
                         Brush.horizontalGradient(
                             colors =
                                 listOf(
-                                    TraceGreen.copy(alpha = 0.05f),
-                                    TraceBlue.copy(alpha = 0.11f),
+                                    TraceGreen.copy(alpha = 0.22f),
+                                    TraceBlue.copy(alpha = 0.38f),
                                 ),
                             startX = 0f,
                             endX = size.width,
@@ -457,16 +461,23 @@ fun RecordingScreen(autoStart: Boolean = false) {
                             cap = StrokeCap.Round,
                             join = StrokeJoin.Round,
                         )
-                    drawPath(
-                        path = layerPath(layer.shiftSamples, -1f, layer.scale),
-                        brush = traceBrush(layer.alpha),
-                        style = stroke,
-                    )
-                    drawPath(
-                        path = layerPath(layer.shiftSamples, 1f, layer.scale),
-                        brush = traceBrush(layer.alpha),
-                        style = stroke,
-                    )
+                    // Тёмная обводка тем же контуром, но шире: держит след читаемым поверх обоев.
+                    // Без неё бледный след на светлых обоях попросту исчезает.
+                    val outline =
+                        Stroke(
+                            width = layer.widthDp * px + 2.6f * px,
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round,
+                        )
+                    for (sign in listOf(-1f, 1f)) {
+                        val path = layerPath(layer.shiftSamples, sign, layer.scale)
+                        drawPath(
+                            path = path,
+                            color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.28f),
+                            style = outline,
+                        )
+                        drawPath(path = path, brush = traceBrush(layer.alpha), style = stroke)
+                    }
                 }
             }
 
