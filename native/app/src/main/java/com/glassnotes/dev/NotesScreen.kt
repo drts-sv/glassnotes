@@ -1,5 +1,7 @@
 package com.glassnotes.dev
 
+import androidx.compose.foundation.layout.heightIn
+
 import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -70,6 +72,7 @@ import kotlin.math.roundToInt
  * Вид карточек заметок не меняется: он одобрен владельцем (стекло, радиус 14, поля 14×12,
  * оттенок по категории, свайпы вправо/влево, меню по долгому нажатию).
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun NotesScreen(
     store: NotesStore,
@@ -237,26 +240,23 @@ fun NotesScreen(
                             val value = editText.trim()
                             if (value.isNotEmpty()) {
                                 // Дата: сначала точный формат, затем разбор естественной речи.
-                                // Явные типы: цепочка runCatching/elvis не выводилась и валила сборку.
+                                // parseDateNlu().datetime — это Long (миллисекунды), не Calendar.
                                 val whenText = editWhen.trim()
-                                var cal: java.util.Calendar? = null
+                                var at: Long? = null
+                                var allDay = false
                                 if (whenText.isNotEmpty()) {
-                                    try {
-                                        val d = whenFormat.parse(whenText)
-                                        if (d != null) {
-                                            cal = java.util.Calendar.getInstance()
-                                            cal.time = d
-                                        }
-                                    } catch (t: Throwable) {
-                                        cal = null
+                                    val parsed =
+                                        runCatching { whenFormat.parse(whenText)?.time }.getOrNull()
+                                            ?: parseDateNlu(whenText).datetime
+                                    if (parsed != null) {
+                                        at = parsed
+                                        val c = java.util.Calendar.getInstance()
+                                        c.timeInMillis = parsed
+                                        allDay =
+                                            c.get(java.util.Calendar.HOUR_OF_DAY) == 0 &&
+                                                c.get(java.util.Calendar.MINUTE) == 0
                                     }
-                                    if (cal == null) cal = parseDateNlu(whenText).datetime
                                 }
-                                val at: Long? = cal?.timeInMillis
-                                val allDay: Boolean =
-                                    cal != null &&
-                                        cal.get(java.util.Calendar.HOUR_OF_DAY) == 0 &&
-                                        cal.get(java.util.Calendar.MINUTE) == 0
                                 store.setText(note.id, value)
                                 store.setCategories(note.id, editCats.toList())
                                 store.setDatetime(note.id, at, allDay)

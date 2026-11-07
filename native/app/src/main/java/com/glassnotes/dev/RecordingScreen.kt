@@ -217,6 +217,8 @@ fun RecordingScreen(
     }
     var notesCount by remember { mutableIntStateOf(0) }
 
+    val trace = remember { ArrayDeque<Float>(TRACE + 2) }
+
     /** Остановить запись и сохранить заметку: путь общий для кнопки и авто-остановки. */
     fun stopAndSave() {
         recorder.stop()
@@ -257,7 +259,6 @@ fun RecordingScreen(
     var vad by remember { mutableStateOf<SileroVad?>(null) }
     var showDev by remember { mutableStateOf(false) }
     var geometryLogged by remember { mutableStateOf(false) }
-    val trace = remember { ArrayDeque<Float>(TRACE + 2) }
     var granted by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
