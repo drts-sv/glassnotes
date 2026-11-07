@@ -134,7 +134,10 @@ private val TraceBlue = Color(0xFF54A0FF)
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun RecordingScreen(autoStart: Boolean = false) {
+fun RecordingScreen(
+    autoStart: Boolean = false,
+    onClose: () -> Unit = {},
+) {
     val context = LocalContext.current
     val recorder = remember { AudioRecorder() }
     val wave = remember { WaveLevel() }
@@ -381,8 +384,27 @@ fun RecordingScreen(autoStart: Boolean = false) {
                     ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            // Стрелка назад: запись открывается кнопкой микрофона на главном экране.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Image(
+                    painter = androidx.compose.ui.res.painterResource(R.drawable.ic_back),
+                    contentDescription = "Назад",
+                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.textPrimary.copy(alpha = 0.85f)),
+                    modifier =
+                        Modifier
+                            .size(22.dp)
+                            .clickable {
+                                Haptics.tick(hapticView)
+                                onClose()
+                            },
+                )
+            }
+
             // Развёртка стоит в верхней трети экрана (просьба владельца): сверху только небольшой отступ.
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(6.dp))
 
             // Развёртка (симметричный контур, вторичные следы со сдвигом по фазе).
             Canvas(
