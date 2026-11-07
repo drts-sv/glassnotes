@@ -26,11 +26,23 @@ android {
         }
     }
 
+    // Подпись ТЕМ ЖЕ ключом, что у боевого приложения (он лежит в репозитории).
+    // Без этого обновление боевого пакета невозможно: Android откажет с UPDATE_INCOMPATIBLE,
+    // а единственным путём останется переустановка — то есть потеря всех настоящих заметок.
+    signingConfigs {
+        create("shipping") {
+            storeFile = file("../../android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Для проверок release-сборку подписываем тем же отладочным ключом (он лежит в репозитории).
-            signingConfig = signingConfigs.getByName("debug")
+            // Для проверок подписываем ключом боевого приложения — чтобы подпись совпадала.
+            signingConfig = signingConfigs.getByName("shipping")
         }
     }
 
