@@ -202,7 +202,7 @@ fun SettingsScreen(
         }
 
         SettingsCard("ℹ️ О приложении") {
-            Text(text = "GlasNote, тестовая сборка", color = Design.textPrimary, fontSize = 15.sp)
+            Text(text = "GlasNote, сборка " + BuildConfig.VERSION_NAME, color = Design.textPrimary, fontSize = 15.sp)
             Text(
                 text = "заметок: %d · категорий: %d".format(notesCount, Categories.names.size),
                 color = Design.textSecondary.copy(alpha = 0.8f),
