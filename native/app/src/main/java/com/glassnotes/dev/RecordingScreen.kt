@@ -2,24 +2,33 @@ package com.glassnotes.dev
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -37,12 +46,16 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -57,22 +70,11 @@ private const val TAG = "GlasNotesDev"
 /** Ограничение 60 кадров в секунду (просьба владельца). */
 private const val FRAME_NS = 16_666_667L
 
-/**
- * Длина развёртки в отсчётах. 44 при 60 кадрах/с ≈ 0,73 секунды — просьба «график побыстрее»
- * (до этого было 96 отсчётов ≈ 1,6 с, и развёртка тянулась слишком медленно).
- */
+/** Длина развёртки: 44 отсчёта ≈ 0,73 с — «график побыстрее». */
 private const val TRACE = 44
 
-/** Высота поля развёртки. */
 private val WAVE_HEIGHT = 170.dp
 
-/**
- * Слой развёртки: сдвиг по фазе в отсчётах, масштаб амплитуды и прозрачность.
- *
- * Владелец просил «вторичные следы с изменённой фазой» — поэтому вторичные слои берут сигнал
- * не уменьшенной копией, а с ЗАДЕРЖКОЙ (4 / 8 / 12 отсчётов ≈ 66 / 133 / 200 мс): на развёртке это
- * читается как расходящиеся по фазе следы, а не как аккуратно уменьшенные копии.
- */
 private data class TraceLayer(
     val shiftSamples: Int,
     val scale: Float,
@@ -80,6 +82,7 @@ private data class TraceLayer(
     val widthDp: Float,
 )
 
+/** Главная огибающая и вторичные следы со сдвигом по фазе. */
 private val LAYERS =
     listOf(
         TraceLayer(0, 1.00f, 1.00f, 2.2f),
@@ -88,23 +91,38 @@ private val LAYERS =
         TraceLayer(12, 0.84f, 0.15f, 1.3f),
     )
 
+/** Категории как в боевом приложении (DEFAULT_CATEGORIES). */
+private val CATEGORIES =
+    listOf(
+        "important" to "Важно",
+        "work" to "Работа",
+        "personal" to "Личное",
+        "shopping" to "Покупки",
+        "other" to "Другое",
+        "dev" to "Разработка",
+    )
+
 /**
- * Экран записи (этап 2 нативного пути) с симметричной развёрткой.
+ * Экран записи в дизайне боевого приложения (этап 2 нативного пути).
  *
- * Просьбы владельца, учтённые здесь: «контур симметричный», «график побыстрее»,
- * «вторичные следы с изменённой фазой». Отсюда:
- *  - каждый слой рисуется ДВАЖДЫ — вверх и зеркально вниз, с одинаковой прозрачностью: контур
- *    симметричен относительно центра;
- *  - длина развёртки сокращена до 44 отсчётов (≈0,73 с), поэтому полотно бежит быстрее;
- *  - вторичные слои сдвинуты по фазе (задержка 4/8/12 отсчётов) и чуть уменьшены по амплитуде,
- *    разная толщина линии добавляет глубины;
- *  - отсчёты сглажены скользящим средним (v[i−1] + 2v[i] + v[i+1]) / 4.
+ * Геометрия взята оттуда же, где её видит владелец: `index.html` и `ThemeBridge.java`. Порядок
+ * сверху вниз — как в приложении (замеры 2.61: развёртка 374–438, подпись 448–469, кнопка 496–612,
+ * облако категорий 677–770): развёртка → подпись «Слушаю…» → кнопка → облако категорий.
+ *
+ * Фон — обои с размытием и матированием (`--app-veil` 0.35), акцент — из системной палитры
+ * (`system_accent1_*`), чипы 9×15 px с радиусом 12 и высотой 42 px, кнопка 130 px с красной рамкой
+ * и свечением `0.22 + 0.7·уровень`.
+ *
+ * Панель подбора уровня спрятана за строкой «⚙ подбор уровня»: в обычном виде экран выглядит как
+ * приложение, а не как стенд.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RecordingScreen(autoStart: Boolean = false) {
     val context = LocalContext.current
     val recorder = remember { AudioRecorder() }
     val wave = remember { WaveLevel() }
+    val accent = remember { systemAccent(context) }
 
     var recording by remember { mutableStateOf(false) }
     var level by remember { mutableFloatStateOf(0f) }
@@ -113,6 +131,9 @@ fun RecordingScreen(autoStart: Boolean = false) {
     var seconds by remember { mutableIntStateOf(0) }
     var fps by remember { mutableIntStateOf(0) }
     var rawRms by remember { mutableIntStateOf(0) }
+    var selectedCategory by remember { mutableStateOf<String?>(null) }
+    var showDev by remember { mutableStateOf(false) }
+    var geometryLogged by remember { mutableStateOf(false) }
     val trace = remember { ArrayDeque<Float>(TRACE + 2) }
     var granted by remember {
         mutableStateOf(
@@ -189,14 +210,6 @@ fun RecordingScreen(autoStart: Boolean = false) {
             while (trace.size > TRACE) trace.removeFirst()
             level = shown
             version++
-
-            if (frame % 60 == 0) {
-                Log.i(
-                    TAG,
-                    "развёртка: rms %d (сырая %.3f), полоса %.3f, фон %.3f, пик %.3f, отсчётов %d"
-                        .format(rawRms, raw, shown, wave.floor, wave.peak, trace.size),
-                )
-            }
         }
     }
 
@@ -208,201 +221,295 @@ fun RecordingScreen(autoStart: Boolean = false) {
         }
     }
 
-    Column(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = if (recording) "Слушаю…" else "Готов записывать",
-            color = MaterialTheme.colorScheme.onBackground,
-            fontSize = 18.sp,
-        )
+    Box(modifier = Modifier.fillMaxSize()) {
+        GlassBackdrop()
 
-        Text(
-            text = String.format(Locale.US, "%02d:%02d", seconds / 60, seconds % 60),
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-            fontSize = 14.sp,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-
-        Spacer(Modifier.height(22.dp))
-
-        Canvas(
+        Column(
             modifier =
                 Modifier
-                    .fillMaxWidth()
-                    .height(WAVE_HEIGHT),
-        ) {
-            val seen = version
-            if (seen < 0) return@Canvas
-
-            val values = trace.toList()
-            if (values.size < 8) return@Canvas
-
-            val n = values.size
-            val stepX = size.width / (n - 1).toFloat()
-            val centerY = size.height / 2f
-            val maxAmp = size.height / 2f - 2f
-            val accent = Color(0xFF8AB4F8)
-            val px = density
-
-            // Сглаживание скользящим средним: без него на 60 Гц видны ступеньки.
-            val sm = FloatArray(n) { i ->
-                val a = values.getOrElse(i - 1) { values[i] }
-                val b = values[i]
-                val c = values.getOrElse(i + 1) { values[i] }
-                (a + 2f * b + c) / 4f
-            }
-
-            /** Контур слоя: при sign = +1 идёт вверх, при −1 зеркально вниз. */
-            fun layerPath(
-                shift: Int,
-                sign: Float,
-                scale: Float,
-            ): Path {
-                val path = Path()
-                var started = false
-                for (i in 0 until n) {
-                    val j = i - shift
-                    if (j < 0) continue
-                    val x = i * stepX
-                    val y = centerY - sign * sm[j] * scale * maxAmp
-                    if (!started) {
-                        path.moveTo(x, y)
-                        started = true
-                    } else {
-                        path.lineTo(x, y)
-                    }
-                }
-                return path
-            }
-
-            // Лента между верхней и нижней огибающей — «послесвечение луча».
-            val band = Path()
-            for (i in 0 until n) {
-                val x = i * stepX
-                val y = centerY - sm[i] * maxAmp
-                if (i == 0) band.moveTo(x, y) else band.lineTo(x, y)
-            }
-            for (i in n - 1 downTo 0) {
-                band.lineTo(i * stepX, centerY + sm[i] * maxAmp)
-            }
-            band.close()
-            drawPath(
-                path = band,
-                brush =
-                    Brush.verticalGradient(
-                        colors =
-                            listOf(
-                                accent.copy(alpha = 0.05f),
-                                accent.copy(alpha = 0.20f),
-                                accent.copy(alpha = 0.05f),
-                            ),
-                        startY = 0f,
-                        endY = size.height,
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.systemBars)
+                    .padding(
+                        start = Design.padSide,
+                        end = Design.padSide,
+                        top = Design.padTop,
+                        bottom = Design.padBottom,
                     ),
-            )
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.weight(1f))
 
-            // Слои: сначала вторичные (они позади), затем главная. Каждый — симметрично.
-            for (layer in LAYERS.reversed()) {
-                val stroke =
-                    Stroke(
-                        width = layer.widthDp * px,
-                        cap = StrokeCap.Round,
-                        join = StrokeJoin.Round,
-                    )
-                drawPath(
-                    path = layerPath(layer.shiftSamples, -1f, layer.scale),
-                    color = accent.copy(alpha = layer.alpha),
-                    style = stroke,
-                )
-                drawPath(
-                    path = layerPath(layer.shiftSamples, 1f, layer.scale),
-                    color = accent.copy(alpha = layer.alpha),
-                    style = stroke,
-                )
-            }
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        Box(contentAlignment = Alignment.Center) {
-            Box(
+            // Развёртка (симметричный контур, вторичные следы со сдвигом по фазе).
+            Canvas(
                 modifier =
                     Modifier
-                        .size(132.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.radialGradient(
-                                listOf(
-                                    Color(0xFF8AB4F8).copy(alpha = 0.10f + 0.45f * level),
-                                    Color.Transparent,
-                                ),
-                            ),
-                        ),
-            )
-            Box(
-                modifier =
-                    Modifier
-                        .size(96.dp)
-                        .clip(CircleShape)
-                        .background(if (recording) Color(0xFFE05C5C) else MaterialTheme.colorScheme.primary)
-                        .clickable {
-                            if (recording) {
-                                recorder.stop()
-                                recording = false
-                                Log.i(TAG, "запись остановлена на %d с".format(seconds))
-                            } else if (granted) {
-                                recording = recorder.start()
-                                Log.i(TAG, "запись запущена: %s".format(recording))
-                            }
-                        },
-                contentAlignment = Alignment.Center,
+                        .fillMaxWidth()
+                        .height(WAVE_HEIGHT),
             ) {
-                Text(
-                    text = if (recording) "Стоп" else "Запись",
-                    color = Color(0xFF101114),
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 16.sp,
-                )
-            }
-        }
+                val seen = version
+                if (seen < 0) return@Canvas
 
-        if (!granted) {
+                val values = trace.toList()
+                if (values.size < 8) return@Canvas
+
+                val n = values.size
+                val stepX = size.width / (n - 1).toFloat()
+                val centerY = size.height / 2f
+                val maxAmp = size.height / 2f - 2f
+                val px = density
+
+                val sm = FloatArray(n) { i ->
+                    val a = values.getOrElse(i - 1) { values[i] }
+                    val b = values[i]
+                    val c = values.getOrElse(i + 1) { values[i] }
+                    (a + 2f * b + c) / 4f
+                }
+
+                fun layerPath(
+                    shift: Int,
+                    sign: Float,
+                    scale: Float,
+                ): Path {
+                    val path = Path()
+                    var started = false
+                    for (i in 0 until n) {
+                        val j = i - shift
+                        if (j < 0) continue
+                        val x = i * stepX
+                        val y = centerY - sign * sm[j] * scale * maxAmp
+                        if (!started) {
+                            path.moveTo(x, y)
+                            started = true
+                        } else {
+                            path.lineTo(x, y)
+                        }
+                    }
+                    return path
+                }
+
+                val band = Path()
+                for (i in 0 until n) {
+                    val x = i * stepX
+                    val y = centerY - sm[i] * maxAmp
+                    if (i == 0) band.moveTo(x, y) else band.lineTo(x, y)
+                }
+                for (i in n - 1 downTo 0) {
+                    band.lineTo(i * stepX, centerY + sm[i] * maxAmp)
+                }
+                band.close()
+                drawPath(
+                    path = band,
+                    brush =
+                        Brush.verticalGradient(
+                            colors =
+                                listOf(
+                                    accent.copy(alpha = 0.05f),
+                                    accent.copy(alpha = 0.20f),
+                                    accent.copy(alpha = 0.05f),
+                                ),
+                            startY = 0f,
+                            endY = size.height,
+                        ),
+                )
+
+                for (layer in LAYERS.reversed()) {
+                    val stroke =
+                        Stroke(
+                            width = layer.widthDp * px,
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round,
+                        )
+                    drawPath(
+                        path = layerPath(layer.shiftSamples, -1f, layer.scale),
+                        color = accent.copy(alpha = layer.alpha),
+                        style = stroke,
+                    )
+                    drawPath(
+                        path = layerPath(layer.shiftSamples, 1f, layer.scale),
+                        color = accent.copy(alpha = layer.alpha),
+                        style = stroke,
+                    )
+                }
+            }
+
             Text(
-                text = "Нужно разрешение на микрофон",
-                color = Color(0xFFE0A35C),
-                fontSize = 13.sp,
+                text = if (recording) "Слушаю…" else "Готов записывать",
+                color = Design.textPrimary,
+                fontSize = 16.sp,
                 modifier = Modifier.padding(top = 10.dp),
             )
+
+            // Кнопка записи: красная полупрозрачная с рамкой и свечением по уровню.
+            Box(
+                modifier = Modifier.padding(top = 16.dp).size(Design.fab),
+                contentAlignment = Alignment.Center,
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val glow = Design.glowRadiusMin.toPx() +
+                        (Design.glowRadiusMax - Design.glowRadiusMin).toPx() * level
+                    drawCircle(
+                        brush =
+                            Brush.radialGradient(
+                                colors =
+                                    listOf(
+                                        accent.copy(alpha = Design.glowAlpha(level)),
+                                        accent.copy(alpha = 0f),
+                                    ),
+                                center = center,
+                                radius = size.minDimension + glow,
+                            ),
+                        radius = size.minDimension + glow,
+                    )
+
+                    // Кольцо таймера: в боевом приложении смещено на −6px и повёрнуто на −90°.
+                    val ringInset = 6.dp.toPx()
+                    val ringTopLeft = Offset(ringInset * 0.5f, ringInset * 0.5f)
+                    drawArc(
+                        color = accent.copy(alpha = 0.85f),
+                        startAngle = -90f,
+                        sweepAngle = 360f * ((seconds % 60) / 60f),
+                        useCenter = false,
+                        topLeft = ringTopLeft,
+                        size = Size(size.width - ringInset, size.height - ringInset),
+                        style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round),
+                    )
+
+                    val glyphColor = Design.stopRed
+                    if (recording) {
+                        val side = 30.dp.toPx()
+                        drawRoundRect(
+                            color = glyphColor,
+                            topLeft = Offset((size.width - side) / 2f, (size.height - side) / 2f),
+                            size = Size(side, side),
+                            cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx()),
+                        )
+                    } else {
+                        // Микрофон: капсула, дужка и стойка.
+                        val capW = 18.dp.toPx()
+                        val capH = 32.dp.toPx()
+                        val capTop = (size.height - capH) / 2f - 4.dp.toPx()
+                        drawRoundRect(
+                            color = glyphColor,
+                            topLeft = Offset((size.width - capW) / 2f, capTop),
+                            size = Size(capW, capH),
+                            cornerRadius = CornerRadius(capW / 2f, capW / 2f),
+                        )
+                        drawArc(
+                            color = glyphColor,
+                            startAngle = 0f,
+                            sweepAngle = 180f,
+                            useCenter = false,
+                            topLeft = Offset((size.width - 34.dp.toPx()) / 2f, capTop + capH - 12.dp.toPx()),
+                            size = Size(34.dp.toPx(), 30.dp.toPx()),
+                            style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round),
+                        )
+                        drawLine(
+                            color = glyphColor,
+                            start = Offset(size.width / 2f, capTop + capH + 18.dp.toPx()),
+                            end = Offset(size.width / 2f, capTop + capH + 28.dp.toPx()),
+                            strokeWidth = 2.5.dp.toPx(),
+                            cap = StrokeCap.Round,
+                        )
+                    }
+                }
+
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape)
+                            .border(2.dp, Design.stopRed.copy(alpha = 0.4f), CircleShape)
+                            .background(Design.stopRed.copy(alpha = 0.15f))
+                            .clickable {
+                                if (recording) {
+                                    recorder.stop()
+                                    recording = false
+                                    Log.i(TAG, "запись остановлена на %d с".format(seconds))
+                                } else if (granted) {
+                                    recording = recorder.start()
+                                    Log.i(TAG, "запись запущена: %s".format(recording))
+                                }
+                            },
+                )
+            }
+
+            // Облако категорий: переносится по строкам, стоит по центру.
+            FlowRow(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(Design.chipGap, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(Design.chipGap),
+            ) {
+                for ((id, name) in CATEGORIES) {
+                    val selected = selectedCategory == id
+                    Box(
+                        modifier =
+                            Modifier
+                                .clip(RoundedCornerShape(Design.chipRadius))
+                                .background(
+                                    if (selected) {
+                                        accent.copy(alpha = 0.22f)
+                                    } else {
+                                        Design.glassRgb.copy(alpha = Design.cardAlpha)
+                                    },
+                                ).border(
+                                    width = 1.dp,
+                                    color = if (selected) accent else Design.border,
+                                    shape = RoundedCornerShape(Design.chipRadius),
+                                ).clickable {
+                                    selectedCategory = if (selected) null else id
+                                    Log.i(TAG, "категория выбрана: %s".format(selectedCategory ?: "нет"))
+                                }.defaultMinSize(minHeight = Design.chipMinHeight)
+                                .padding(horizontal = Design.chipPadH, vertical = Design.chipPadV),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(text = name, color = Design.textPrimary, fontSize = Design.chipFont)
+                    }
+                }
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            Text(
+                text = if (showDev) "⚙ подбор уровня — скрыть" else "⚙ подбор уровня",
+                color = Design.textSecondary.copy(alpha = 0.55f),
+                fontSize = 12.sp,
+                modifier = Modifier.clickable { showDev = !showDev },
+            )
+
+            if (showDev) {
+                Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                    Text(
+                        text = "rms %d · сырая %.3f · фон %.3f · пик %.3f · полоса %.3f · %d к/с"
+                            .format(rawRms, raw, wave.floor, wave.peak, level, fps),
+                        color = Design.textSecondary.copy(alpha = 0.8f),
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                    ParamSlider("Чувствительность (шкала, дБ)", dbWindow, accent, 40f..90f) { dbWindow = it }
+ParamSlider("Порог тишины", noiseGate, accent, 0f..0.30f) { noiseGate = it }
+ParamSlider("Отзывчивость на тихий голос", curve, accent, 0.40f..1.30f) { curve = it }
+                    if (!geometryLogged) {
+                        LaunchedEffect(Unit) {
+                            geometryLogged = true
+                            Log.i(
+                                TAG,
+                                "ГЕОМЕТРИЯ: плотность %.2f, кнопка %.0f px при 130 dp, боковое поле %.0f px, акцент #%06X, обои %s"
+                                    .format(
+                                        context.resources.displayMetrics.density,
+                                        Design.fab.value * context.resources.displayMetrics.density,
+                                        Design.padSide.value * context.resources.displayMetrics.density,
+                                        accent.toArgb() and 0xFFFFFF,
+                                        if (Build.VERSION.SDK_INT >= 31) "размываются" else "без размытия",
+                                    ),
+                            )
+                        }
+                    }
+                }
+            }
         }
-
-        Spacer(Modifier.height(22.dp))
-
-        Text(
-            text = "rms %d · сырая %.3f · фон %.3f · пик %.3f · полоса %.3f · %d к/с"
-                .format(rawRms, raw, wave.floor, wave.peak, level, fps),
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
-            fontSize = 12.sp,
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-        ParamSlider("Чувствительность (шкала, дБ)", dbWindow, 40f..90f) { dbWindow = it }
-        ParamSlider("Порог тишины", noiseGate, 0f..0.30f) { noiseGate = it }
-        ParamSlider("Отзывчивость на тихий голос", curve, 0.40f..1.30f) { curve = it }
-
-        Text(
-            text = "Симметричный контур · развёртка 0,73 с · вторичные следы с задержкой 4/8/12 отсчётов",
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
-            fontSize = 11.sp,
-            modifier = Modifier.padding(top = 2.dp, bottom = 20.dp),
-        )
     }
 }
 
@@ -410,6 +517,7 @@ fun RecordingScreen(autoStart: Boolean = false) {
 private fun ParamSlider(
     label: String,
     value: Float,
+    accent: Color,
     range: ClosedFloatingPointRange<Float>,
     onChange: (Float) -> Unit,
 ) {
@@ -417,12 +525,12 @@ private fun ParamSlider(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
                 text = label,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
+                color = Design.textSecondary.copy(alpha = 0.85f),
                 fontSize = 12.sp,
             )
             Text(
                 text = "%.2f".format(value),
-                color = MaterialTheme.colorScheme.primary,
+                color = accent,
                 fontSize = 12.sp,
             )
         }
@@ -434,3 +542,4 @@ private fun ParamSlider(
         )
     }
 }
+
