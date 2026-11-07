@@ -289,8 +289,9 @@ fun RecordingScreen(autoStart: Boolean = false) {
         }
     }
 
+    // Фон окна прозрачный (тема + FLAG_SHOW_WALLPAPER), поэтому за экраном видны обои —
+    // как в боевом приложении. Свою подложку здесь НЕ рисуем: она перекрывала обои.
     Box(modifier = Modifier.fillMaxSize()) {
-        GlassBackdrop()
 
         Column(
             modifier =
