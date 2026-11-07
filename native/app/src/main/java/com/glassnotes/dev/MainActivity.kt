@@ -216,12 +216,24 @@ class MainActivity : ComponentActivity() {
                 LiveTranscriber(applicationContext, manager) { text ->
                     phrases.add(text)
                     // Тот же путь записи, что на экране: проверяем и распознавание, и сохранение.
-                    val id = store.add(text, intent?.getStringExtra("category"))
+                    // Как на экране: разбираем дату и время из распознанной фразы.
+                    // Категория из intent — это переопределение для проверок, она сильнее разбора.
+                    val parsed = parseDateNlu(text)
+                    val categoryOverride = intent?.getStringExtra("category")
+                    val id =
+                        store.add(
+                            text = parsed.text,
+                            categoryId = categoryOverride ?: parsed.categoryId,
+                            datetime = parsed.datetime,
+                            allDay = parsed.allDay,
+                        )
                     Log.i(
                         TAG,
-                        "заметка сохранена (воспроизведение): id=%d, категория %s, всего %d".format(
+                        "заметка сохранена (воспроизведение): id=%d, дата %s, весь день %s, категория %s, всего %d".format(
                             id,
-                            intent?.getStringExtra("category") ?: "нет",
+                            parsed.datetime?.let { java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US).format(java.util.Date(it)) } ?: "нет",
+                            if (parsed.allDay) "да" else "нет",
+                            categoryOverride ?: parsed.categoryId ?: "нет",
                             store.count(),
                         ),
                     )

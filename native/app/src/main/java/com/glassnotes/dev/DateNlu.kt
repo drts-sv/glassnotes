@@ -428,11 +428,65 @@ fun parseDateNlu(
         }
         lower = working.lowercase(RU)
     }
+    // 2.4 «после выходных» — ближайший понедельник (если сегодня понедельник, то следующий);
+    //     «в выходные»/«на выходных» — ближайшая суббота, а в сами выходные — сегодня.
+    if (result == null && lower.contains("после выходных")) {
+        val cd = weekdayIndex(nowCal)
+        var diff = ((1 - cd) + 7) % 7 // до понедельника
+        if (diff == 0) diff = 7 // сегодня понедельник — значит следующий
+        result = dayShift(nowCal, diff)
+        dateNamed = true
+        working = cutOut(working, lower.indexOf("после выходных"), "после выходных".length)
+        lower = working.lowercase(RU)
+    }
+    if (result == null && (lower.contains("в выходные") || lower.contains("на выходных"))) {
+        val phrase = if (lower.contains("на выходных")) "на выходных" else "в выходные"
+        val cd = weekdayIndex(nowCal)
+        val diff = if (cd == 6 || cd == 7) 0 else ((6 - cd) + 7) % 7 // 6 — суббота
+        result = dayShift(nowCal, diff)
+        dateNamed = true
+        working = cutOut(working, lower.indexOf(phrase), phrase.length)
+        lower = working.lowercase(RU)
+    }
+
+    // 2.5 «в первую/вторую/третью/четвёртую/последнюю <день недели> [следующего] месяца».
+    if (result == null) {
+        val m = ORD_WEEKDAY_RE.find(lower)
+        if (m != null) {
+            val nth = ORDINAL_WEEKDAY_ORDER[m.groupValues[1]] ?: 1
+            val dayIdx = WEEKDAY_INDEX[m.groupValues[2]] ?: -1
+            if (dayIdx > 0) {
+                val monthPart = m.groupValues[3]
+                var offset = if (monthPart == "следующего") 1 else 0
+                var date = nthWeekdayOfMonth(nowCal, offset, calendarDow(dayIdx), nth)
+                // «в первую пятницу месяца», сказанное уже после неё, — значит следующего месяца.
+                if (offset == 0 && date.timeInMillis < nowCal.timeInMillis) {
+                    date = nthWeekdayOfMonth(nowCal, 1, calendarDow(dayIdx), nth)
+                }
+                result = date
+                dateNamed = true
+                working = cutOut(working, m.range.first, m.value.length)
+                lower = working.lowercase(RU)
+            }
+        }
+    }
+
+    // 2.6 «в конце месяца» — последний день, а если он уже прошёл, то следующего месяца.
+    if (result == null && lower.contains("в конце месяца")) {
+        var date = endOfMonth(nowCal, 0)
+        if (date.timeInMillis < nowCal.timeInMillis) date = endOfMonth(nowCal, 1)
+        result = date
+        dateNamed = true
+        working = cutOut(working, lower.indexOf("в конце месяца"), "в конце месяца".length)
+        lower = working.lowercase(RU)
+    }
+
     if (result == null) {
         val wd = listOf("понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье")
         val wg = listOf("понедельник", "вторник", "среду", "четверг", "пятницу", "субботу", "воскресенье")
         for (i in wd.indices) {
-            val re = Regex("(?:во?\\s*)?(следующую\\s*)?(" + wd[i] + "|" + wg[i] + ")(?![а-яё])")
+            // «следующую среду» и «следующий понедельник» — обе формы.
+            val re = Regex("(?:во?\\s*)?(следующ(?:ую|ий)\\s*)?(" + wd[i] + "|" + wg[i] + ")(?![а-яё])")
             val m = re.find(lower) ?: continue
             val td = i + 1 // понедельник = 1 … воскресенье = 7
             var cd = nowCal.get(Calendar.DAY_OF_WEEK) - 1
@@ -570,6 +624,82 @@ fun parseDateNlu(
 
 // === САМОПРОВЕРКА ===
 
+
+/** Номер дня недели по-нашему: понедельник = 1 … воскресенье = 7. */
+private fun weekdayIndex(cal: Calendar): Int {
+    val dow = cal.get(Calendar.DAY_OF_WEEK)
+    return if (dow == Calendar.SUNDAY) 7 else dow - 1
+}
+
+/** То же в нумерации Calendar: понедельник = Calendar.MONDAY и так далее. */
+private fun calendarDow(index: Int): Int = if (index == 7) Calendar.SUNDAY else index + 1
+
+private val WEEKDAY_INDEX =
+    mapOf(
+        "понедельник" to 1,
+        "вторник" to 2,
+        "среда" to 3,
+        "среду" to 3,
+        "четверг" to 4,
+        "пятница" to 5,
+        "пятницу" to 5,
+        "суббота" to 6,
+        "субботу" to 6,
+        "воскресенье" to 7,
+    )
+
+/** «первую … последнюю» — какой по счёту день недели берём в месяце. */
+private val ORDINAL_WEEKDAY_ORDER =
+    mapOf(
+        "первую" to 1,
+        "вторую" to 2,
+        "третью" to 3,
+        "четвёртую" to 4,
+        "четвертую" to 4,
+        "последнюю" to -1,
+    )
+
+private val ORD_WEEKDAY_RE =
+    ci(
+        "в\\s+(первую|вторую|третью|четвёртую|четвертую|последнюю)\\s+" +
+            "(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье)" +
+            "(?:\\s+(следующего|этого))?\\s+месяц[а-яё]*",
+    )
+
+/** nth-й день недели месяца (nth = -1 — последний). monthOffset: 0 — этот месяц, 1 — следующий.
+ *  Возвращаем Calendar: в разборе результат хранится именно так (см. dayShift). */
+private fun nthWeekdayOfMonth(
+    base: Calendar,
+    monthOffset: Int,
+    dow: Int,
+    nth: Int,
+): Calendar {
+    val c = base.clone() as Calendar
+    c.clear()
+    c.set(base.get(Calendar.YEAR), base.get(Calendar.MONTH) + monthOffset, 1, 0, 0, 0)
+    if (nth > 0) {
+        var day = 1 + ((dow - c.get(Calendar.DAY_OF_WEEK) + 7) % 7) + (nth - 1) * 7
+        if (day > c.getActualMaximum(Calendar.DAY_OF_MONTH)) day -= 7
+        c.set(Calendar.DAY_OF_MONTH, day)
+    } else {
+        c.set(Calendar.DAY_OF_MONTH, c.getActualMaximum(Calendar.DAY_OF_MONTH))
+        c.add(Calendar.DAY_OF_MONTH, -(((c.get(Calendar.DAY_OF_WEEK) - dow) + 7) % 7))
+    }
+    return c
+}
+
+/** Последний день месяца: 0 — текущего, 1 — следующего. */
+private fun endOfMonth(
+    base: Calendar,
+    monthOffset: Int,
+): Calendar {
+    val c = base.clone() as Calendar
+    c.clear()
+    c.set(base.get(Calendar.YEAR), base.get(Calendar.MONTH) + monthOffset, 1, 0, 0, 0)
+    c.set(Calendar.DAY_OF_MONTH, c.getActualMaximum(Calendar.DAY_OF_MONTH))
+    return c
+}
+
 private fun fmt(ms: Long): String {
     val c = Calendar.getInstance(RU).apply { timeInMillis = ms }
     fun p(v: Int) = if (v < 10) "0$v" else "$v"
@@ -596,6 +726,16 @@ fun dateSelfTest(): String {
             "в среду в 15:00 созвон",
             "через час позвонить папе",
             "1 января в 00:30 новый год",
+            // дни недели и родственные конструкции (запрос владельца 07.11.2026)
+            "в понедельник позвонить в банк",
+            "в следующий понедельник сдать отчёт",
+            "в следующую среду созвон",
+            "после выходных разобрать почту",
+            "в субботу уборка",
+            "на выходных поехать на дачу",
+            "в первую пятницу следующего месяца зарплата",
+            "в последнюю пятницу месяца отчёт",
+            "в конце месяца оплатить счета",
             // дополнительные: ординалы, периоды без часа и слово-команда
             "четвёртого ноября сдать отчёт",
             "позвонить вечером",

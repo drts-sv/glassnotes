@@ -156,6 +156,9 @@ fun RecordingScreen(autoStart: Boolean = false) {
 
     /** Для тактильной отдачи: отклик на кнопку, чипы и свайпы. */
     val hapticView = LocalView.current
+
+    /** Формат времени напоминания для логов. */
+    val CLOCK_TEXT = java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US)
     var notesCount by remember { mutableIntStateOf(0) }
     var transcriber by remember { mutableStateOf<LiveTranscriber?>(null) }
     var vad by remember { mutableStateOf<SileroVad?>(null) }
@@ -250,10 +253,28 @@ fun RecordingScreen(autoStart: Boolean = false) {
                 val live =
                     transcriber ?: LiveTranscriber(context, ModelManager(context)) { text ->
                         phrases.add(text)
-                        // Сохраняем фразу как заметку: категория — выбранный чип, текст — распознанное.
-                        val id = store.add(text, selectedCategory)
+                        // Разбираем дату/время из фразы тем же правилом, что в боевом приложении,
+                        // и сохраняем: категория — из фразы или выбранный чип, дата — напоминание.
+                        val parsed = parseDateNlu(text)
+                        val id =
+                            store.add(
+                                text = parsed.text,
+                                categoryId = parsed.categoryId ?: selectedCategory,
+                                datetime = parsed.datetime,
+                                allDay = parsed.allDay,
+                            )
                         notesCount = store.count()
-                        Log.i(TAG, "заметка сохранена: id=%d, всего заметок %d, текст: %s".format(id, notesCount, text))
+                        Log.i(
+                            TAG,
+                            "заметка сохранена: id=%d, всего %d, дата %s, весь день %s, категория %s, текст: %s".format(
+                                id,
+                                notesCount,
+                                parsed.datetime?.let { CLOCK_TEXT.format(java.util.Date(it)) } ?: "нет",
+                                if (parsed.allDay) "да" else "нет",
+                                parsed.categoryId ?: selectedCategory ?: "нет",
+                                parsed.text,
+                            ),
+                        )
                     }.also { transcriber = it }
                 recorder.onChunk = { bytes, count -> live.onChunk(bytes, count, recorder.speechProb) }
                 Log.i(TAG, "распознавание на ходу готово (VAD доступен: %s)".format(detector.available))

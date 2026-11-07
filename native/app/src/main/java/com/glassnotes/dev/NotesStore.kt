@@ -42,16 +42,22 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
     fun add(
         text: String,
         categoryId: String? = null,
+        datetime: Long? = null,
+        allDay: Boolean = false,
     ): Long {
         val now = System.currentTimeMillis()
         val created = ISO.format(Date(now))
+        // Время в базе — это время НАПОМИНАНИЯ, а не создания: боевое приложение хранит так же.
+        // Нет разобранной даты — поля пустые, а timestamp остаётся моментом создания записи.
+        val due = datetime ?: now
         val note =
             JSONObject().apply {
                 put("text", text)
                 put("created", created)
-                put("timestamp", now)
-                put("time", CLOCK.format(Date(now)))
-                put("datetime", JSONObject.NULL)
+                put("timestamp", due)
+                put("time", if (datetime != null) CLOCK.format(Date(due)) else "")
+                put("datetime", datetime?.let { ISO.format(Date(it)) } ?: JSONObject.NULL)
+                put("allDay", allDay)
                 put("status", "active")
                 put("color", "color-1")
                 put("categoryIds", JSONArray().apply { categoryId?.let { put(it) } })
