@@ -49,7 +49,14 @@ fun NotesScreen(store: NotesStore, accent: androidx.compose.ui.graphics.Color) {
         // Логируем содержимое: в Compose список снаружи не прочитать, а проверять надо данными.
         Log.i("GlasNotesDev", "список заметок: %d штук".format(rows.size))
         rows.take(10).forEach { row ->
-            Log.i("GlasNotesDev", "  #%d %s [%s] %s".format(row.id, row.time, row.status, row.text))
+            val category = row.categoryIds.firstOrNull()
+            val style =
+                if (category != null) {
+                    "оттенок %s: заливка %.2f, рамка %.1f".format(category, CATEGORY_TINT_ALPHA, CATEGORY_BORDER_ALPHA)
+                } else {
+                    "без категории: стекло %.2f, рамка 1 dp".format(Design.cardAlpha)
+                }
+            Log.i("GlasNotesDev", "  #%d %s [%s] %s · %s".format(row.id, row.time, row.status, style, row.text))
         }
     }
 
@@ -104,9 +111,11 @@ private fun NoteCard(
     note: NoteRow,
     accent: androidx.compose.ui.graphics.Color,
 ) {
-    val categoryColor =
-        CATEGORY_COLORS[note.categoryIds.firstOrNull()] ?: Design.glassRgb
-    val isImportant = note.categoryIds.contains("important")
+    // Оттенок карточки — по категории заметки. Непрозрачность заливки (0.22) и рамки (0.9)
+    // оставлены такими же, как были у «важной» заметки в примере: стиль и прозрачность не меняем,
+    // меняется только цвет — он берётся у категории.
+    val categoryColor = note.categoryIds.firstOrNull()?.let { CATEGORY_COLORS[it] }
+    val tinted = categoryColor != null
 
     Column(
         modifier =
@@ -114,14 +123,14 @@ private fun NoteCard(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
                 .background(
-                    if (isImportant) {
-                        categoryColor.copy(alpha = 0.22f)
+                    if (tinted) {
+                        categoryColor!!.copy(alpha = CATEGORY_TINT_ALPHA)
                     } else {
                         Design.glassRgb.copy(alpha = Design.cardAlpha)
                     },
                 ).border(
-                    width = if (isImportant) 2.dp else 1.dp,
-                    color = if (isImportant) categoryColor.copy(alpha = 0.9f) else Design.border,
+                    width = if (tinted) 2.dp else 1.dp,
+                    color = if (tinted) categoryColor!!.copy(alpha = CATEGORY_BORDER_ALPHA) else Design.border,
                     shape = RoundedCornerShape(14.dp),
                 ).padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
@@ -150,6 +159,10 @@ private fun NoteCard(
         }
     }
 }
+
+/** Непрозрачность оттенка и рамки — как в примере (у «важной» заметки). */
+private const val CATEGORY_TINT_ALPHA = 0.22f
+private const val CATEGORY_BORDER_ALPHA = 0.9f
 
 /** Цвета категорий — те же, что в боевом приложении (DEFAULT_CATEGORIES). */
 private val CATEGORY_COLORS =

@@ -164,8 +164,15 @@ class MainActivity : ComponentActivity() {
                 LiveTranscriber(applicationContext, manager) { text ->
                     phrases.add(text)
                     // Тот же путь записи, что на экране: проверяем и распознавание, и сохранение.
-                    val id = store.add(text)
-                    Log.i(TAG, "заметка сохранена (воспроизведение): id=%d, всего %d".format(id, store.count()))
+                    val id = store.add(text, intent?.getStringExtra("category"))
+                    Log.i(
+                        TAG,
+                        "заметка сохранена (воспроизведение): id=%d, категория %s, всего %d".format(
+                            id,
+                            intent?.getStringExtra("category") ?: "нет",
+                            store.count(),
+                        ),
+                    )
                 }
 
             val chunkBytes = 16000 / 50 * 2 // 20 мс
