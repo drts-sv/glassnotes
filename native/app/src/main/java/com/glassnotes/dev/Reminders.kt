@@ -37,9 +37,10 @@ object Reminders {
     private const val REVIEW_REQUEST = 7001 // как REVIEW_REQUEST в боевом приложении
     const val REVIEW_NOTIFICATION_ID = 7001
 
-    /** Когда показывать утреннее ревью. Дефолт боевого приложения; в настройки вынести — следующий шаг. */
-    const val REVIEW_HOUR = 8
-    const val REVIEW_MINUTE = 30
+    /** Время ревью по умолчанию — как в боевом приложении. Настройка живёт в kv под ключом
+     *  `reviewTime` («ЧЧ:ММ»); пустая строка выключает ревью совсем, как это умеет боевое. */
+    const val REVIEW_TIME_KEY = "reviewTime"
+    const val DEFAULT_REVIEW_TIME = "08:00"
     private const val BASE_OPEN = 7900
 
     fun ensureChannel(context: Context) {
@@ -91,18 +92,44 @@ object Reminders {
         pi.cancel()
     }
 
-    /** Поставить утреннее ревью: без аргумента — на ближайшие 8:30, в остальных случаях на заданный момент. */
+    /** Снять ревью (например, если оно выключено в настройках). */
+    fun cancelReview(context: Context) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, ReminderReceiver::class.java).apply { action = ACTION_REVIEW }
+        var flags = PendingIntent.FLAG_UPDATE_CURRENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags = flags or PendingIntent.FLAG_IMMUTABLE
+        val pi = PendingIntent.getBroadcast(context, REVIEW_REQUEST, intent, flags)
+        am.cancel(pi)
+        pi.cancel()
+    }
+
+    /**
+     * Поставить утреннее ревью: без аргумента — на ближайшее время из настроек,
+     * иначе на заданный момент (проверка). Пустое время в настройках = ревью выключено.
+     */
     fun scheduleReview(
         context: Context,
         at: Long = 0L,
     ) {
+        if (at <= 0L) {
+            val setting = NotesStore(context).getKv(REVIEW_TIME_KEY) ?: DEFAULT_REVIEW_TIME
+            if (setting.isBlank()) {
+                cancelReview(context)
+                Log.i(TAG, "утреннее ревью выключено в настройках")
+                return
+            }
+        }
         val whenAt =
             if (at > 0) {
                 at
             } else {
+                val setting = NotesStore(context).getKv(REVIEW_TIME_KEY) ?: DEFAULT_REVIEW_TIME
+                val parts = setting.split(":")
+                val hour = parts.getOrNull(0)?.trim()?.toIntOrNull() ?: 8
+                val minute = parts.getOrNull(1)?.trim()?.toIntOrNull() ?: 0
                 java.util.Calendar.getInstance(java.util.Locale("ru")).apply {
-                    set(java.util.Calendar.HOUR_OF_DAY, REVIEW_HOUR)
-                    set(java.util.Calendar.MINUTE, REVIEW_MINUTE)
+                    set(java.util.Calendar.HOUR_OF_DAY, hour.coerceIn(0, 23))
+                    set(java.util.Calendar.MINUTE, minute.coerceIn(0, 59))
                     set(java.util.Calendar.SECOND, 0)
                     set(java.util.Calendar.MILLISECOND, 0)
                     if (timeInMillis <= System.currentTimeMillis()) add(java.util.Calendar.DAY_OF_MONTH, 1)

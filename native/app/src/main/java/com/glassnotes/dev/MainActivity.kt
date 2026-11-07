@@ -80,6 +80,12 @@ class MainActivity : ComponentActivity() {
         intent?.getStringExtra("asr_file")?.let { name -> thread(name = "AsrFile") { recognizeWhole(name) } }
         intent?.getStringExtra("asr_replay")?.let { name -> thread(name = "AsrReplay") { replayThroughLive(name) } }
 
+        intent?.getStringExtra("review_time")?.let { value ->
+            // Время ревью из настроек: «ЧЧ:ММ», пустая строка — выключить. Ключ тот же, что в боевом.
+            NotesStore(applicationContext).setKv(Reminders.REVIEW_TIME_KEY, value)
+            Log.i(TAG, "review_time: время ревью задано как «%s»".format(value))
+        }
+
         // Ревью показывается раз в сутки: при каждом запуске проверяем, что будильник стоит.
         Reminders.scheduleReview(applicationContext)
 
