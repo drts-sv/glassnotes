@@ -1,5 +1,9 @@
 package com.glassnotes.dev
 
+import androidx.compose.ui.draw.shadow
+
+import androidx.compose.foundation.border
+
 import androidx.compose.foundation.layout.heightIn
 
 import android.util.Log
@@ -389,16 +393,29 @@ fun NotesScreen(
         }
         }
 
-        // Кнопка записи — в правом нижнем углу: по ней открывается окно записи.
+        // Кнопка записи: по ней открывается окно записи. Положение — из настроек.
+        val fabPos = store.getKv("fabPos") ?: "right"
         RecordButton(
             accent = accent,
             onClick = onRecord,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = Design.padSide, bottom = 20.dp),
+            modifier =
+                Modifier
+                    .align(
+                        when (fabPos) {
+                            "left" -> Alignment.BottomStart
+                            "center" -> Alignment.BottomCenter
+                            else -> Alignment.BottomEnd
+                        },
+                    ).padding(start = Design.padSide, end = Design.padSide, bottom = 20.dp),
         )
     }
 }
 
-/** Кнопка микрофона: красная, круглая, в правом нижнем углу. */
+/**
+ * Кнопка записи — как в боевом приложении (`.fab-btn`): стеклянный круг 54 px, иконка 24 px,
+ * граница rgba(255,255,255,0.10) и тень 0 8px 32px rgba(0,0,0,0.3) + кольцо 4 px.
+ * Положение задаётся настройкой «Кнопка записи»: слева, по центру или справа.
+ */
 @Composable
 private fun RecordButton(
     accent: Color,
@@ -409,23 +426,40 @@ private fun RecordButton(
     Box(
         modifier =
             modifier
-                .size(Design.fab * 0.62f)
-                .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(Design.stopRed.copy(alpha = 0.9f))
-                .clickable {
-                    Haptics.longPress(view)
-                    onClick()
-                },
+                .size(54.dp)
+                .then(
+                    Modifier
+                        .androidxShadow()
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(Design.glassRgb.copy(alpha = 0.55f))
+                        .border(
+                            width = 1.dp,
+                            color = Color.White.copy(alpha = 0.10f),
+                            shape = androidx.compose.foundation.shape.CircleShape,
+                        ).clickable {
+                            Haptics.longPress(view)
+                            onClick()
+                        },
+                ),
         contentAlignment = Alignment.Center,
     ) {
         Image(
             painter = painterResource(R.drawable.ic_mic),
             contentDescription = "Записать",
-            colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.White),
-            modifier = Modifier.size(26.dp),
+            colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.textPrimary),
+            modifier = Modifier.size(24.dp),
         )
     }
 }
+
+/** Тень кнопки: отдельная функция, чтобы не возиться с импортами в этом файле. */
+private fun Modifier.androidxShadow(): Modifier =
+    shadow(
+        elevation = 10.dp,
+        shape = androidx.compose.foundation.shape.CircleShape,
+        ambientColor = Color.Black,
+        spotColor = Color.Black,
+    )
 
 /** Карточка заголовка: кольцо прогресса, название, три кнопки, отборы и вкладки.
  *  FlowRow (облако чипов) в Compose пока экспериментальный — отсюда OptIn. */

@@ -56,6 +56,7 @@ fun SettingsScreen(
     var threads by remember { mutableFloatStateOf(store.getKv("threads")?.toFloatOrNull() ?: 1f) }
     var voiceCategory by remember { mutableStateOf(store.getKv("voiceCategory") ?: "вкл") }
     var silenceSec by remember { mutableFloatStateOf(store.getKv("silenceSec")?.toFloatOrNull() ?: 3f) }
+    var fabPos by remember { mutableStateOf(store.getKv("fabPos") ?: "right") }
     var notesCount by remember { mutableStateOf(store.count()) }
 
     // Любое изменение пишем в базу сразу: настройки должны переживать перезапуск.
@@ -72,6 +73,10 @@ fun SettingsScreen(
     LaunchedEffect(silenceSec) {
         store.setKv("silenceSec", silenceSec.toString())
         Log.i("GlasNotesDev", "настройки: авто-остановка по тишине %.0f с".format(silenceSec))
+    }
+    LaunchedEffect(fabPos) {
+        store.setKv("fabPos", fabPos)
+        Log.i("GlasNotesDev", "настройки: кнопка записи — %s".format(fabPos))
     }
     LaunchedEffect(Unit) {
         notesCount = store.count()
@@ -192,6 +197,34 @@ fun SettingsScreen(
             }
             Text(
                 text = "«купить хлеб» → категория «Покупки», как в боевом приложении.",
+                color = Design.textSecondary.copy(alpha = 0.7f),
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+
+        SettingsCard("🔘 Кнопка записи") {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("left" to "Слева", "center" to "По центру", "right" to "Справа").forEach { pair ->
+                    val id = pair.first
+                    val on = fabPos == id
+                    Text(
+                        text = pair.second,
+                        color = Design.textPrimary.copy(alpha = if (on) 0.98f else 0.8f),
+                        fontSize = 13.sp,
+                        modifier =
+                            Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (on) accent.copy(alpha = Design.cardAlpha) else Design.glassRgb.copy(alpha = 0.4f))
+                                .clickable {
+                                    Haptics.tick(view)
+                                    fabPos = id
+                                }.padding(horizontal = 10.dp, vertical = 7.dp),
+                    )
+                }
+            }
+            Text(
+                text = "Где поставить кнопку записи на главном экране.",
                 color = Design.textSecondary.copy(alpha = 0.7f),
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 6.dp),
