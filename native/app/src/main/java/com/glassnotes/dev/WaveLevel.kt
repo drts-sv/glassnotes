@@ -1,101 +1,122 @@
 package com.glassnotes.dev
 
 import android.util.Log
+import kotlin.math.exp
+import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 
 /**
- * Громкость для полос записи, 0..1 — перенос алгоритма, проверенного на телефоне в WebView-сборке
- * (2.73-giga). Там он жил в JS поверх уровня нативного метра, здесь переносится в Kotlin целиком,
- * потому что при переезде на нативный код логика должна остаться нативной.
+ * Громкость для полос записи, 0..1 — перенос алгоритма из WebView-сборки (2.73-giga) плюс правки
+ * по замерам на живом микрофоне.
  *
- * Схема в два шага, и обе части нужны:
- *  1. фон комнаты — 10-й процентиль огибающей за 10 секунд. На ровном окне процентиль равен самому
- *     сигналу, поэтому на старте фон сразу верный; паузы в речи удерживают его на тишине, отчего
- *     полосы не проседают при длинном монологе (на коротком окне с высоким процентилем — проседают);
- *  2. недавний пик с забыванием за ~3–4 с: шкала растягивается под него, поэтому громкая речь идёт
- *     почти до верха, а не до трети, как при угаданном коэффициенте.
- * Плюс мёртвая зона: колебания тишины полос не рисуют.
- *
- * Числа совпадают с проверенными в 2.73: тишина → 0.00, речь → 1.00, длительная речь → 1.00,
- * возврат в тишину → 0.00 (см. WaveSelfTest — он гоняет ровно эти четыре случая).
+ * Что было не так в первых прогонах (видно в логе телефона):
+ *  1. окно фона считалось в КАДРАХ: 600 кадров на 120-герцевом экране — это 5 секунд, а не 10.
+ *     Теперь окно задано в СЕКУНДАХ, а огибающая сглаживается по времени кадра (dt), поэтому результат
+ *     не зависит от частоты экрана;
+ *  2. в тихой комнате много отсчётов упирается в нижнюю границу шкалы (rms около 20 → ровно 0),
+ *     и 10-й процентиль выбирал именно эти нули: фон становился 0,000, а «громче фона» — почти всё
+ *     подряд, отчего полосы стояли полными в тишине. Процентиль поднят, и он выведен в слайдер;
+ *  3. шкала была зажата до −60 дБ: тишина упиралась в ноль и превращалась в кучу одинаковых нулей,
+ *     из-за которых процентиль давал фон 0,000 (полосы полные в тишине). Шкала расширена до 80 дБ —
+ *     тогда тишина не зануляется, и низкий процентиль (0.12) снова работает;
+ *  4. почему процентиль низкий, а не «поустойчивее»: доля тишины в окне должна быть меньше процентиля.
+ *     При 0.30 нужно 30% пауз за 10 секунд — этого не хватает, и при длинной речи фон подтягивался
+ *     к голосу (замер самопроверки: полосы 0,00 при речи 5 с, фон 0,649).
  */
-class WaveLevel {
-    private val history = ArrayDeque<Float>(HISTORY + 1)
+class WaveLevel(
+    /** Ширина шкалы сырой громкости в дБ. Шире — меньше зануления в тишине (см. правку 4 ниже). */
+    var dbWindow: Float = 80f,
+    /** Какой процентиль огибающей считать фоном (0.1 — «самое тихое», 0.3 — устойчивее к всплескам). */
+    var floorPercent: Float = 0.12f,
+    /** Мёртвая зона над фоном: колебания тишины полос не рисуют. */
+    var noiseGate: Float = 0.05f,
+    /** Кривая отображения: меньше 1 подтягивает слабые значения. */
+    var curve: Float = 0.85f,
+    /** Окно оценки фона, секунды. */
+    var windowSeconds: Float = 10f,
+    /** Сколько остаётся от недавнего пика за секунду. */
+    var peakDecayPerSecond: Float = 0.70f,
+    /** Время подъёма огибающей, секунды. */
+    var attackSeconds: Float = 0.03f,
+    /** Время спада огибающей, секунды. */
+    var releaseSeconds: Float = 0.14f,
+    /** Ниже этого значения пик не опускаем. */
+    var minPeak: Float = 0.10f,
+) {
+    /** «Время в наносекундах, огибающая в тысячных» — время нужно для независимости от кадров. */
+    private val samples = ArrayDeque<LongArray>(1024)
     private var env = 0f
     private var floorLevel = -1f
     private var peakLevel = 0f
+    private var lastNs = 0L
 
-    /** Фон и пик — только для логов и самопроверки. */
     val floor: Float get() = max(0f, floorLevel)
 
     val peak: Float get() = peakLevel
 
+    val envelope: Float get() = env
+
     fun reset() {
-        history.clear()
+        samples.clear()
         env = 0f
         floorLevel = -1f
         peakLevel = 0f
+        lastNs = 0L
+    }
+
+    /** Сырая громкость rms (0..32767) → 0..1 по шкале «0 dBFS минус dbWindow» … «0 dBFS». */
+    fun rawFromRms(rms: Int): Float {
+        val db = 20.0 * log10(max(rms, 1) / 32768.0)
+        return ((db + dbWindow) / dbWindow).coerceIn(0.0, 1.0).toFloat()
     }
 
     fun value(
-        level: Float,
-        frame: Int,
+        input: Float,
+        nowNs: Long,
     ): Float {
-        val sample = level.coerceIn(0f, 1f)
+        val sample = input.coerceIn(0f, 1f)
+        val dt = if (lastNs == 0L) 1f / 60f else ((nowNs - lastNs) / 1e9f).coerceIn(0.001f, 0.25f)
+        lastNs = nowNs
 
-        // Огибающая: подъём быстрее спада, чтобы полосы успевали за слогами.
-        val k = if (sample > env) ATTACK else RELEASE
-        env += (sample - env) * k
+        // Постоянные времени вместо коэффициентов на кадр: одинаковое поведение при 60 и 120 кадрах.
+        val attack = 1f - exp(-dt / attackSeconds)
+        val release = 1f - exp(-dt / releaseSeconds)
+        env += (sample - env) * (if (sample > env) attack else release)
 
-        history.addLast(env)
-        if (history.size > HISTORY) history.removeFirst()
+        samples.addLast(longArrayOf(nowNs, (env * 1000f).toLong()))
+        val cutoff = nowNs - (windowSeconds * 1e9f).toLong()
+        while (samples.isNotEmpty() && samples.first()[0] < cutoff) samples.removeFirst()
 
-        // Процентиль считаем не каждый кадр: сортировка 600 чисел шесть раз в секунду — это дёшево,
-        // но и незачем чаще.
-        if (floorLevel < 0f || frame % 10 == 0) {
-            floorLevel = percentile(history, FLOOR_PERCENT)
-        }
+        floorLevel = percentile()
+        val rel = max(0f, env - floorLevel - noiseGate)
+        peakLevel = max(rel, peakLevel * peakDecayPerSecond.pow(dt))
 
-        val rel = max(0f, env - floorLevel - NOISE_GATE)
-        peakLevel = max(rel, peakLevel * PEAK_DECAY)
-
-        return if (rel > 0f) {
-            min(1f, (rel / max(peakLevel, MIN_PEAK)).pow(CURVE))
-        } else {
-            0f
-        }
+        return if (rel > 0f) min(1f, (rel / max(peakLevel, minPeak)).pow(curve)) else 0f
     }
 
-    private fun percentile(
-        values: ArrayDeque<Float>,
-        fraction: Float,
-    ): Float {
-        if (values.isEmpty()) return 0f
-        val sorted = values.toFloatArray()
-        sorted.sort()
-        val index = min(sorted.size - 1, (sorted.size * fraction).toInt())
+    private fun percentile(): Float {
+        if (samples.isEmpty()) return 0f
+        val sorted = samples.map { it[1] / 1000f }.sorted()
+        val index = min(sorted.size - 1, (sorted.size * floorPercent).toInt())
         return sorted[index]
     }
 
-    companion object {
-        /** 10 секунд при 60 кадрах в секунду. */
-        const val HISTORY = 600
-
-        const val FLOOR_PERCENT = 0.10f
-        const val NOISE_GATE = 0.05f
-        const val PEAK_DECAY = 0.994f
-        const val MIN_PEAK = 0.10f
-        const val CURVE = 0.85f
-        const val ATTACK = 0.55f
-        const val RELEASE = 0.12f
-    }
+    fun describe(): String =
+        "шкала %.0f дБ, процентиль %.2f, порог %.2f, кривая %.2f, затухание пика %.2f".format(
+            dbWindow,
+            floorPercent,
+            noiseGate,
+            curve,
+            peakDecayPerSecond,
+        )
 }
 
 /**
- * Проверка алгоритма без микрофона: тем же синтетическим сигналом, что и на телефоне в 2.73.
- * Запуск: am start -n com.glassnotes.dev/.MainActivity --ez wave_test true, результат — в логе.
+ * Проверка алгоритма без микрофона: тот же синтетический сигнал, что и на телефоне в 2.73,
+ * плюс случай «тихая комната без речи» — на нём и видно было ошибку с фоном 0,000.
+ * Запуск: `am start -n com.glassnotes.dev/.MainActivity` с extra-полем wave_test true.
  */
 object WaveSelfTest {
     private const val TAG = "GlasNotesDev"
@@ -112,12 +133,14 @@ object WaveSelfTest {
 
         val wave = WaveLevel()
         var frame = 0
+        var ns = 0L
 
         for ((name, value, count) in stages) {
             val tail = ArrayDeque<Float>()
             repeat(count) {
                 frame++
-                tail.addLast(wave.value(value, frame))
+                ns += 16_666_667L
+                tail.addLast(wave.value(value, ns))
                 if (tail.size > 25) tail.removeFirst()
             }
             Log.i(
@@ -132,5 +155,24 @@ object WaveSelfTest {
                 ),
             )
         }
+
+        // Тихая комната без речи: так выглядел живой микрофон, когда фон уходил в 0,000.
+        val quiet = WaveLevel()
+        var quietNs = 0L
+        val quietTail = ArrayDeque<Float>()
+        repeat(600) {
+            quietNs += 16_666_667L
+            val level = if (it % 37 == 0) 0.22f else 0.20f
+            quietTail.addLast(quiet.value(level, quietNs))
+            if (quietTail.size > 60) quietTail.removeFirst()
+        }
+        Log.i(
+            TAG,
+            "САМОПРОВЕРКА F тихая комната (0.20, речи нет): полосы %.2f (макс %.2f), фон %.3f".format(
+                quietTail.average(),
+                quietTail.max(),
+                quiet.floor,
+            ),
+        )
     }
 }
