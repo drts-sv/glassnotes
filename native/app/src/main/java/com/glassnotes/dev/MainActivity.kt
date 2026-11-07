@@ -90,6 +90,21 @@ class MainActivity : ComponentActivity() {
         Reminders.scheduleReview(applicationContext)
 
         // Проверку ставим ПОСЛЕ ежедневной: иначе она затирается тем же запросом PendingIntent.
+        if (intent?.getBooleanExtra("list_test", false) == true) {
+            // Проверка отборов главного экрана на реальной базе: те же правила, что видит экран.
+            val store = NotesStore(applicationContext)
+            val all = store.recent(200).mapNotNull { parseNote(it) }
+            Log.i(TAG, "list_test: всего заметок %d".format(all.size))
+            for ((id, name) in NoteFilters.dateOptions) {
+                val kept = NoteFilters.apply(all, "active", id, null, "")
+                Log.i(TAG, "list_test: отбор «%s» (active) → %d".format(name, kept.size))
+            }
+            Log.i(TAG, "list_test: вкладка «Выполнено» → %d".format(NoteFilters.apply(all, "done", null, null, "").size))
+            for (q in listOf("хлеб", "маме")) {
+                Log.i(TAG, "list_test: поиск «%s» → %d".format(q, NoteFilters.apply(all, "active", null, null, q).size))
+            }
+        }
+
         if (intent?.getBooleanExtra("review_test", false) == true) {
             Reminders.scheduleReview(applicationContext, System.currentTimeMillis() + 15_000L)
             Log.i(TAG, "review_test: ревью будет показано через 15 с")
