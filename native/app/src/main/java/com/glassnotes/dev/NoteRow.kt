@@ -14,6 +14,16 @@ data class NoteRow(
     val done: Boolean get() = status == "done"
 }
 
+/** Заметка с датой — то, что нужно планировщику напоминаний. */
+data class DueNote(
+    val id: Long,
+    val text: String,
+    val datetime: Long?,
+    val allDay: Boolean,
+    val categoryId: String?,
+    val notified: Boolean,
+)
+
 /** Разбор JSON заметки в строку списка. Формат тот же, что пишет боевое приложение. */
 fun parseNote(json: String): NoteRow? =
     try {

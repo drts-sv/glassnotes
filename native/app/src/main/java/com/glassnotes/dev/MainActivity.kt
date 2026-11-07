@@ -54,6 +54,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Уведомления на Android 13+ требуют отдельного разрешения (оно не входит в микрофон).
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7002)
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
 
         if (intent?.getBooleanExtra("wave_test", false) == true) {
@@ -71,6 +79,16 @@ class MainActivity : ComponentActivity() {
 
         intent?.getStringExtra("asr_file")?.let { name -> thread(name = "AsrFile") { recognizeWhole(name) } }
         intent?.getStringExtra("asr_replay")?.let { name -> thread(name = "AsrReplay") { replayThroughLive(name) } }
+
+        if (intent?.getBooleanExtra("remind_test", false) == true) {
+            // Проверка напоминания: заметка на 20 секунд вперёд, категория «Работа» —
+            // уведомление должно прийти с её цветом и бейджем.
+            val store = NotesStore(applicationContext)
+            val at = System.currentTimeMillis() + 20_000L
+            val id = store.add("Проверка напоминания", "work", at, false)
+            Reminders.schedule(applicationContext, id, at, "Проверка напоминания", "work", false)
+            Log.i(TAG, "remind_test: заметка #%d, напоминание через 20 с".format(id))
+        }
 
         if (intent?.getBooleanExtra("date_test", false) == true) {
             // Таблица разбора дат и времени: сверяем с эталоном, снятым с боевого приложения.

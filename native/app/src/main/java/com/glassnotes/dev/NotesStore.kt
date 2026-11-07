@@ -118,6 +118,37 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
         writableDatabase.update("notes", values, "id = ?", arrayOf(id.toString()))
     }
 
+    /**
+     * Активные заметки с датой — по ним ставим будильники и восстанавливаем их после перезагрузки.
+     * Фильтр по подстроке в SQL только для скорости, разбор — обычным разбором заметки.
+     */
+    fun activeWithDate(): List<DueNote> =
+        readableDatabase
+            .rawQuery("SELECT json FROM notes WHERE json LIKE '%stamp%'", null)
+            .use { cursor ->
+                val out = ArrayList<DueNote>()
+                while (cursor.moveToNext()) {
+                    val raw = cursor.getString(0)
+                    val row = parseNote(raw) ?: continue
+                    val json = JSONObject(raw)
+                    if (row.done) continue
+                    val dt = json.optString("datetime")
+                    if (dt.isBlank() || dt == "null") continue
+                    val ms = runCatching { ISO.parse(dt)?.time }.getOrNull() ?: continue
+                    out.add(
+                        DueNote(
+                            id = row.id,
+                            text = row.text,
+                            datetime = ms,
+                            allDay = json.optBoolean("allDay"),
+                            categoryId = row.categoryIds.firstOrNull(),
+                            notified = json.optBoolean("notified"),
+                        ),
+                    )
+                }
+                out
+            }
+
     /** Настройки — в таблице kv той же базы. Ключи короткие и совпадают с названиями полей. */
     fun getKv(key: String): String? =
         readableDatabase

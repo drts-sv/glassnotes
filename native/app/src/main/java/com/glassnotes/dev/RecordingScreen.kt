@@ -275,6 +275,19 @@ fun RecordingScreen(autoStart: Boolean = false) {
                                 parsed.text,
                             ),
                         )
+                        // Разобрана дата — ставим будильник на неё. Прошедшее не планируем:
+                        // заметка с прошедшей датой просто лежит в списке.
+                        val due = parsed.datetime
+                        if (due != null && due > System.currentTimeMillis()) {
+                            Reminders.schedule(
+                                context,
+                                id,
+                                due,
+                                parsed.text,
+                                parsed.categoryId ?: selectedCategory,
+                                parsed.allDay,
+                            )
+                        }
                     }.also { transcriber = it }
                 recorder.onChunk = { bytes, count -> live.onChunk(bytes, count, recorder.speechProb) }
                 Log.i(TAG, "распознавание на ходу готово (VAD доступен: %s)".format(detector.available))

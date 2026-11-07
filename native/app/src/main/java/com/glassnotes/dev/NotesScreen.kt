@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
@@ -55,6 +56,9 @@ import android.util.Log
 @Composable
 fun NotesScreen(store: NotesStore, accent: androidx.compose.ui.graphics.Color) {
     var notes by remember { mutableStateOf<List<NoteRow>>(emptyList()) }
+
+    // Нужен для отмены напоминаний при «выполнено» и удалении.
+    val context = LocalContext.current
 
     // Пересборка списка после правки: меняем счётчик — LaunchedEffect перечитывает базу.
     var revision by remember { mutableIntStateOf(0) }
@@ -120,6 +124,8 @@ fun NotesScreen(store: NotesStore, accent: androidx.compose.ui.graphics.Color) {
                         accent = accent,
                         onToggle = {
                             store.setStatus(note.id, if (note.done) "active" else "done")
+                            // Отметили выполненным — напоминание больше не нужно.
+                            if (!note.done) Reminders.cancel(context, note.id)
                             revision++
                         },
                         onCategory = { category ->
@@ -128,6 +134,7 @@ fun NotesScreen(store: NotesStore, accent: androidx.compose.ui.graphics.Color) {
                         },
                         onDelete = {
                             store.remove(note.id)
+                            Reminders.cancel(context, note.id)
                             revision++
                         },
                     )
