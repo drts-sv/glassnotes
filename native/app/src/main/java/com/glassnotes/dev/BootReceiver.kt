@@ -20,5 +20,6 @@ class BootReceiver : BroadcastReceiver() {
         }
         Log.i("GlasNotesDev", "загрузка телефона: восстанавливаю напоминания")
         Reminders.rescheduleAll(context)
+        Reminders.scheduleReview(context)
     }
 }

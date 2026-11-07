@@ -149,7 +149,43 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
                 out
             }
 
-    /** Настройки — в таблице kv той же базы. Ключи короткие и совпадают с названиями полей. */
+    /**
+     * Сводка дел для утреннего ревью: просроченные, на сегодня и без срока.
+     * Дело «на весь день» относится к своему дню — у него время 00:00.
+     */
+    fun reviewCounts(now: Long = System.currentTimeMillis()): ReviewCounts {
+        val cal = java.util.Calendar.getInstance(java.util.Locale("ru"))
+        cal.timeInMillis = now
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        val todayStart = cal.timeInMillis
+        val todayEnd = todayStart + 24L * 60 * 60 * 1000
+
+        var overdue = 0
+        var today = 0
+        var noDate = 0
+        readableDatabase
+            .rawQuery("SELECT json FROM notes", null)
+            .use { cursor ->
+                while (cursor.moveToNext()) {
+                    val raw = cursor.getString(0)
+                    val json = org.json.JSONObject(raw)
+                    if (json.optString("status") != "active") continue
+                    val dt = json.optString("datetime")
+                    if (dt.isBlank() || dt == "null") {
+                        noDate++
+                        continue
+                    }
+                    val ms = runCatching { ISO.parse(dt)?.time }.getOrNull() ?: continue
+                    if (ms < todayStart) overdue++ else if (ms < todayEnd) today++
+                }
+            }
+        return ReviewCounts(overdue, today, noDate)
+    }
+
+    /** Настройки — в таблице kv той же базы. */
     fun getKv(key: String): String? =
         readableDatabase
             .rawQuery("SELECT v FROM kv WHERE k = ?", arrayOf(key))

@@ -24,6 +24,15 @@ data class DueNote(
     val notified: Boolean,
 )
 
+/** Сводка дел для утреннего ревью. */
+data class ReviewCounts(
+    val overdue: Int,
+    val today: Int,
+    val noDate: Int,
+) {
+    val total: Int get() = overdue + today + noDate
+}
+
 /** Разбор JSON заметки в строку списка. Формат тот же, что пишет боевое приложение. */
 fun parseNote(json: String): NoteRow? =
     try {

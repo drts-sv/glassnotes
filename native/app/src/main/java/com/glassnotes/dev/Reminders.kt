@@ -25,6 +25,7 @@ object Reminders {
     const val ACTION_REMIND = "com.glassnotes.dev.ACTION_REMIND"
     const val ACTION_SNOOZE = "com.glassnotes.dev.ACTION_SNOOZE"
     const val ACTION_DONE = "com.glassnotes.dev.ACTION_DONE"
+    const val ACTION_REVIEW = "com.glassnotes.dev.ACTION_REVIEW"
     const val EXTRA_ID = "noteId"
     const val EXTRA_TEXT = "noteText"
     const val EXTRA_CATEGORY = "noteCategory"
@@ -33,6 +34,12 @@ object Reminders {
 
     private const val TAG = "GlasNotesDev"
     private const val BASE_REQUEST = 7100
+    private const val REVIEW_REQUEST = 7001 // как REVIEW_REQUEST в боевом приложении
+    const val REVIEW_NOTIFICATION_ID = 7001
+
+    /** Когда показывать утреннее ревью. Дефолт боевого приложения; в настройки вынести — следующий шаг. */
+    const val REVIEW_HOUR = 8
+    const val REVIEW_MINUTE = 30
     private const val BASE_OPEN = 7900
 
     fun ensureChannel(context: Context) {
@@ -82,6 +89,42 @@ object Reminders {
         val pi = pending(context, id, "", null, false)
         am.cancel(pi)
         pi.cancel()
+    }
+
+    /** Поставить утреннее ревью: без аргумента — на ближайшие 8:30, в остальных случаях на заданный момент. */
+    fun scheduleReview(
+        context: Context,
+        at: Long = 0L,
+    ) {
+        val whenAt =
+            if (at > 0) {
+                at
+            } else {
+                java.util.Calendar.getInstance(java.util.Locale("ru")).apply {
+                    set(java.util.Calendar.HOUR_OF_DAY, REVIEW_HOUR)
+                    set(java.util.Calendar.MINUTE, REVIEW_MINUTE)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                    if (timeInMillis <= System.currentTimeMillis()) add(java.util.Calendar.DAY_OF_MONTH, 1)
+                }.timeInMillis
+            }
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, ReminderReceiver::class.java).apply { action = ACTION_REVIEW }
+        var flags = PendingIntent.FLAG_UPDATE_CURRENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags = flags or PendingIntent.FLAG_IMMUTABLE
+        val pi = PendingIntent.getBroadcast(context, REVIEW_REQUEST, intent, flags)
+        val exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
+        if (exact) {
+            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenAt, pi)
+        } else {
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenAt, pi)
+        }
+        Log.i(
+            TAG,
+            "утреннее ревью запланировано на %s".format(
+                java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US).format(java.util.Date(whenAt)),
+            ),
+        )
     }
 
     /** После перезагрузки будильники теряются — ставим заново по базе. */

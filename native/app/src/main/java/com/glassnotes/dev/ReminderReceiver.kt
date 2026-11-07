@@ -45,8 +45,59 @@ class ReminderReceiver : BroadcastReceiver() {
                 Log.i(TAG, "напоминание #%d отмечено выполненным".format(id))
             }
 
+            Reminders.ACTION_REVIEW -> {
+                postReview(context)
+                // Сразу планируем следующее утро: ревью показывается раз в сутки.
+                Reminders.scheduleReview(context)
+            }
+
             else -> post(context, id, intent)
         }
+    }
+
+    /**
+     * Утреннее ревью: сводка дел одним уведомлением. «Показать» открывает приложение со списком,
+     * текст «нажмите, чтобы посмотреть задачи на день» — просьба владельца из боевого приложения (#77).
+     */
+    private fun postReview(context: Context) {
+        val counts = NotesStore(context).reviewCounts()
+        val open =
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+        val openPi =
+            PendingIntent.getActivity(
+                context,
+                Reminders.openRequest(Reminders.REVIEW_NOTIFICATION_ID.toLong()),
+                open,
+                intentFlags(),
+            )
+        val summary = "Просрочено %d, на сегодня %d, без срока %d".format(counts.overdue, counts.today, counts.noDate)
+
+        val builder =
+            NotificationCompat.Builder(context, Reminders.CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_popup_reminder)
+                .setContentTitle("🌅 Утреннее ревью")
+                .setContentText(summary)
+                .setStyle(
+                    NotificationCompat.BigTextStyle()
+                        .bigText(summary + "\nНажмите, чтобы посмотреть задачи на день."),
+                )
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setContentIntent(openPi)
+                .addAction(0, "Показать", openPi)
+
+        (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+            .notify(Reminders.REVIEW_NOTIFICATION_ID, builder.build())
+        Log.i(
+            TAG,
+            "утреннее ревью показано: просрочено %d, на сегодня %d, без срока %d".format(
+                counts.overdue,
+                counts.today,
+                counts.noDate,
+            ),
+        )
     }
 
     private fun dismiss(
