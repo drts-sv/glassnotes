@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -59,18 +58,27 @@ private const val BARS = 36
 
 private const val TAG = "GlasNotesDev"
 
-/** Ограничение 60 кадров в секунду: экран 120 Гц, столько для полос не нужно (просьба владельца). */
+/** Ограничение 60 кадров в секунду: экран 120 Гц, для полос столько не нужно (просьба владельца). */
 private const val FRAME_NS = 16_666_667L
 
+/** Высота поля полос: владелец просил «побольше по вертикали». */
+private val WAVE_HEIGHT = 150.dp
+
+/** Зазор между полосами: «повоздушнее». */
+private val WAVE_GAP = 3.dp
+
 /**
- * Экран записи (этап 2 нативного пути) с подбором уровня руками.
+ * Экран записи (этап 2 нативного пути).
  *
- * Полосы рисуются ОТ ЦЕНТРА, как в боевом приложении (`recDraw`): высота v*(h-6), минимум 3 px,
- * прозрачность 0.3+0.7v, зазор 2 px. Прошлая версия росла от нижнего края — владелец это заметил.
+ * Полосы нарисованы ОТ ЦЕНТРА, как `recDraw` в боевом приложении: высота v*(h−6), минимум 3 px,
+ * прозрачность 0.3+0.7v. Поле полос — 150 dp и зазор 3 dp: просьба «побольше по вертикали и повоздушнее».
  *
- * Ползунки правят живые параметры [WaveLevel]. Причина, по которой они тут: чувствительность
- * и уровень шума зависят от телефона и комнаты, и на живом микрофоне нашлись две ошибки
- * (фон 0,000 и окно, считавшееся в кадрах). Подобранные числа видны в логе и на экране.
+ * Ползунков три, и в них есть смысл:
+ *  - «Чувствительность» — ширина шкалы в дБ: уже шкала, тем сильнее полосы отзываются на голос;
+ *  - «Порог тишины» — насколько сигнал должен быть выше фона, чтобы рисовались полосы;
+ *  - «Отзывчивость на тихий голос» — кривая: меньше 1 подтягивает слабые звуки.
+ * Процентиль фона и затухание пика убраны из ползунков: они подобраны на живом микрофоне
+ * (0.21 и 0.70) и менять их в быту незачем.
  */
 @Composable
 fun RecordingScreen(autoStart: Boolean = false) {
@@ -93,13 +101,9 @@ fun RecordingScreen(autoStart: Boolean = false) {
         )
     }
 
-    // Подбираемые параметры
     var dbWindow by remember { mutableFloatStateOf(wave.dbWindow) }
-    var floorPercent by remember { mutableFloatStateOf(wave.floorPercent) }
     var noiseGate by remember { mutableFloatStateOf(wave.noiseGate) }
     var curve by remember { mutableFloatStateOf(wave.curve) }
-    var peakDecay by remember { mutableFloatStateOf(wave.peakDecayPerSecond) }
-
     var lastParamLog by remember { mutableStateOf(0L) }
 
     val askPermission =
@@ -116,14 +120,10 @@ fun RecordingScreen(autoStart: Boolean = false) {
         }
     }
 
-    // Ползунки → живые параметры. Пишем в лог с оговоркой по частоте: тянуть ползунок можно долго,
-    // а нужен один понятный след с итоговыми числами.
-    LaunchedEffect(dbWindow, floorPercent, noiseGate, curve, peakDecay) {
+    LaunchedEffect(dbWindow, noiseGate, curve) {
         wave.dbWindow = dbWindow
-        wave.floorPercent = floorPercent
         wave.noiseGate = noiseGate
         wave.curve = curve
-        wave.peakDecayPerSecond = peakDecay
         val now = System.currentTimeMillis()
         if (now - lastParamLog > 700) {
             lastParamLog = now
@@ -208,23 +208,26 @@ fun RecordingScreen(autoStart: Boolean = false) {
             text = String.format(Locale.US, "%02d:%02d", seconds / 60, seconds % 60),
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
             fontSize = 14.sp,
-            modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
+            modifier = Modifier.padding(top = 4.dp),
         )
 
-        // Полосы — от центра, как в боевом приложении.
+        Spacer(Modifier.height(26.dp))
+
+        // Поле полос: выше и с воздухом между полосами.
         Canvas(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(64.dp),
+                    .height(WAVE_HEIGHT),
         ) {
             val seen = version
             if (seen < 0) return@Canvas
 
-            val gap = 2.dp.toPx()
+            val gap = WAVE_GAP.toPx()
             val barWidth = ((size.width - gap * (BARS - 1)) / BARS).coerceAtLeast(2f)
             val values = bars.toList()
             val accent = Color(0xFF8AB4F8)
+            val radius = min(barWidth / 2f, 2f * density)
 
             for (index in 0 until BARS) {
                 val value = values.getOrElse(index) { 0f }.coerceIn(0f, 1f)
@@ -234,12 +237,14 @@ fun RecordingScreen(autoStart: Boolean = false) {
                     color = accent.copy(alpha = 0.3f + 0.7f * value),
                     topLeft = Offset(left, (size.height - height) / 2f),
                     size = Size(barWidth, height),
-                    cornerRadius = CornerRadius(min(barWidth / 2f, 1.5f * density), min(barWidth / 2f, 1.5f * density)),
+                    cornerRadius = CornerRadius(radius, radius),
                 )
             }
         }
 
-        Box(modifier = Modifier.padding(top = 18.dp), contentAlignment = Alignment.Center) {
+        Spacer(Modifier.height(26.dp))
+
+        Box(contentAlignment = Alignment.Center) {
             Box(
                 modifier =
                     Modifier
@@ -290,7 +295,7 @@ fun RecordingScreen(autoStart: Boolean = false) {
             )
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(24.dp))
 
         Text(
             text = "rms %d · сырая %.3f · фон %.3f · пик %.3f · полоса %.3f · %d к/с"
@@ -299,19 +304,18 @@ fun RecordingScreen(autoStart: Boolean = false) {
             fontSize = 12.sp,
         )
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
 
-        ParamSlider("Чувствительность (шкала, дБ)", dbWindow, 20f..90f) { dbWindow = it }
-        ParamSlider("Фон: процентиль", floorPercent, 0.05f..0.70f) { floorPercent = it }
-        ParamSlider("Порог тишины", noiseGate, 0f..0.40f) { noiseGate = it }
-        ParamSlider("Кривая отображения", curve, 0.40f..1.50f) { curve = it }
-        ParamSlider("Затухание пика в секунду", peakDecay, 0.30f..1.00f) { peakDecay = it }
+        ParamSlider("Чувствительность (шкала, дБ)", dbWindow, 40f..90f) { dbWindow = it }
+        ParamSlider("Порог тишины", noiseGate, 0f..0.30f) { noiseGate = it }
+        ParamSlider("Отзывчивость на тихий голос", curve, 0.40f..1.30f) { curve = it }
 
         Text(
-            text = "Подобранные числа уходят в лог тегом GlasNotesDev (строка «НАСТРОЙКИ»).",
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
+            text = "Процентиль фона 0.21 и затухание пика 0.70 подобраны на живом микрофоне и спрятаны. " +
+                "Изменения ползунков уходят в лог (строка «НАСТРОЙКИ»).",
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
             fontSize = 11.sp,
-            modifier = Modifier.padding(top = 6.dp, bottom = 20.dp),
+            modifier = Modifier.padding(top = 2.dp, bottom = 20.dp),
         )
     }
 }
@@ -323,7 +327,7 @@ private fun ParamSlider(
     range: ClosedFloatingPointRange<Float>,
     onChange: (Float) -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
                 text = label,
