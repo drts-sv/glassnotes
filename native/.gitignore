@@ -1,0 +1,7 @@
+# Нативный проект собирается Gradle:Build (кэш, вывод сборки)
+build/
+.gradle/
+local.properties
+*.apk
+*.iml
+.idea/
