@@ -87,6 +87,10 @@ fun NotesScreen(
     var revision by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
 
+    // Правка текста заметки: открывается из меню по долгому нажатию.
+    var editNote by remember { mutableStateOf<NoteRow?>(null) }
+    var editText by remember { mutableStateOf("") }
+
     LaunchedEffect(revision) {
         notes = store.recent(200).mapNotNull { parseNote(it) }
     }
@@ -111,6 +115,56 @@ fun NotesScreen(
     if (settingsOpen) {
         SettingsScreen(store = store, accent = accent, onClose = { settingsOpen = false })
         return
+    }
+
+    editNote?.let { note ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { editNote = null },
+            title = { Text("Текст заметки", color = Design.textPrimary, fontSize = 16.sp) },
+            text = {
+                BasicTextField(
+                    value = editText,
+                    onValueChange = { editText = it },
+                    textStyle = TextStyle(color = Design.textPrimary, fontSize = 16.sp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Design.glassRgb.copy(alpha = 0.5f))
+                            .padding(10.dp),
+                )
+            },
+            confirmButton = {
+                Text(
+                    text = "Сохранить",
+                    color = accent,
+                    fontSize = 15.sp,
+                    modifier =
+                        Modifier.clickable {
+                            Haptics.tick(LocalView.current)
+                            val value = editText.trim()
+                            if (value.isNotEmpty() && value != note.text) {
+                                store.setText(note.id, value)
+                                revision++
+                                Log.i("GlasNotesDev", "текст заметки #%d изменён".format(note.id))
+                            }
+                            editNote = null
+                        }.padding(8.dp),
+                )
+            },
+            dismissButton = {
+                Text(
+                    text = "Отмена",
+                    color = Design.textSecondary.copy(alpha = 0.85f),
+                    fontSize = 15.sp,
+                    modifier =
+                        Modifier.clickable {
+                            Haptics.tick(LocalView.current)
+                            editNote = null
+                        }.padding(8.dp),
+                )
+            },
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -189,6 +243,10 @@ fun NotesScreen(
                         onCategory = { category ->
                             store.setCategory(note.id, category)
                             revision++
+                        },
+                        onEdit = {
+                            editText = note.text
+                            editNote = note
                         },
                         onDelete = {
                             store.remove(note.id)
@@ -496,6 +554,7 @@ private fun NoteCard(
     accent: Color,
     onToggle: () -> Unit,
     onCategory: (String) -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -577,6 +636,14 @@ private fun NoteCard(
                     },
                 )
             }
+            DropdownMenuItem(
+                text = { Text("Изменить текст", fontSize = 15.sp) },
+                onClick = {
+                    Haptics.tick(view)
+                    onEdit()
+                    menuOpen = false
+                },
+            )
             DropdownMenuItem(
                 text = { Text("Удалить заметку", fontSize = 15.sp) },
                 onClick = {

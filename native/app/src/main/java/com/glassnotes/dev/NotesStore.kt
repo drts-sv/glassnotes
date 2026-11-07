@@ -89,6 +89,14 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
         patch(id) { it.put("status", status) }
     }
 
+    /** Изменить текст заметки. */
+    fun setText(
+        id: Long,
+        text: String,
+    ) {
+        patch(id) { it.put("text", text) }
+    }
+
     /** Сменить категорию заметки (цвет карточки меняется сразу). */
     fun setCategory(
         id: Long,
