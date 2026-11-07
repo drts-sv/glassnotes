@@ -677,12 +677,22 @@ private fun NoteCard(
                 color = Design.textSecondary.copy(alpha = 0.8f),
                 fontSize = 12.sp,
             )
-            if (note.categoryIds.isNotEmpty()) {
-                Text(
-                    text = note.categoryIds.joinToString(" · "),
-                    color = accent.copy(alpha = 0.9f),
-                    fontSize = 12.sp,
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                note.categoryIds.forEach { id ->
+                    Row(
+                        modifier =
+                            Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Categories.colors[id]?.copy(alpha = 0.35f) ?: Design.glassRgb.copy(alpha = 0.35f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = Categories.title(id) ?: id,
+                            color = Design.textPrimary.copy(alpha = 0.92f),
+                            fontSize = 11.sp,
+                        )
+                    }
+                }
             }
             if (note.done) {
                 Text(text = "выполнено", color = Design.done, fontSize = 12.sp)

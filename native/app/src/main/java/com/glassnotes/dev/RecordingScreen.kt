@@ -1,5 +1,8 @@
 package com.glassnotes.dev
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -43,6 +46,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
