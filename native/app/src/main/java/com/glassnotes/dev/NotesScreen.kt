@@ -52,9 +52,9 @@ fun NotesScreen(store: NotesStore, accent: androidx.compose.ui.graphics.Color) {
             val category = row.categoryIds.firstOrNull()
             val style =
                 if (category != null) {
-                    "оттенок %s: заливка %.2f, рамка %.1f".format(category, CATEGORY_TINT_ALPHA, CATEGORY_BORDER_ALPHA)
+                    "оттенок %s: заливка %.2f, без рамки".format(category, CATEGORY_TINT_ALPHA)
                 } else {
-                    "без категории: стекло %.2f, рамка 1 dp".format(Design.cardAlpha)
+                    "без категории: стекло %.2f, без рамки".format(Design.cardAlpha)
                 }
             Log.i("GlasNotesDev", "  #%d %s [%s] %s · %s".format(row.id, row.time, row.status, style, row.text))
         }
@@ -122,16 +122,14 @@ private fun NoteCard(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
+                // Рамок нет намеренно: стиль карточек владелец одобрил без них, менять его нельзя —
+                // по его просьбе меняется только цвет заливки (оттенок категории).
                 .background(
                     if (tinted) {
                         categoryColor!!.copy(alpha = CATEGORY_TINT_ALPHA)
                     } else {
                         Design.glassRgb.copy(alpha = Design.cardAlpha)
                     },
-                ).border(
-                    width = if (tinted) 2.dp else 1.dp,
-                    color = if (tinted) categoryColor!!.copy(alpha = CATEGORY_BORDER_ALPHA) else Design.border,
-                    shape = RoundedCornerShape(14.dp),
                 ).padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Text(
@@ -162,7 +160,6 @@ private fun NoteCard(
 
 /** Непрозрачность оттенка и рамки — как в примере (у «важной» заметки). */
 private const val CATEGORY_TINT_ALPHA = 0.22f
-private const val CATEGORY_BORDER_ALPHA = 0.9f
 
 /** Цвета категорий — те же, что в боевом приложении (DEFAULT_CATEGORIES). */
 private val CATEGORY_COLORS =
