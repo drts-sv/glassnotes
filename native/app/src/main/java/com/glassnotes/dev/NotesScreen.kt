@@ -165,7 +165,19 @@ fun NotesScreen(
                 contentPadding = PaddingValues(bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(shown, key = { it.id }) { note ->
+                val bySection = shown.groupBy { NoteFilters.bucket(it) }
+                NoteFilters.sectionOrder.forEach { section ->
+                    val group = bySection[section] ?: return@forEach
+                    if (group.isEmpty()) return@forEach
+                    item(key = "section-" + section) {
+                        Text(
+                            text = NoteFilters.sectionName(section),
+                            color = Design.textSecondary.copy(alpha = 0.85f),
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
+                        )
+                    }
+                    items(group, key = { it.id }) { note ->
                     NoteCard(
                         note = note,
                         accent = accent,
@@ -184,6 +196,7 @@ fun NotesScreen(
                             revision++
                         },
                     )
+                    }
                 }
             }
         }

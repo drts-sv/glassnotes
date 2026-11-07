@@ -25,6 +25,33 @@ object NoteFilters {
             "no-date" to "Без срока",
         )
 
+    /** Порядок разделов в списке — как в боевом приложении. */
+    val sectionOrder: List<String> = dateOptions.map { it.first }
+
+    fun sectionName(key: String): String = dateOptions.firstOrNull { it.first == key }?.second.orEmpty()
+
+    /**
+     * В какой раздел попадает заметка. Важные идут первым разделом, отдельно от своих дат —
+     * как в боевом приложении.
+     */
+    fun bucket(
+        note: NoteRow,
+        now: Long = System.currentTimeMillis(),
+    ): String {
+        if (IMPORTANT in note.categoryIds) return "important"
+        val at = note.datetime ?: return "no-date"
+        val dayStart = startOfDay(now)
+        val day = if (note.allDay) startOfDay(at) else at
+        return when {
+            note.allDay && day < dayStart -> "past"
+            !note.allDay && at < dayStart -> "past"
+            day < dayStart + DAY -> "today"
+            day < dayStart + 2 * DAY -> "tomorrow"
+            day < dayStart + 7 * DAY -> "week"
+            else -> "later"
+        }
+    }
+
     fun startOfDay(now: Long): Long {
         val cal = Calendar.getInstance(Locale("ru"))
         cal.timeInMillis = now

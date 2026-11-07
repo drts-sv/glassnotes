@@ -155,6 +155,12 @@ fun RecordingScreen(
     /** Распознанные фразы: новые снизу, старые бледнее — тикер под развёрткой. */
     val phrases = remember { mutableStateListOf<String>() }
 
+    /**
+     * Текст текущего сеанса. Владелец: «формируется несколько заметок в один сеанс, а не одна».
+     * Поэтому копим текст и сохраняем РОВНО ОДНУ заметку при остановке записи.
+     */
+    val session = remember { StringBuilder() }
+
     /** Заметки: та же база и схема, что в боевом приложении (см. NotesStore). */
     val store = remember { NotesStore(context) }
 
@@ -163,6 +169,41 @@ fun RecordingScreen(
 
     /** Формат времени напоминания для логов. */
     val CLOCK_TEXT = java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US)
+
+    /** Сохранить надиктованное одной заметкой и очистить сеанс. Пустой текст не сохраняем. */
+    fun saveSession() {
+        val text = session.toString().trim()
+        session.setLength(0)
+        phrases.clear()
+        if (text.isEmpty()) {
+            Log.i(TAG, "сеанс записи пустой — заметка не создаётся")
+            return
+        }
+        val parsed = parseDateNlu(text)
+        val id =
+            store.add(
+                text = parsed.text,
+                categoryId = parsed.categoryId ?: selectedCategory,
+                datetime = parsed.datetime,
+                allDay = parsed.allDay,
+            )
+        notesCount = store.count()
+        Log.i(
+            TAG,
+            "заметка за сеанс: id=%d, всего %d, дата %s, весь день %s, категория %s, текст: %s".format(
+                id,
+                notesCount,
+                parsed.datetime?.let { CLOCK_TEXT.format(java.util.Date(it)) } ?: "нет",
+                if (parsed.allDay) "да" else "нет",
+                parsed.categoryId ?: selectedCategory ?: "нет",
+                parsed.text,
+            ),
+        )
+        val due = parsed.datetime
+        if (due != null && due > System.currentTimeMillis()) {
+            Reminders.schedule(context, id, due, parsed.text, parsed.categoryId ?: selectedCategory, parsed.allDay)
+        }
+    }
     var notesCount by remember { mutableIntStateOf(0) }
     var transcriber by remember { mutableStateOf<LiveTranscriber?>(null) }
     var vad by remember { mutableStateOf<SileroVad?>(null) }
@@ -257,41 +298,9 @@ fun RecordingScreen(
                 val live =
                     transcriber ?: LiveTranscriber(context, ModelManager(context)) { text ->
                         phrases.add(text)
-                        // Разбираем дату/время из фразы тем же правилом, что в боевом приложении,
-                        // и сохраняем: категория — из фразы или выбранный чип, дата — напоминание.
-                        val parsed = parseDateNlu(text)
-                        val id =
-                            store.add(
-                                text = parsed.text,
-                                categoryId = parsed.categoryId ?: selectedCategory,
-                                datetime = parsed.datetime,
-                                allDay = parsed.allDay,
-                            )
-                        notesCount = store.count()
-                        Log.i(
-                            TAG,
-                            "заметка сохранена: id=%d, всего %d, дата %s, весь день %s, категория %s, текст: %s".format(
-                                id,
-                                notesCount,
-                                parsed.datetime?.let { CLOCK_TEXT.format(java.util.Date(it)) } ?: "нет",
-                                if (parsed.allDay) "да" else "нет",
-                                parsed.categoryId ?: selectedCategory ?: "нет",
-                                parsed.text,
-                            ),
-                        )
-                        // Разобрана дата — ставим будильник на неё. Прошедшее не планируем:
-                        // заметка с прошедшей датой просто лежит в списке.
-                        val due = parsed.datetime
-                        if (due != null && due > System.currentTimeMillis()) {
-                            Reminders.schedule(
-                                context,
-                                id,
-                                due,
-                                parsed.text,
-                                parsed.categoryId ?: selectedCategory,
-                                parsed.allDay,
-                            )
-                        }
+                        // Фразу только копим: заметка сохраняется одна, при остановке записи.
+                        if (session.isNotEmpty()) session.append(' ')
+                        session.append(text)
                     }.also { transcriber = it }
                 recorder.onChunk = { bytes, count -> live.onChunk(bytes, count, recorder.speechProb) }
                 Log.i(TAG, "распознавание на ходу готово (VAD доступен: %s)".format(detector.available))
@@ -398,6 +407,8 @@ fun RecordingScreen(
                             .size(22.dp)
                             .clickable {
                                 Haptics.tick(hapticView)
+                                // Уходим назад — надиктованное сохраняем, чтобы не потерять.
+                                saveSession()
                                 onClose()
                             },
                 )
@@ -643,6 +654,8 @@ fun RecordingScreen(
                                     transcriber?.finish()
                                     recording = false
                                     Log.i(TAG, "запись остановлена на %d с".format(seconds))
+                                    // Одна заметка за сеанс, затем закрываем окно записи.
+                                    saveSession(); onClose()
                                 } else if (granted) {
                                     recording = recorder.start()
                                     Log.i(TAG, "запись запущена: %s".format(recording))
