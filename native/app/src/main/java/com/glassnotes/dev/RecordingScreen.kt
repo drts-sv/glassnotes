@@ -187,12 +187,13 @@ fun RecordingScreen(
                 datetime = parsed.datetime,
                 allDay = parsed.allDay,
             )
-        notesCount = store.count()
+        // Счётчик берём напрямую: notesCount объявлен ниже по коду, из локальной функции он не виден.
+        val total = store.count()
         Log.i(
             TAG,
             "заметка за сеанс: id=%d, всего %d, дата %s, весь день %s, категория %s, текст: %s".format(
                 id,
-                notesCount,
+                total,
                 parsed.datetime?.let { CLOCK_TEXT.format(java.util.Date(it)) } ?: "нет",
                 if (parsed.allDay) "да" else "нет",
                 parsed.categoryId ?: selectedCategory ?: "нет",
