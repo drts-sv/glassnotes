@@ -149,6 +149,10 @@ fun RecordingScreen(autoStart: Boolean = false) {
 
     /** Распознанные фразы: новые снизу, старые бледнее — тикер под развёрткой. */
     val phrases = remember { mutableStateListOf<String>() }
+
+    /** Заметки: та же база и схема, что в боевом приложении (см. NotesStore). */
+    val store = remember { NotesStore(context) }
+    var notesCount by remember { mutableIntStateOf(0) }
     var transcriber by remember { mutableStateOf<LiveTranscriber?>(null) }
     var vad by remember { mutableStateOf<SileroVad?>(null) }
     var showDev by remember { mutableStateOf(false) }
@@ -203,9 +207,14 @@ fun RecordingScreen(autoStart: Boolean = false) {
             try {
                 val detector = vad ?: SileroVad(context).also { vad = it }
                 recorder.detector = detector
-                val live = transcriber ?: LiveTranscriber(context, ModelManager(context)) { text ->
-                    phrases.add(text)
-                }.also { transcriber = it }
+                val live =
+                    transcriber ?: LiveTranscriber(context, ModelManager(context)) { text ->
+                        phrases.add(text)
+                        // Сохраняем фразу как заметку: категория — выбранный чип, текст — распознанное.
+                        val id = store.add(text, selectedCategory)
+                        notesCount = store.count()
+                        Log.i(TAG, "заметка сохранена: id=%d, всего заметок %d, текст: %s".format(id, notesCount, text))
+                    }.also { transcriber = it }
                 recorder.onChunk = { bytes, count -> live.onChunk(bytes, count, recorder.speechProb) }
                 Log.i(TAG, "распознавание на ходу готово (VAD доступен: %s)".format(detector.available))
             } catch (t: Throwable) {
@@ -221,6 +230,7 @@ fun RecordingScreen(autoStart: Boolean = false) {
 
     DisposableEffect(Unit) {
         onDispose {
+            store.close()
             transcriber?.close()
             vad?.close()
             recorder.cancel()
@@ -566,7 +576,12 @@ fun RecordingScreen(autoStart: Boolean = false) {
             Spacer(Modifier.weight(1f))
 
             Text(
-                text = if (showDev) "⚙ подбор уровня — скрыть" else "⚙ подбор уровня",
+                text =
+                if (showDev) {
+                    "⚙ подбор уровня — скрыть"
+                } else {
+                    "⚙ подбор уровня · заметок %d".format(notesCount)
+                },
                 color = Design.textSecondary.copy(alpha = 0.55f),
                 fontSize = 12.sp,
                 modifier = Modifier.clickable { showDev = !showDev },
@@ -575,8 +590,18 @@ fun RecordingScreen(autoStart: Boolean = false) {
             if (showDev) {
                 Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                     Text(
-                        text = "rms %d · сырая %.3f · фон %.3f · пик %.3f · полоса %.3f · %d к/с · фраза %d мс"
-                            .format(rawRms, raw, wave.floor, wave.peak, level, fps, transcriber?.lastPhraseMs ?: 0),
+                        text =
+                            "rms %d · сырая %.3f · фон %.3f · пик %.3f · полоса %.3f · %d к/с · фраза %d мс · заметок %d"
+                                .format(
+                                    rawRms,
+                                    raw,
+                                    wave.floor,
+                                    wave.peak,
+                                    level,
+                                    fps,
+                                    transcriber?.lastPhraseMs ?: 0,
+                                    notesCount,
+                                ),
                         color = Design.textSecondary.copy(alpha = 0.8f),
                         fontSize = 11.sp,
                         modifier = Modifier.padding(top = 8.dp),

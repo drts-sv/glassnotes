@@ -49,6 +49,13 @@ class MainActivity : ComponentActivity() {
         intent?.getStringExtra("asr_file")?.let { name -> thread(name = "AsrFile") { recognizeWhole(name) } }
         intent?.getStringExtra("asr_replay")?.let { name -> thread(name = "AsrReplay") { replayThroughLive(name) } }
 
+        if (intent?.getBooleanExtra("notes_dump", false) == true) {
+            val store = NotesStore(applicationContext)
+            val total = store.count()
+            Log.i(TAG, "=== заметок в базе: %d ===".format(total))
+            store.recent(5).forEach { json -> Log.i(TAG, "заметка: $json") }
+        }
+
         setContent {
             MaterialTheme(
                 colorScheme =
@@ -105,7 +112,14 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "=== воспроизведение %s (%.1f с) через распознавание на ходу ===".format(name, bytes.size / 32000.0))
 
             val phrases = Collections.synchronizedList(ArrayList<String>())
-            val transcriber = LiveTranscriber(applicationContext, manager) { text -> phrases.add(text) }
+            val store = NotesStore(applicationContext)
+            val transcriber =
+                LiveTranscriber(applicationContext, manager) { text ->
+                    phrases.add(text)
+                    // Тот же путь записи, что на экране: проверяем и распознавание, и сохранение.
+                    val id = store.add(text)
+                    Log.i(TAG, "заметка сохранена (воспроизведение): id=%d, всего %d".format(id, store.count()))
+                }
 
             val chunkBytes = 16000 / 50 * 2 // 20 мс
             var offset = 0
