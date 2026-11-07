@@ -61,6 +61,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -152,6 +153,9 @@ fun RecordingScreen(autoStart: Boolean = false) {
 
     /** Заметки: та же база и схема, что в боевом приложении (см. NotesStore). */
     val store = remember { NotesStore(context) }
+
+    /** Для тактильной отдачи: отклик на кнопку, чипы и свайпы. */
+    val hapticView = LocalView.current
     var notesCount by remember { mutableIntStateOf(0) }
     var transcriber by remember { mutableStateOf<LiveTranscriber?>(null) }
     var vad by remember { mutableStateOf<SileroVad?>(null) }
@@ -565,6 +569,7 @@ fun RecordingScreen(autoStart: Boolean = false) {
                             .border(2.dp, Design.stopRed.copy(alpha = 0.4f), CircleShape)
                             .background(Design.stopRed.copy(alpha = 0.15f))
                             .clickable {
+                                Haptics.tick(hapticView)
                                 if (recording) {
                                     recorder.stop()
                                     transcriber?.finish()
@@ -599,6 +604,7 @@ fun RecordingScreen(autoStart: Boolean = false) {
                                     color = category.color.copy(alpha = if (selected) 1f else 0.55f),
                                     shape = RoundedCornerShape(Design.chipRadius),
                                 ).clickable {
+                                    Haptics.tick(hapticView)
                                     selectedCategory = if (selected) null else category.id
                                     Log.i(TAG, "категория выбрана: %s".format(selectedCategory ?: "нет"))
                                 }.defaultMinSize(minHeight = Design.chipMinHeight)
@@ -621,7 +627,11 @@ fun RecordingScreen(autoStart: Boolean = false) {
                 },
                 color = Design.textSecondary.copy(alpha = 0.55f),
                 fontSize = 12.sp,
-                modifier = Modifier.clickable { showDev = !showDev },
+                modifier =
+                    Modifier.clickable {
+                        Haptics.tick(hapticView)
+                        showDev = !showDev
+                    },
             )
 
             if (showDev) {

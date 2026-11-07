@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -26,11 +28,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -140,6 +148,16 @@ private fun NoteCard(
 ) {
     // Меню правки открывается ДОЛГИМ нажатием и рисуется вне карточки — вид карточки не меняется.
     var menuOpen by remember { mutableStateOf(false) }
+
+    // Свайп: вправо — выполнено, влево — удалить (как в боевом приложении). Карточка при этом просто
+    // сдвигается, никаких цветных подложек за ней не появляется.
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current
+    val swipeThreshold = with(density) { 60.dp.toPx() }
+    val hapticStep = with(density) { 20.dp.toPx() }
+    val view = LocalView.current
+    var lastStep by remember { mutableIntStateOf(0) }
+    var wasAtEdge by remember { mutableStateOf(false) }
     // Оттенок карточки — по категории заметки. Непрозрачность заливки (0.22) и рамки (0.9)
     // оставлены такими же, как были у «важной» заметки в примере: стиль и прозрачность не меняем,
     // меняется только цвет — он берётся у категории.
@@ -159,9 +177,56 @@ private fun NoteCard(
                     } else {
                         Design.glassRgb.copy(alpha = Design.cardAlpha)
                     },
-                ).combinedClickable(
-                    onClick = onToggle,
-                    onLongClick = { menuOpen = true },
+                ).offset { IntOffset(offsetX.roundToInt(), 0) }
+                .pointerInput(note.id) {
+                    detectHorizontalDragGestures(
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            offsetX += dragAmount
+                            // Щелчок каждые 20 dp сдвига — как трещотка под пальцем.
+                            val step = (offsetX / hapticStep).toInt()
+                            if (step != lastStep) {
+                                lastStep = step
+                                Haptics.tick(view)
+                            }
+                            // Дошли до порога — отклик сильнее, ровно один раз на пересечение.
+                            val atEdge = kotlin.math.abs(offsetX) > swipeThreshold
+                            if (atEdge != wasAtEdge) {
+                                wasAtEdge = atEdge
+                                if (atEdge) {
+                                    Haptics.strong(view)
+                                    Log.i("GlasNotesDev", "свайп #%d: %.0f px — порог пройден".format(note.id, offsetX))
+                                }
+                            }
+                        },
+                        onDragEnd = {
+                            Log.i("GlasNotesDev", "свайп #%d закончен: %.0f px".format(note.id, offsetX))
+                            val dx = offsetX
+                            offsetX = 0f
+                            lastStep = 0
+                            wasAtEdge = false
+                            when {
+                                dx > swipeThreshold -> {
+                                    Haptics.tick(view)
+                                    onToggle()
+                                }
+
+                                dx < -swipeThreshold -> {
+                                    Haptics.tick(view)
+                                    onDelete()
+                                }
+                            }
+                        },
+                    )
+                }.combinedClickable(
+                    onClick = {
+                        Haptics.tick(view)
+                        onToggle()
+                    },
+                    onLongClick = {
+                        Haptics.longPress(view)
+                        menuOpen = true
+                    },
                 ).padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -175,6 +240,7 @@ private fun NoteCard(
                 DropdownMenuItem(
                     text = { Text(name, fontSize = 15.sp) },
                     onClick = {
+                        Haptics.tick(view)
                         onCategory(id)
                         menuOpen = false
                     },
@@ -183,6 +249,7 @@ private fun NoteCard(
             DropdownMenuItem(
                 text = { Text("Удалить заметку", fontSize = 15.sp) },
                 onClick = {
+                    Haptics.longPress(view)
                     onDelete()
                     menuOpen = false
                 },

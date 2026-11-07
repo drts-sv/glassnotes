@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.gigapisar.model.ModelManager
@@ -282,6 +283,8 @@ private fun ScreenTab(
     accent: Color,
     onSelect: () -> Unit,
 ) {
+    // Один @Composable-вызов на уровне функции: внутри clickable читать LocalView нельзя.
+    val view = LocalView.current
     Text(
         text = title,
         color = if (selected) onAccent(accent) else Design.textSecondary.copy(alpha = 0.75f),
@@ -290,7 +293,10 @@ private fun ScreenTab(
             Modifier
                 .clip(RoundedCornerShape(10.dp))
                 .background(if (selected) accent else Design.glassRgb.copy(alpha = Design.cardAlpha))
-                .clickable(onClick = onSelect)
+                .clickable {
+                    Haptics.tick(view)
+                    onSelect()
+                }
                 .padding(horizontal = 14.dp, vertical = 8.dp),
     )
 }
