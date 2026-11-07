@@ -14,13 +14,23 @@ android {
         applicationId = "com.glassnotes.dev"
         minSdk = 26
         targetSdk = 35
-        versionCode = 42
-        versionName = "0.42-dev"
+        // Версии держим честные: прошлые правки версии молча не применились (файл стоял на 0.42-dev),
+        // поэтому все отчёты «0.4x-dev» были неверны — сборка на телефоне была одной и той же.
+        versionCode = 54
+        versionName = "0.54-dev"
+
+        // Телефону нужна одна архитектура: библиотека распознавания тянет четыре (arm64, arm32, x86,
+        // x86_64) и это ~50 МБ лишнего веса в APK. arm64-v8a хватает для нашего телефона.
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Для проверок release-сборку подписываем тем же отладочным ключом (он лежит в репозитории).
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
