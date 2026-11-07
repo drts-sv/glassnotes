@@ -80,14 +80,14 @@ class MainActivity : ComponentActivity() {
         intent?.getStringExtra("asr_file")?.let { name -> thread(name = "AsrFile") { recognizeWhole(name) } }
         intent?.getStringExtra("asr_replay")?.let { name -> thread(name = "AsrReplay") { replayThroughLive(name) } }
 
+        // Ревью показывается раз в сутки: при каждом запуске проверяем, что будильник стоит.
+        Reminders.scheduleReview(applicationContext)
+
+        // Проверку ставим ПОСЛЕ ежедневной: иначе она затирается тем же запросом PendingIntent.
         if (intent?.getBooleanExtra("review_test", false) == true) {
-            // Проверка утреннего ревью: показать через 15 секунд.
             Reminders.scheduleReview(applicationContext, System.currentTimeMillis() + 15_000L)
             Log.i(TAG, "review_test: ревью будет показано через 15 с")
         }
-
-        // Ревью показывается раз в сутки: при каждом запуске проверяем, что будильник стоит.
-        Reminders.scheduleReview(applicationContext)
 
         if (intent?.getBooleanExtra("remind_test", false) == true) {
             // Проверка напоминания: заметка на 20 секунд вперёд, категория «Работа» —
