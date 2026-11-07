@@ -66,6 +66,12 @@ class SpeechEngine(context: Context) {
     /** Текущая громкость речи 0..1 — для анимации записи (0, когда не пишем). */
     fun currentLevel(): Float = recorder?.level ?: 0f
 
+    /**
+     * Сырая громкость последнего куска записи (rms, 0..32767): в тихой комнате у адаптивного
+     * `level` почти нет динамики, поэтому полосы считаются по этому значению.
+     */
+    fun currentRms(): Int = recorder?.rms ?: 0
+
     /** Идёт ли сейчас запись с микрофона. */
     fun isCapturing(): Boolean = recorder != null
 

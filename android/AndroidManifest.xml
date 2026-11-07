@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.glassnotes.app"
-    android:versionCode="183"
-    android:versionName="2.73-giga">
+    android:versionCode="184"
+    android:versionName="2.74-giga">
 
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35" />
 

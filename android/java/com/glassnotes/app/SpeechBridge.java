@@ -55,13 +55,19 @@ public class SpeechBridge {
         return true;
     }
 
-    /** Громкость для анимации записи: {"level":0.42,"rec":true}. */
+    /**
+     * Громкость для анимации записи: {"level":0.42,"rms":1234,"rec":true}.
+     * `level` — адаптивный уровень (в тихой комнате он почти всегда высокий), `rms` — сырая громкость:
+     * полосы на экране считаются по ней, иначе фон подтягивался к голосу и полосы падали.
+     */
     @JavascriptInterface
     public String level() {
         try {
-            return "{\"level\":" + engine.currentLevel() + ",\"rec\":" + engine.isCapturing() + "}";
+            return "{\"level\":" + engine.currentLevel()
+                    + ",\"rms\":" + engine.currentRms()
+                    + ",\"rec\":" + engine.isCapturing() + "}";
         } catch (Throwable t) {
-            return "{\"level\":0,\"rec\":false}";
+            return "{\"level\":0,\"rms\":0,\"rec\":false}";
         }
     }
 
