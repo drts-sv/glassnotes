@@ -37,7 +37,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -58,27 +57,48 @@ private const val TAG = "GlasNotesDev"
 /** Ограничение 60 кадров в секунду (просьба владельца). */
 private const val FRAME_NS = 16_666_667L
 
-/** Сколько отсчётов держим в развёртке: 96 при 60 к/с ≈ 1.6 секунды истории. */
-private const val TRACE = 96
+/**
+ * Длина развёртки в отсчётах. 44 при 60 кадрах/с ≈ 0,73 секунды — просьба «график побыстрее»
+ * (до этого было 96 отсчётов ≈ 1,6 с, и развёртка тянулась слишком медленно).
+ */
+private const val TRACE = 44
 
-/** Высота поля развёртки: владелец просил «побольше по вертикали». */
+/** Высота поля развёртки. */
 private val WAVE_HEIGHT = 170.dp
 
 /**
- * Экран записи (этап 2 нативного пути) с развёрткой в духе осциллографа.
+ * Слой развёртки: сдвиг по фазе в отсчётах, масштаб амплитуды и прозрачность.
  *
- * Как нарисовано (просьба владельца: «рисуй огибающую и смежные ей вторичные огибающие, дающие
- * эффект осциллографа»):
- *  - лента между огибающей и её зеркалом заливается вертикальным градиентом — «послесвечение луча»;
- *  - главная огибающая рисуется линией, у неё есть зеркальная пара ниже центра — так сигнал читается
- *    как развёртка, а не как гистограмма;
- *  - вторичные огибающие идут следом с уменьшением масштаба и прозрачности (0.62 / 0.42 / 0.26
- *    и 0.34 / 0.22 / 0.14) и сдвинуты на пару пикселей вправо: получается затухающий «веер»,
- *    как остаточный след луча;
- *  - отсчёты сглажены скользящим средним (v[i−1] + 2v[i] + v[i+1]) / 4, иначе на 60 Гц видно ступеньки.
+ * Владелец просил «вторичные следы с изменённой фазой» — поэтому вторичные слои берут сигнал
+ * не уменьшенной копией, а с ЗАДЕРЖКОЙ (4 / 8 / 12 отсчётов ≈ 66 / 133 / 200 мс): на развёртке это
+ * читается как расходящиеся по фазе следы, а не как аккуратно уменьшенные копии.
+ */
+private data class TraceLayer(
+    val shiftSamples: Int,
+    val scale: Float,
+    val alpha: Float,
+    val widthDp: Float,
+)
+
+private val LAYERS =
+    listOf(
+        TraceLayer(0, 1.00f, 1.00f, 2.2f),
+        TraceLayer(4, 0.96f, 0.36f, 1.7f),
+        TraceLayer(8, 0.90f, 0.24f, 1.5f),
+        TraceLayer(12, 0.84f, 0.15f, 1.3f),
+    )
+
+/**
+ * Экран записи (этап 2 нативного пути) с симметричной развёрткой.
  *
- * Значения уровня (шкала, порог, кривая) — подобранные владельцем на живом микрофоне; ползунки
- * оставлены, чтобы менять их на месте, не пересобирая приложение.
+ * Просьбы владельца, учтённые здесь: «контур симметричный», «график побыстрее»,
+ * «вторичные следы с изменённой фазой». Отсюда:
+ *  - каждый слой рисуется ДВАЖДЫ — вверх и зеркально вниз, с одинаковой прозрачностью: контур
+ *    симметричен относительно центра;
+ *  - длина развёртки сокращена до 44 отсчётов (≈0,73 с), поэтому полотно бежит быстрее;
+ *  - вторичные слои сдвинуты по фазе (задержка 4/8/12 отсчётов) и чуть уменьшены по амплитуде,
+ *    разная толщина линии добавляет глубины;
+ *  - отсчёты сглажены скользящим средним (v[i−1] + 2v[i] + v[i+1]) / 4.
  */
 @Composable
 fun RecordingScreen(autoStart: Boolean = false) {
@@ -212,7 +232,6 @@ fun RecordingScreen(autoStart: Boolean = false) {
 
         Spacer(Modifier.height(22.dp))
 
-        // Развёртка.
         Canvas(
             modifier =
                 Modifier
@@ -223,7 +242,7 @@ fun RecordingScreen(autoStart: Boolean = false) {
             if (seen < 0) return@Canvas
 
             val values = trace.toList()
-            if (values.size < 3) return@Canvas
+            if (values.size < 8) return@Canvas
 
             val n = values.size
             val stepX = size.width / (n - 1).toFloat()
@@ -240,20 +259,30 @@ fun RecordingScreen(autoStart: Boolean = false) {
                 (a + 2f * b + c) / 4f
             }
 
-            fun tracePath(
+            /** Контур слоя: при sign = +1 идёт вверх, при −1 зеркально вниз. */
+            fun layerPath(
+                shift: Int,
+                sign: Float,
                 scale: Float,
-                offsetX: Float,
             ): Path {
                 val path = Path()
+                var started = false
                 for (i in 0 until n) {
-                    val x = i * stepX + offsetX
-                    val y = centerY - sm[i] * scale * maxAmp
-                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                    val j = i - shift
+                    if (j < 0) continue
+                    val x = i * stepX
+                    val y = centerY - sign * sm[j] * scale * maxAmp
+                    if (!started) {
+                        path.moveTo(x, y)
+                        started = true
+                    } else {
+                        path.lineTo(x, y)
+                    }
                 }
                 return path
             }
 
-            // Лента между огибающей и её зеркалом — «послесвечение».
+            // Лента между верхней и нижней огибающей — «послесвечение луча».
             val band = Path()
             for (i in 0 until n) {
                 val x = i * stepX
@@ -270,39 +299,34 @@ fun RecordingScreen(autoStart: Boolean = false) {
                     Brush.verticalGradient(
                         colors =
                             listOf(
-                                accent.copy(alpha = 0.06f),
-                                accent.copy(alpha = 0.26f),
-                                accent.copy(alpha = 0.06f),
+                                accent.copy(alpha = 0.05f),
+                                accent.copy(alpha = 0.20f),
+                                accent.copy(alpha = 0.05f),
                             ),
                         startY = 0f,
                         endY = size.height,
                     ),
             )
 
-            // Вторичные огибающие: затухающий «веер» следом за главной.
-            val scales = floatArrayOf(0.62f, 0.42f, 0.26f)
-            val alphas = floatArrayOf(0.34f, 0.22f, 0.14f)
-            for (k in scales.indices) {
+            // Слои: сначала вторичные (они позади), затем главная. Каждый — симметрично.
+            for (layer in LAYERS.reversed()) {
+                val stroke =
+                    Stroke(
+                        width = layer.widthDp * px,
+                        cap = StrokeCap.Round,
+                        join = StrokeJoin.Round,
+                    )
                 drawPath(
-                    path = tracePath(scales[k], (k + 1) * 2.5f * px),
-                    color = accent.copy(alpha = alphas[k]),
-                    style = Stroke(width = 1.6f * px, cap = StrokeCap.Round, join = StrokeJoin.Round),
+                    path = layerPath(layer.shiftSamples, -1f, layer.scale),
+                    color = accent.copy(alpha = layer.alpha),
+                    style = stroke,
+                )
+                drawPath(
+                    path = layerPath(layer.shiftSamples, 1f, layer.scale),
+                    color = accent.copy(alpha = layer.alpha),
+                    style = stroke,
                 )
             }
-
-            // Зеркальная пара главной огибающей — сигнал читается как развёртка.
-            drawPath(
-                path = tracePath(-1f, 0f),
-                color = accent.copy(alpha = 0.45f),
-                style = Stroke(width = 2.2f * px, cap = StrokeCap.Round, join = StrokeJoin.Round),
-            )
-
-            // Главная огибающая.
-            drawPath(
-                path = tracePath(1f, 0f),
-                color = accent,
-                style = Stroke(width = 2.2f * px, cap = StrokeCap.Round, join = StrokeJoin.Round),
-            )
         }
 
         Spacer(Modifier.height(24.dp))
@@ -374,7 +398,7 @@ fun RecordingScreen(autoStart: Boolean = false) {
         ParamSlider("Отзывчивость на тихий голос", curve, 0.40f..1.30f) { curve = it }
 
         Text(
-            text = "Развёртка: главная огибающая + зеркало + три вторичных следа (0.62/0.42/0.26).",
+            text = "Симметричный контур · развёртка 0,73 с · вторичные следы с задержкой 4/8/12 отсчётов",
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
             fontSize = 11.sp,
             modifier = Modifier.padding(top = 2.dp, bottom = 20.dp),
