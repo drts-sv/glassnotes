@@ -91,16 +91,22 @@ private val LAYERS =
         TraceLayer(12, 0.84f, 0.08f, 1.1f),
     )
 
-/** Категории как в боевом приложении (DEFAULT_CATEGORIES). */
+/** Категории с их цветами (DEFAULT_CATEGORIES боевого приложения). */
+private data class Category(val id: String, val name: String, val color: Color)
+
 private val CATEGORIES =
     listOf(
-        "important" to "Важно",
-        "work" to "Работа",
-        "personal" to "Личное",
-        "shopping" to "Покупки",
-        "other" to "Другое",
-        "dev" to "Разработка",
+        Category("important", "Важно", Color(0xFFFF3B30)),
+        Category("work", "Работа", Color(0xFF54A0FF)),
+        Category("personal", "Личное", Color(0xFFFF6B81)),
+        Category("shopping", "Покупки", Color(0xFFFF9F43)),
+        Category("other", "Другое", Color(0xFF888EA8)),
+        Category("dev", "Разработка", Color(0xFF4D6BFE)),
     )
+
+/** Развёртка в зелёно-синих тонах (просьба владельца). */
+private val TraceGreen = Color(0xFF34C759)
+private val TraceBlue = Color(0xFF54A0FF)
 
 /**
  * Экран записи в дизайне боевого приложения (этап 2 нативного пути).
@@ -301,17 +307,24 @@ fun RecordingScreen(autoStart: Boolean = false) {
                 drawPath(
                     path = band,
                     brush =
-                        Brush.verticalGradient(
+                        Brush.horizontalGradient(
                             colors =
                                 listOf(
-                                    accent.copy(alpha = 0.03f),
-                                    accent.copy(alpha = 0.12f),
-                                    accent.copy(alpha = 0.03f),
+                                    TraceGreen.copy(alpha = 0.05f),
+                                    TraceBlue.copy(alpha = 0.11f),
                                 ),
-                            startY = 0f,
-                            endY = size.height,
+                            startX = 0f,
+                            endX = size.width,
                         ),
                 )
+
+                /** Градиент зелёный → синий с нужной прозрачностью слоя. */
+                fun traceBrush(alpha: Float): Brush =
+                    Brush.horizontalGradient(
+                        colors = listOf(TraceGreen.copy(alpha = alpha), TraceBlue.copy(alpha = alpha)),
+                        startX = 0f,
+                        endX = size.width,
+                    )
 
                 for (layer in LAYERS.reversed()) {
                     val stroke =
@@ -322,12 +335,12 @@ fun RecordingScreen(autoStart: Boolean = false) {
                         )
                     drawPath(
                         path = layerPath(layer.shiftSamples, -1f, layer.scale),
-                        color = accent.copy(alpha = layer.alpha),
+                        brush = traceBrush(layer.alpha),
                         style = stroke,
                     )
                     drawPath(
                         path = layerPath(layer.shiftSamples, 1f, layer.scale),
-                        color = accent.copy(alpha = layer.alpha),
+                        brush = traceBrush(layer.alpha),
                         style = stroke,
                     )
                 }
@@ -342,7 +355,7 @@ fun RecordingScreen(autoStart: Boolean = false) {
 
             // Кнопка записи: красная полупрозрачная с рамкой и свечением по уровню.
             Box(
-                modifier = Modifier.padding(top = 16.dp).size(Design.fab),
+                modifier = Modifier.padding(top = 28.dp).size(Design.fab),
                 contentAlignment = Alignment.Center,
             ) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
@@ -391,7 +404,8 @@ fun RecordingScreen(autoStart: Boolean = false) {
                         // Микрофон: капсула, дужка и стойка.
                         val capW = 18.dp.toPx()
                         val capH = 32.dp.toPx()
-                        val capTop = (size.height - capH) / 2f - 4.dp.toPx()
+                        val lift = 9.dp.toPx()   // микрофон поднят внутри кнопки (просьба владельца)
+                        val capTop = (size.height - capH) / 2f - 4.dp.toPx() - lift
                         drawRoundRect(
                             color = glyphColor,
                             topLeft = Offset((size.width - capW) / 2f, capTop),
@@ -446,30 +460,25 @@ fun RecordingScreen(autoStart: Boolean = false) {
                 horizontalArrangement = Arrangement.spacedBy(Design.chipGap, Alignment.CenterHorizontally),
                 verticalArrangement = Arrangement.spacedBy(Design.chipGap),
             ) {
-                for ((id, name) in CATEGORIES) {
-                    val selected = selectedCategory == id
+                for (category in CATEGORIES) {
+                    val selected = selectedCategory == category.id
                     Box(
                         modifier =
                             Modifier
                                 .clip(RoundedCornerShape(Design.chipRadius))
-                                .background(
-                                    if (selected) {
-                                        accent.copy(alpha = 0.22f)
-                                    } else {
-                                        Design.glassRgb.copy(alpha = Design.cardAlpha)
-                                    },
-                                ).border(
-                                    width = 1.dp,
-                                    color = if (selected) accent else Design.border,
+                                .background(category.color.copy(alpha = if (selected) 0.45f else 0.24f))
+                                .border(
+                                    width = if (selected) 2.dp else 1.dp,
+                                    color = category.color.copy(alpha = if (selected) 1f else 0.55f),
                                     shape = RoundedCornerShape(Design.chipRadius),
                                 ).clickable {
-                                    selectedCategory = if (selected) null else id
+                                    selectedCategory = if (selected) null else category.id
                                     Log.i(TAG, "категория выбрана: %s".format(selectedCategory ?: "нет"))
                                 }.defaultMinSize(minHeight = Design.chipMinHeight)
                                 .padding(horizontal = Design.chipPadH, vertical = Design.chipPadV),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(text = name, color = Design.textPrimary, fontSize = Design.chipFont)
+                        Text(text = category.name, color = Design.textPrimary, fontSize = Design.chipFont)
                     }
                 }
             }

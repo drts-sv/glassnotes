@@ -63,13 +63,16 @@ object Design {
     val fab = 130.dp
     val fabIcon = 52.dp
 
-    /** .rec-cat-chip: padding 9px 15px, radius 12px, min-height 42px, font 0.9rem */
-    val chipPadH = 15.dp
-    val chipPadV = 9.dp
-    val chipRadius = 12.dp
-    val chipMinHeight = 42.dp
-    val chipGap = 9.dp
-    val chipFont = 14.4.sp
+    /**
+     * .rec-cat-chip: в приложении padding 9px 15px, radius 12px, min-height 42px, font 0.9rem.
+     * Владелец просил чипы крупнее — размеры увеличены примерно в 1.25 раза (42 → 52 px и т. д.).
+     */
+    val chipPadH = 20.dp
+    val chipPadV = 13.dp
+    val chipRadius = 14.dp
+    val chipMinHeight = 52.dp
+    val chipGap = 10.dp
+    val chipFont = 16.5.sp
 
     /**
      * Свечение кнопки. В приложении это box-shadow (`0 0 calc(10px + 30px*level) accent`), то есть
