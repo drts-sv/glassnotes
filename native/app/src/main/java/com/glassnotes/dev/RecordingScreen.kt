@@ -37,11 +37,13 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -50,35 +52,33 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 import ru.gigapisar.audio.AudioRecorder
 import java.util.Locale
-import kotlin.math.max
-import kotlin.math.min
-
-/** Полос 36 — как в проверенной WebView-сборке. */
-private const val BARS = 36
 
 private const val TAG = "GlasNotesDev"
 
-/** Ограничение 60 кадров в секунду: экран 120 Гц, для полос столько не нужно (просьба владельца). */
+/** Ограничение 60 кадров в секунду (просьба владельца). */
 private const val FRAME_NS = 16_666_667L
 
-/** Высота поля полос: владелец просил «побольше по вертикали». */
-private val WAVE_HEIGHT = 150.dp
+/** Сколько отсчётов держим в развёртке: 96 при 60 к/с ≈ 1.6 секунды истории. */
+private const val TRACE = 96
 
-/** Зазор между полосами: «повоздушнее». */
-private val WAVE_GAP = 3.dp
+/** Высота поля развёртки: владелец просил «побольше по вертикали». */
+private val WAVE_HEIGHT = 170.dp
 
 /**
- * Экран записи (этап 2 нативного пути).
+ * Экран записи (этап 2 нативного пути) с развёрткой в духе осциллографа.
  *
- * Полосы нарисованы ОТ ЦЕНТРА, как `recDraw` в боевом приложении: высота v*(h−6), минимум 3 px,
- * прозрачность 0.3+0.7v. Поле полос — 150 dp и зазор 3 dp: просьба «побольше по вертикали и повоздушнее».
+ * Как нарисовано (просьба владельца: «рисуй огибающую и смежные ей вторичные огибающие, дающие
+ * эффект осциллографа»):
+ *  - лента между огибающей и её зеркалом заливается вертикальным градиентом — «послесвечение луча»;
+ *  - главная огибающая рисуется линией, у неё есть зеркальная пара ниже центра — так сигнал читается
+ *    как развёртка, а не как гистограмма;
+ *  - вторичные огибающие идут следом с уменьшением масштаба и прозрачности (0.62 / 0.42 / 0.26
+ *    и 0.34 / 0.22 / 0.14) и сдвинуты на пару пикселей вправо: получается затухающий «веер»,
+ *    как остаточный след луча;
+ *  - отсчёты сглажены скользящим средним (v[i−1] + 2v[i] + v[i+1]) / 4, иначе на 60 Гц видно ступеньки.
  *
- * Ползунков три, и в них есть смысл:
- *  - «Чувствительность» — ширина шкалы в дБ: уже шкала, тем сильнее полосы отзываются на голос;
- *  - «Порог тишины» — насколько сигнал должен быть выше фона, чтобы рисовались полосы;
- *  - «Отзывчивость на тихий голос» — кривая: меньше 1 подтягивает слабые звуки.
- * Процентиль фона и затухание пика убраны из ползунков: они подобраны на живом микрофоне
- * (0.21 и 0.70) и менять их в быту незачем.
+ * Значения уровня (шкала, порог, кривая) — подобранные владельцем на живом микрофоне; ползунки
+ * оставлены, чтобы менять их на месте, не пересобирая приложение.
  */
 @Composable
 fun RecordingScreen(autoStart: Boolean = false) {
@@ -93,7 +93,7 @@ fun RecordingScreen(autoStart: Boolean = false) {
     var seconds by remember { mutableIntStateOf(0) }
     var fps by remember { mutableIntStateOf(0) }
     var rawRms by remember { mutableIntStateOf(0) }
-    val bars = remember { ArrayDeque<Float>(BARS + 1) }
+    val trace = remember { ArrayDeque<Float>(TRACE + 2) }
     var granted by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
@@ -146,8 +146,7 @@ fun RecordingScreen(autoStart: Boolean = false) {
         var lastDraw = 0L
         var fpsCount = 0
         var fpsStart = 0L
-        bars.clear()
-        repeat(BARS) { bars.addLast(0f) }
+        trace.clear()
 
         while (recording) {
             val now = withFrameNanos { it }
@@ -166,16 +165,16 @@ fun RecordingScreen(autoStart: Boolean = false) {
             rawRms = recorder.rms
             raw = wave.rawFromRms(rawRms)
             val shown = wave.value(raw, now)
-            bars.addLast(shown)
-            if (bars.size > BARS) bars.removeFirst()
+            trace.addLast(shown)
+            while (trace.size > TRACE) trace.removeFirst()
             level = shown
             version++
 
             if (frame % 60 == 0) {
                 Log.i(
                     TAG,
-                    "полосы: rms %d (сырая %.3f), метр %.3f, полоса %.3f, фон %.3f, пик %.3f, кадров %d"
-                        .format(rawRms, raw, recorder.level, shown, wave.floor, wave.peak, frame),
+                    "развёртка: rms %d (сырая %.3f), полоса %.3f, фон %.3f, пик %.3f, отсчётов %d"
+                        .format(rawRms, raw, shown, wave.floor, wave.peak, trace.size),
                 )
             }
         }
@@ -211,9 +210,9 @@ fun RecordingScreen(autoStart: Boolean = false) {
             modifier = Modifier.padding(top = 4.dp),
         )
 
-        Spacer(Modifier.height(26.dp))
+        Spacer(Modifier.height(22.dp))
 
-        // Поле полос: выше и с воздухом между полосами.
+        // Развёртка.
         Canvas(
             modifier =
                 Modifier
@@ -223,26 +222,90 @@ fun RecordingScreen(autoStart: Boolean = false) {
             val seen = version
             if (seen < 0) return@Canvas
 
-            val gap = WAVE_GAP.toPx()
-            val barWidth = ((size.width - gap * (BARS - 1)) / BARS).coerceAtLeast(2f)
-            val values = bars.toList()
-            val accent = Color(0xFF8AB4F8)
-            val radius = min(barWidth / 2f, 2f * density)
+            val values = trace.toList()
+            if (values.size < 3) return@Canvas
 
-            for (index in 0 until BARS) {
-                val value = values.getOrElse(index) { 0f }.coerceIn(0f, 1f)
-                val height = max(3f, value * (size.height - 6f))
-                val left = index * (barWidth + gap)
-                drawRoundRect(
-                    color = accent.copy(alpha = 0.3f + 0.7f * value),
-                    topLeft = Offset(left, (size.height - height) / 2f),
-                    size = Size(barWidth, height),
-                    cornerRadius = CornerRadius(radius, radius),
+            val n = values.size
+            val stepX = size.width / (n - 1).toFloat()
+            val centerY = size.height / 2f
+            val maxAmp = size.height / 2f - 2f
+            val accent = Color(0xFF8AB4F8)
+            val px = density
+
+            // Сглаживание скользящим средним: без него на 60 Гц видны ступеньки.
+            val sm = FloatArray(n) { i ->
+                val a = values.getOrElse(i - 1) { values[i] }
+                val b = values[i]
+                val c = values.getOrElse(i + 1) { values[i] }
+                (a + 2f * b + c) / 4f
+            }
+
+            fun tracePath(
+                scale: Float,
+                offsetX: Float,
+            ): Path {
+                val path = Path()
+                for (i in 0 until n) {
+                    val x = i * stepX + offsetX
+                    val y = centerY - sm[i] * scale * maxAmp
+                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                return path
+            }
+
+            // Лента между огибающей и её зеркалом — «послесвечение».
+            val band = Path()
+            for (i in 0 until n) {
+                val x = i * stepX
+                val y = centerY - sm[i] * maxAmp
+                if (i == 0) band.moveTo(x, y) else band.lineTo(x, y)
+            }
+            for (i in n - 1 downTo 0) {
+                band.lineTo(i * stepX, centerY + sm[i] * maxAmp)
+            }
+            band.close()
+            drawPath(
+                path = band,
+                brush =
+                    Brush.verticalGradient(
+                        colors =
+                            listOf(
+                                accent.copy(alpha = 0.06f),
+                                accent.copy(alpha = 0.26f),
+                                accent.copy(alpha = 0.06f),
+                            ),
+                        startY = 0f,
+                        endY = size.height,
+                    ),
+            )
+
+            // Вторичные огибающие: затухающий «веер» следом за главной.
+            val scales = floatArrayOf(0.62f, 0.42f, 0.26f)
+            val alphas = floatArrayOf(0.34f, 0.22f, 0.14f)
+            for (k in scales.indices) {
+                drawPath(
+                    path = tracePath(scales[k], (k + 1) * 2.5f * px),
+                    color = accent.copy(alpha = alphas[k]),
+                    style = Stroke(width = 1.6f * px, cap = StrokeCap.Round, join = StrokeJoin.Round),
                 )
             }
+
+            // Зеркальная пара главной огибающей — сигнал читается как развёртка.
+            drawPath(
+                path = tracePath(-1f, 0f),
+                color = accent.copy(alpha = 0.45f),
+                style = Stroke(width = 2.2f * px, cap = StrokeCap.Round, join = StrokeJoin.Round),
+            )
+
+            // Главная огибающая.
+            drawPath(
+                path = tracePath(1f, 0f),
+                color = accent,
+                style = Stroke(width = 2.2f * px, cap = StrokeCap.Round, join = StrokeJoin.Round),
+            )
         }
 
-        Spacer(Modifier.height(26.dp))
+        Spacer(Modifier.height(24.dp))
 
         Box(contentAlignment = Alignment.Center) {
             Box(
@@ -295,7 +358,7 @@ fun RecordingScreen(autoStart: Boolean = false) {
             )
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(22.dp))
 
         Text(
             text = "rms %d · сырая %.3f · фон %.3f · пик %.3f · полоса %.3f · %d к/с"
@@ -311,8 +374,7 @@ fun RecordingScreen(autoStart: Boolean = false) {
         ParamSlider("Отзывчивость на тихий голос", curve, 0.40f..1.30f) { curve = it }
 
         Text(
-            text = "Процентиль фона 0.21 и затухание пика 0.70 подобраны на живом микрофоне и спрятаны. " +
-                "Изменения ползунков уходят в лог (строка «НАСТРОЙКИ»).",
+            text = "Развёртка: главная огибающая + зеркало + три вторичных следа (0.62/0.42/0.26).",
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
             fontSize = 11.sp,
             modifier = Modifier.padding(top = 2.dp, bottom = 20.dp),
