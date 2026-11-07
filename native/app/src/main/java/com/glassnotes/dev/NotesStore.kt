@@ -65,7 +65,13 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
             }
 
         val id = writableDatabase.insert("notes", null, values)
-        if (id > 0) note.put("id", id)
+        if (id > 0) {
+            // Дописываем id в сам JSON: список берёт по нему ключ, а боевое приложение хранит id
+            // внутри заметки точно так же.
+            note.put("id", id)
+            val fix = ContentValues().apply { put("json", note.toString()) }
+            writableDatabase.update("notes", fix, "id = ?", arrayOf(id.toString()))
+        }
         return id
     }
 

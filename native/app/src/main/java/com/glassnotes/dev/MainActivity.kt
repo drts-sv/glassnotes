@@ -6,9 +6,31 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import ru.gigapisar.model.ModelManager
 import ru.gigapisar.speech.GigaAmOnnxRecognizer
 import java.io.File
@@ -65,7 +87,32 @@ class MainActivity : ComponentActivity() {
                         background = Color(0xFF101114),
                     ),
             ) {
-                RecordingScreen(autoStart = intent?.getBooleanExtra("record", false) == true)
+                val accent = remember { systemAccent(applicationContext) }
+                val store = remember { NotesStore(applicationContext) }
+                var showList by remember {
+                    mutableStateOf(intent?.getBooleanExtra("notes_screen", false) == true)
+                }
+
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Переключатель экранов. Пока две вкладки: запись и список заметок.
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .windowInsetsPadding(WindowInsets.systemBars)
+                                .padding(start = Design.padSide, end = Design.padSide, top = 8.dp, bottom = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        ScreenTab("Запись", !showList, accent) { showList = false }
+                        ScreenTab("Список", showList, accent) { showList = true }
+                    }
+
+                    if (showList) {
+                        NotesScreen(store, accent)
+                    } else {
+                        RecordingScreen(autoStart = intent?.getBooleanExtra("record", false) == true)
+                    }
+                }
             }
         }
     }
@@ -172,4 +219,25 @@ class MainActivity : ComponentActivity() {
         const val TAG = "GlasNotesDev"
         const val SPEECH_RMS = 300
     }
+}
+
+/** Вкладка переключателя экранов: выбранная залита акцентом, как вкладки в боевом приложении. */
+@androidx.compose.runtime.Composable
+private fun ScreenTab(
+    title: String,
+    selected: Boolean,
+    accent: Color,
+    onSelect: () -> Unit,
+) {
+    Text(
+        text = title,
+        color = if (selected) onAccent(accent) else Design.textSecondary.copy(alpha = 0.75f),
+        fontSize = 14.sp,
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (selected) accent else Design.glassRgb.copy(alpha = Design.cardAlpha))
+                .clickable(onClick = onSelect)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+    )
 }
