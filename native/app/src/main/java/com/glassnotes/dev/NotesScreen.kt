@@ -86,6 +86,8 @@ fun NotesScreen(
     var categoryFilter by remember { mutableStateOf<String?>(null) }
     var revision by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
+    // Отклик в диалоге: LocalView читаем здесь — внутри clickable его вызывать нельзя.
+    val screenView = LocalView.current
 
     // Правка текста заметки: открывается из меню по долгому нажатию.
     var editNote by remember { mutableStateOf<NoteRow?>(null) }
@@ -141,7 +143,7 @@ fun NotesScreen(
                     fontSize = 15.sp,
                     modifier =
                         Modifier.clickable {
-                            Haptics.tick(LocalView.current)
+                            Haptics.tick(screenView)
                             val value = editText.trim()
                             if (value.isNotEmpty() && value != note.text) {
                                 store.setText(note.id, value)
@@ -159,7 +161,7 @@ fun NotesScreen(
                     fontSize = 15.sp,
                     modifier =
                         Modifier.clickable {
-                            Haptics.tick(LocalView.current)
+                            Haptics.tick(screenView)
                             editNote = null
                         }.padding(8.dp),
                 )
