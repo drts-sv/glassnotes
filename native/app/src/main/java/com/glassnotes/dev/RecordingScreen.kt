@@ -70,6 +70,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.gigapisar.audio.AudioRecorder
 import ru.gigapisar.model.ModelManager
+import ru.gigapisar.speech.GigaAmOnnxRecognizer
 import java.util.Locale
 
 private const val TAG = "GlasNotesDev"
@@ -160,6 +161,9 @@ fun RecordingScreen(autoStart: Boolean = false) {
         )
     }
 
+    val cores = remember { Runtime.getRuntime().availableProcessors() }
+    var asrThreads by remember { mutableFloatStateOf(GigaAmOnnxRecognizer.intraOpThreads.toFloat()) }
+    var engineVersion by remember { mutableIntStateOf(0) }
     var dbWindow by remember { mutableFloatStateOf(wave.dbWindow) }
     var noiseGate by remember { mutableFloatStateOf(wave.noiseGate) }
     var curve by remember { mutableFloatStateOf(wave.curve) }
@@ -193,7 +197,8 @@ fun RecordingScreen(autoStart: Boolean = false) {
     // Прогрев распознавания делаем ОДИН раз при открытии экрана: модель тяжёлая (224 МБ),
     // и в боевом приложении она тоже поднимается заранее. Ключ `recording` тут не годится —
     // эффект успевал запуститься дважды и создавал два движка (в логе это два «готово»).
-    LaunchedEffect(Unit) {
+    // `engineVersion` меняется, когда владелец выбрал другое число потоков: движок пересоздаётся.
+    LaunchedEffect(engineVersion) {
         withContext(Dispatchers.IO) {
             try {
                 val detector = vad ?: SileroVad(context).also { vad = it }
@@ -579,6 +584,21 @@ fun RecordingScreen(autoStart: Boolean = false) {
                     ParamSlider("Чувствительность (шкала, дБ)", dbWindow, accent, 40f..90f) { dbWindow = it }
 ParamSlider("Порог тишины", noiseGate, accent, 0f..0.30f) { noiseGate = it }
 ParamSlider("Отзывчивость на тихий голос", curve, accent, 0.40f..1.30f) { curve = it }
+                    ParamSlider(
+                        label = "Потоки распознавания (всего ядер: %d; движок пересоздаётся)".format(cores),
+                        value = asrThreads,
+                        accent = accent,
+                        range = 1f..cores.toFloat(),
+                        onChange = { asrThreads = it },
+                        onFinished = {
+                            val chosen = asrThreads.toInt().coerceIn(1, cores)
+                            GigaAmOnnxRecognizer.intraOpThreads = chosen
+                            Log.i(TAG, "потоки распознавания выбраны: %d, движок пересоздаётся".format(chosen))
+                            transcriber?.close()
+                            transcriber = null
+                            engineVersion++
+                        },
+                    )
                     if (!geometryLogged) {
                         LaunchedEffect(Unit) {
                             geometryLogged = true
@@ -607,6 +627,7 @@ private fun ParamSlider(
     value: Float,
     accent: Color,
     range: ClosedFloatingPointRange<Float>,
+    onFinished: (() -> Unit)? = null,
     onChange: (Float) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
@@ -625,6 +646,7 @@ private fun ParamSlider(
         Slider(
             value = value,
             onValueChange = onChange,
+            onValueChangeFinished = onFinished,
             valueRange = range,
             modifier = Modifier.fillMaxWidth(),
         )

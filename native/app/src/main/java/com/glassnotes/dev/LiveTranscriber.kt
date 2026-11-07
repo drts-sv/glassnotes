@@ -33,9 +33,11 @@ class LiveTranscriber(
         Executors.newSingleThreadExecutor { runnable ->
             Thread(
                 {
-                    // Распознавание — фоновая работа: без этого система не отдаёт кадры экрану,
-                    // пока считает сеть, и развёртка дёргается.
-                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                    // Приоритет ОБЫЧНЫЙ. Фоновый приоритет (THREAD_PRIORITY_BACKGROUND) замерен
+                    // на телефоне: вторая фраза распознавалась 1601 мс вместо 433 мс — экран
+                    // становился ровнее, но распознавание втрое медленнее, а владелец просил скорости.
+                    // Плавность теперь регулируется числом потоков (ползунок на экране).
+                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT)
                     runnable.run()
                 },
                 "LiveAsr",

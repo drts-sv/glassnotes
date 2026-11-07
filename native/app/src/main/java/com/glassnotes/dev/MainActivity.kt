@@ -39,6 +39,13 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "=== самопроверка полос закончена ===")
         }
 
+        intent?.getIntExtra("threads", 0)?.let { count ->
+            if (count > 0) {
+                GigaAmOnnxRecognizer.intraOpThreads = count
+                Log.i(TAG, "потоки распознавания заданы из интента: %d".format(count))
+            }
+        }
+
         intent?.getStringExtra("asr_file")?.let { name -> thread(name = "AsrFile") { recognizeWhole(name) } }
         intent?.getStringExtra("asr_replay")?.let { name -> thread(name = "AsrReplay") { replayThroughLive(name) } }
 

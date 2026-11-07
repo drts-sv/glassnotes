@@ -127,12 +127,22 @@ class GigaAmOnnxRecognizer(
         val options =
             OrtSession.SessionOptions()
 
-        // Потоков не больше трёх. Было «ядер − 1»: на 8-ядерном телефоне распознавание забирало
-        // 7 потоков, и кадры развёртки проседали — владелец это и заметил как «немного тормозит».
-        // Распознавание от этого чуть медленнее, но экран остаётся живым.
+        // Число потоков — настройка владельца (ползунок «Потоки распознавания»). 0 значит
+        // «по умолчанию»: почти все ядра, потому что владелец просил скорости. Больше потоков —
+        // быстрее распознавание и выше шанс подёргивания развёртки; меньше — плавнее экран.
         val cores = Runtime.getRuntime().availableProcessors()
-        options.setIntraOpNumThreads((cores / 2).coerceIn(2, 3))
+        // Замер на телефоне (Pixel 10a, 8 ядер), вторая фраза 4,7 с: 3 потока — 1103 мс,
+        // 7 потоков — 15 514 мс. Больше потоков ЗАМЕТНО МЕДЛЕННЕЕ: onnxruntime тратит время
+        // на синхронизацию пула, а не на вычисления. Поэтому по умолчанию 3, а не «ядра минус один».
+        val threads =
+            if (intraOpThreads > 0) {
+                intraOpThreads.coerceIn(1, cores)
+            } else {
+                (cores / 2).coerceIn(2, 3)
+            }
+        options.setIntraOpNumThreads(threads)
         options.setInterOpNumThreads(1)
+        android.util.Log.i("GlasNotesDev", "сессия распознавания: потоков %d из %d".format(threads, cores))
 
         val created =
             environment.createSession(
@@ -611,7 +621,14 @@ class GigaAmOnnxRecognizer(
         }
     }
 
-    private companion object {
+    companion object {
+
+        /** Сколько потоков давать сессии распознавания: 0 - по умолчанию (ядер минус один). */
+
+        @Volatile
+
+        var intraOpThreads: Int = 0
+
         /** A little under the model's 25 seconds, so a cut at the limit never trips it. */
         const val CHUNK_SECONDS = 24.0
     }
