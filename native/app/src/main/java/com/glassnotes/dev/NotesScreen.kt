@@ -237,12 +237,23 @@ fun NotesScreen(
                             val value = editText.trim()
                             if (value.isNotEmpty()) {
                                 // Дата: сначала точный формат, затем разбор естественной речи.
-                                val cal =
-                                    runCatching {
-                                        java.util.Calendar.getInstance().apply { time = whenFormat.parse(editWhen.trim())!! }
-                                    }.getOrNull() ?: parseDateNlu(editWhen).datetime
-                                val at = cal?.timeInMillis
-                                val allDay =
+                                // Явные типы: цепочка runCatching/elvis не выводилась и валила сборку.
+                                val whenText = editWhen.trim()
+                                var cal: java.util.Calendar? = null
+                                if (whenText.isNotEmpty()) {
+                                    try {
+                                        val d = whenFormat.parse(whenText)
+                                        if (d != null) {
+                                            cal = java.util.Calendar.getInstance()
+                                            cal.time = d
+                                        }
+                                    } catch (t: Throwable) {
+                                        cal = null
+                                    }
+                                    if (cal == null) cal = parseDateNlu(whenText).datetime
+                                }
+                                val at: Long? = cal?.timeInMillis
+                                val allDay: Boolean =
                                     cal != null &&
                                         cal.get(java.util.Calendar.HOUR_OF_DAY) == 0 &&
                                         cal.get(java.util.Calendar.MINUTE) == 0
