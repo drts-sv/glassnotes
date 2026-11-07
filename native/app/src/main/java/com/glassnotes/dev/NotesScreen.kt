@@ -152,11 +152,8 @@ private fun NoteCard(
     // Свайп: вправо — выполнено, влево — удалить (как в боевом приложении). Карточка при этом просто
     // сдвигается, никаких цветных подложек за ней не появляется.
     var offsetX by remember { mutableFloatStateOf(0f) }
-    val density = LocalDensity.current
-    val swipeThreshold = with(density) { 60.dp.toPx() }
-    val hapticStep = with(density) { 20.dp.toPx() }
+    val swipeThreshold = with(LocalDensity.current) { 60.dp.toPx() }
     val view = LocalView.current
-    var lastStep by remember { mutableIntStateOf(0) }
     var wasAtEdge by remember { mutableStateOf(false) }
     // Оттенок карточки — по категории заметки. Непрозрачность заливки (0.22) и рамки (0.9)
     // оставлены такими же, как были у «важной» заметки в примере: стиль и прозрачность не меняем,
@@ -180,39 +177,42 @@ private fun NoteCard(
                 ).offset { IntOffset(offsetX.roundToInt(), 0) }
                 .pointerInput(note.id) {
                     detectHorizontalDragGestures(
+                        onDragStart = {
+                            // Один короткий отклик в начале сдвига. Пошаговой трещотки быть не должно:
+                            // владелец сказал «слишком часто брянчит», и системные жесты делают так же.
+                            Haptics.tick(view)
+                        },
                         onHorizontalDrag = { change, dragAmount ->
                             change.consume()
                             offsetX += dragAmount
-                            // Щелчок каждые 20 dp сдвига — как трещотка под пальцем.
-                            val step = (offsetX / hapticStep).toInt()
-                            if (step != lastStep) {
-                                lastStep = step
-                                Haptics.tick(view)
-                            }
-                            // Дошли до порога — отклик сильнее, ровно один раз на пересечение.
+                            // Единственный отклик по ходу сдвига — на переходе порога и обратно.
                             val atEdge = kotlin.math.abs(offsetX) > swipeThreshold
                             if (atEdge != wasAtEdge) {
                                 wasAtEdge = atEdge
-                                if (atEdge) {
-                                    Haptics.strong(view)
-                                    Log.i("GlasNotesDev", "свайп #%d: %.0f px — порог пройден".format(note.id, offsetX))
-                                }
+                                Haptics.threshold(view, atEdge)
+                                Log.i(
+                                    "GlasNotesDev",
+                                    "свайп #%d: %.0f px — порог %s".format(
+                                        note.id,
+                                        offsetX,
+                                        if (atEdge) "пройден" else "не пройден",
+                                    ),
+                                )
                             }
                         },
                         onDragEnd = {
-                            Log.i("GlasNotesDev", "свайп #%d закончен: %.0f px".format(note.id, offsetX))
                             val dx = offsetX
                             offsetX = 0f
-                            lastStep = 0
                             wasAtEdge = false
+                            Log.i("GlasNotesDev", "свайп #%d закончен: %.0f px".format(note.id, dx))
                             when {
                                 dx > swipeThreshold -> {
-                                    Haptics.tick(view)
+                                    Haptics.confirm(view)
                                     onToggle()
                                 }
 
                                 dx < -swipeThreshold -> {
-                                    Haptics.tick(view)
+                                    Haptics.destructive(view)
                                     onDelete()
                                 }
                             }

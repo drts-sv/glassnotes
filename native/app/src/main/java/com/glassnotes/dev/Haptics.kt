@@ -5,29 +5,65 @@ import android.view.HapticFeedbackConstants
 import android.view.View
 
 /**
- * Тактильная отдача. Через системные константы `HapticFeedbackConstants`, а не через вибратор:
+ * Тактильная отдача. Всё через системные `HapticFeedbackConstants`, а не через вибратор:
  * так отклик уважает системную настройку вибрации и не требует разрешения VIBRATE.
- * Значения подобраны по смыслу боевого приложения (`HapticBridge.haptic('click')` на свайп).
+ *
+ * Как это делают другие (проверено 07.11.2026):
+ * - Android, принципы отклика (developer.android.com/develop/ui/views/haptics/haptics-principles):
+ *   отклик — на дискретные события, и прямо назван хорошим моментом «пересечение порога в жесте,
+ *   когда смахивание будет выполнено». Там же предупреждение: самая частая ошибка — откликов
+ *   СЛИШКОМ много, а «buzzy» вибрации надо избегать.
+ * - Крупные приложения (YouTube, Instagram, TikTok) при pull-to-refresh дают ОДИН отклик на
+ *   достижении порога, а не серию.
+ * - В самой платформе для этого жеста есть точные константы: `GESTURE_THRESHOLD_ACTIVATE`
+ *   (перешли порог) и `GESTURE_THRESHOLD_DEACTIVATE` (вернулись под порог).
+ *
+ * Отсюда отклик при свайпе: короткий — в начале сдвига, переход порога (и обратно) — платформенными
+ * константами, действие по отпусканию — подтверждение (удаление — сильнее). Пошаговой трещотки нет.
  */
 object Haptics {
-    /** Короткий отклик: нажатие, шаг при сдвигании карточки. */
-    fun tick(view: View) {
-        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+    private fun perform(
+        view: View,
+        constant: Int,
+    ) = view.performHapticFeedback(constant)
+
+    /** Короткий отклик: нажатие, чипы, начало сдвига карточки. */
+    fun tick(view: View) = perform(view, HapticFeedbackConstants.KEYBOARD_TAP)
+
+    /**
+     * Перешли порог смахивания (`active = true`) или вернулись под него (`false`).
+     * На Android 11+ — специальные константы платформы, ниже — короткий щелчок.
+     */
+    fun threshold(
+        view: View,
+        active: Boolean,
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            perform(
+                view,
+                if (active) {
+                    HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE
+                } else {
+                    HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE
+                },
+            )
+        } else if (active) {
+            perform(view, HapticFeedbackConstants.CLOCK_TICK)
+        }
     }
 
-    /** Сдвинули до края — отклик сильнее. */
-    fun strong(view: View) {
-        val constant =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                HapticFeedbackConstants.CONFIRM
-            } else {
-                HapticFeedbackConstants.LONG_PRESS
-            }
-        view.performHapticFeedback(constant)
+    /** Действие выполнено: отметили выполненным — подтверждение. */
+    fun confirm(view: View) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            perform(view, HapticFeedbackConstants.CONFIRM)
+        } else {
+            perform(view, HapticFeedbackConstants.LONG_PRESS)
+        }
     }
+
+    /** Удаление — отклик сильнее: действие необратимое. */
+    fun destructive(view: View) = perform(view, HapticFeedbackConstants.CONTEXT_CLICK)
 
     /** Долгое нажатие (открылось меню). */
-    fun longPress(view: View) {
-        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-    }
+    fun longPress(view: View) = perform(view, HapticFeedbackConstants.LONG_PRESS)
 }
