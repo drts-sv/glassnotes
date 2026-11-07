@@ -55,6 +55,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Полноэкранно, но строка состояния остаётся: прячем только панель навигации,
+        // вернуть её можно свайпом от края.
+        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
+            hide(androidx.core.view.WindowInsetsCompat.Type.navigationBars())
+            systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+
         // Уведомления на Android 13+ требуют отдельного разрешения (оно не входит в микрофон).
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
@@ -217,29 +224,16 @@ class MainActivity : ComponentActivity() {
             ) {
                 val accent = remember { systemAccent(applicationContext) }
                 val store = remember { NotesStore(applicationContext) }
-                var showList by remember {
-                    mutableStateOf(intent?.getBooleanExtra("notes_screen", false) == true)
+                // Тестовых вкладок «Запись/Список» больше нет: главный экран — список заметок,
+                // а запись открывается кнопкой микрофона в правом нижнем углу.
+                var recordingOpen by remember {
+                    mutableStateOf(intent?.getBooleanExtra("record", false) == true)
                 }
 
-                Column(modifier = Modifier.fillMaxSize()) {
-                    // Переключатель экранов. Пока две вкладки: запись и список заметок.
-                    Row(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .windowInsetsPadding(WindowInsets.systemBars)
-                                .padding(start = Design.padSide, end = Design.padSide, top = 8.dp, bottom = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        ScreenTab("Запись", !showList, accent) { showList = false }
-                        ScreenTab("Список", showList, accent) { showList = true }
-                    }
-
-                    if (showList) {
-                        NotesScreen(store, accent)
-                    } else {
-                        RecordingScreen(autoStart = intent?.getBooleanExtra("record", false) == true)
-                    }
+                if (recordingOpen) {
+                    RecordingScreen(autoStart = true, onClose = { recordingOpen = false })
+                } else {
+                    NotesScreen(store = store, accent = accent, onRecord = { recordingOpen = true })
                 }
             }
         }
