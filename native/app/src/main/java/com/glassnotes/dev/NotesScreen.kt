@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -184,7 +185,9 @@ fun NotesScreen(
     }
 }
 
-/** Карточка заголовка: кольцо прогресса, название, три кнопки, отборы и вкладки. */
+/** Карточка заголовка: кольцо прогресса, название, три кнопки, отборы и вкладки.
+ *  FlowRow (облако чипов) в Compose пока экспериментальный — отсюда OptIn. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HeaderCard(
     notes: List<NoteRow>,
