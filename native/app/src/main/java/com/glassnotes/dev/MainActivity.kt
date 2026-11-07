@@ -71,6 +71,34 @@ class MainActivity : ComponentActivity() {
         intent?.getStringExtra("asr_file")?.let { name -> thread(name = "AsrFile") { recognizeWhole(name) } }
         intent?.getStringExtra("asr_replay")?.let { name -> thread(name = "AsrReplay") { replayThroughLive(name) } }
 
+        if (intent?.getBooleanExtra("edit_test", false) == true) {
+            // Проверка правок без ручных нажатий: те же методы, что вызывают тап и меню.
+            val store = NotesStore(applicationContext)
+            val note = store.recent(1).firstOrNull()?.let { parseNote(it) }
+            if (note == null) {
+                Log.i(TAG, "edit_test: заметок нет")
+            } else {
+                Log.i(TAG, "edit_test до: #%d %s, категории %s".format(note.id, note.status, note.categoryIds))
+                store.setStatus(note.id, "done")
+                Log.i(TAG, "edit_test отметили выполненной: %s".format(store.recent(1).firstOrNull()?.let { parseNote(it) }?.status))
+                // Ставим ИМЕННО другое значение: если бы метод не работал, категория осталась бы прежней.
+                val wasCategory = note.categoryIds.firstOrNull() ?: "нет"
+                val newCategory = if (wasCategory == "personal") "work" else "personal"
+                store.setCategory(note.id, newCategory)
+                Log.i(
+                    TAG,
+                    "edit_test смена категории: было %s, стало %s".format(
+                        wasCategory,
+                        store.recent(1).firstOrNull()?.let { parseNote(it) }?.categoryIds,
+                    ),
+                )
+                store.setStatus(note.id, "active")
+                val probe = store.add("Заметка для проверки удаления")
+                store.remove(probe)
+                Log.i(TAG, "edit_test удаление: добавили id=%d, удалили, заметок теперь %d".format(probe, store.count()))
+            }
+        }
+
         if (intent?.getBooleanExtra("notes_dump", false) == true) {
             val store = NotesStore(applicationContext)
             val total = store.count()

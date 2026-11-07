@@ -75,6 +75,43 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
         return id
     }
 
+    /** Пометить выполненной или вернуть в работу. */
+    fun setStatus(
+        id: Long,
+        status: String,
+    ) {
+        patch(id) { it.put("status", status) }
+    }
+
+    /** Сменить категорию заметки (цвет карточки меняется сразу). */
+    fun setCategory(
+        id: Long,
+        categoryId: String?,
+    ) {
+        patch(id) { note ->
+            note.put("categoryIds", JSONArray().apply { categoryId?.let { put(it) } })
+        }
+    }
+
+    fun remove(id: Long) {
+        writableDatabase.delete("notes", "id = ?", arrayOf(id.toString()))
+    }
+
+    /** Правка заметки: читаем JSON, меняем, пишем обратно — как это делает боевое приложение. */
+    private fun patch(
+        id: Long,
+        change: (JSONObject) -> Unit,
+    ) {
+        val json =
+            readableDatabase
+                .rawQuery("SELECT json FROM notes WHERE id = ?", arrayOf(id.toString()))
+                .use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null } ?: return
+        val note = JSONObject(json)
+        change(note)
+        val values = ContentValues().apply { put("json", note.toString()) }
+        writableDatabase.update("notes", values, "id = ?", arrayOf(id.toString()))
+    }
+
     fun count(): Int =
         readableDatabase.rawQuery("SELECT COUNT(*) FROM notes", null).use { cursor ->
             if (cursor.moveToFirst()) cursor.getInt(0) else 0

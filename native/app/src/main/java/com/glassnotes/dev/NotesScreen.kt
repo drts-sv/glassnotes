@@ -1,7 +1,9 @@
 package com.glassnotes.dev
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,10 +20,13 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,7 +48,10 @@ import android.util.Log
 fun NotesScreen(store: NotesStore, accent: androidx.compose.ui.graphics.Color) {
     var notes by remember { mutableStateOf<List<NoteRow>>(emptyList()) }
 
-    LaunchedEffect(Unit) {
+    // Пересборка списка после правки: меняем счётчик — LaunchedEffect перечитывает базу.
+    var revision by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(revision) {
         val rows = store.recent(100).mapNotNull { parseNote(it) }
         notes = rows
         // Логируем содержимое: в Compose список снаружи не прочитать, а проверять надо данными.
@@ -99,18 +107,39 @@ fun NotesScreen(store: NotesStore, accent: androidx.compose.ui.graphics.Color) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(notes, key = { it.id }) { note ->
-                    NoteCard(note, accent)
+                    NoteCard(
+                        note = note,
+                        accent = accent,
+                        onToggle = {
+                            store.setStatus(note.id, if (note.done) "active" else "done")
+                            revision++
+                        },
+                        onCategory = { category ->
+                            store.setCategory(note.id, category)
+                            revision++
+                        },
+                        onDelete = {
+                            store.remove(note.id)
+                            revision++
+                        },
+                    )
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NoteCard(
     note: NoteRow,
     accent: androidx.compose.ui.graphics.Color,
+    onToggle: () -> Unit,
+    onCategory: (String) -> Unit,
+    onDelete: () -> Unit,
 ) {
+    // Меню правки открывается ДОЛГИМ нажатием и рисуется вне карточки — вид карточки не меняется.
+    var menuOpen by remember { mutableStateOf(false) }
     // Оттенок карточки — по категории заметки. Непрозрачность заливки (0.22) и рамки (0.9)
     // оставлены такими же, как были у «важной» заметки в примере: стиль и прозрачность не меняем,
     // меняется только цвет — он берётся у категории.
@@ -130,8 +159,35 @@ private fun NoteCard(
                     } else {
                         Design.glassRgb.copy(alpha = Design.cardAlpha)
                     },
+                ).combinedClickable(
+                    onClick = onToggle,
+                    onLongClick = { menuOpen = true },
                 ).padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            Text(
+                text = "Категория",
+                color = Design.textSecondary.copy(alpha = 0.7f),
+                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 2.dp),
+            )
+            CATEGORY_NAMES.forEach { (id, name) ->
+                DropdownMenuItem(
+                    text = { Text(name, fontSize = 15.sp) },
+                    onClick = {
+                        onCategory(id)
+                        menuOpen = false
+                    },
+                )
+            }
+            DropdownMenuItem(
+                text = { Text("Удалить заметку", fontSize = 15.sp) },
+                onClick = {
+                    onDelete()
+                    menuOpen = false
+                },
+            )
+        }
         Text(
             text = note.text,
             color = Design.textPrimary.copy(alpha = if (note.done) 0.5f else 1f),
@@ -158,7 +214,18 @@ private fun NoteCard(
     }
 }
 
-/** Непрозрачность оттенка и рамки — как в примере (у «важной» заметки). */
+/** Названия категорий — те же, что в боевом приложении. */
+private val CATEGORY_NAMES =
+    listOf(
+        "important" to "Важное",
+        "work" to "Работа",
+        "personal" to "Личное",
+        "shopping" to "Покупки",
+        "other" to "Другое",
+        "dev" to "Разработка",
+    )
+
+/** Непрозрачность оттенка — как в примере. */
 private const val CATEGORY_TINT_ALPHA = 0.22f
 
 /** Цвета категорий — те же, что в боевом приложении (DEFAULT_CATEGORIES). */
