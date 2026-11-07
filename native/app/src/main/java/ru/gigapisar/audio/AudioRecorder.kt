@@ -58,6 +58,13 @@ class AudioRecorder(
         private set
 
     /**
+     * Колбэк на каждый прочитанный кусок PCM (добавлено для распознавания «на ходу»:
+     * нарезка по паузам и отправка готовых кусков в распознаватель).
+     */
+    @Volatile
+    var onChunk: ((ByteArray, Int) -> Unit)? = null
+
+    /**
      * Определитель речи (нейросетевой VAD, см. `SpeechDetector`). Если его нет,
      * авто-стоп в приложении работает по уровню rms — как раньше.
      */
@@ -197,6 +204,7 @@ class AudioRecorder(
                         level = meter.levelOf(buffer, count)
                         rms = rmsOf(buffer, count)
                         feedDetector(buffer, count)
+                        onChunk?.invoke(buffer, count)
                     }
 
                     count == AudioRecord.ERROR_DEAD_OBJECT -> {

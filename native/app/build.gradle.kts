@@ -14,8 +14,8 @@ android {
         applicationId = "com.glassnotes.dev"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.11-dev"
+        versionCode = 16
+        versionName = "0.16-dev"
     }
 
     buildTypes {
@@ -45,4 +45,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.core:core-ktx:1.13.1")
+
+    // Распознавание речи: тот же движок, что в боевом приложении (GigaAM v3 через onnxruntime).
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }

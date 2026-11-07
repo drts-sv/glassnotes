@@ -39,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -58,11 +59,16 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
+import com.glassnotes.app.SileroVad
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import ru.gigapisar.audio.AudioRecorder
+import ru.gigapisar.model.ModelManager
 import java.util.Locale
 
 private const val TAG = "GlasNotesDev"
@@ -138,6 +144,11 @@ fun RecordingScreen(autoStart: Boolean = false) {
     var fps by remember { mutableIntStateOf(0) }
     var rawRms by remember { mutableIntStateOf(0) }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
+
+    /** Распознанные фразы: новые снизу, старые бледнее — тикер под развёрткой. */
+    val phrases = remember { mutableStateListOf<String>() }
+    var transcriber by remember { mutableStateOf<LiveTranscriber?>(null) }
+    var vad by remember { mutableStateOf<SileroVad?>(null) }
     var showDev by remember { mutableStateOf(false) }
     var geometryLogged by remember { mutableStateOf(false) }
     val trace = remember { ArrayDeque<Float>(TRACE + 2) }
@@ -178,8 +189,36 @@ fun RecordingScreen(autoStart: Boolean = false) {
         }
     }
 
+    // Прогрев распознавания делаем ОДИН раз при открытии экрана: модель тяжёлая (224 МБ),
+    // и в боевом приложении она тоже поднимается заранее. Ключ `recording` тут не годится —
+    // эффект успевал запуститься дважды и создавал два движка (в логе это два «готово»).
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            try {
+                val detector = vad ?: SileroVad(context).also { vad = it }
+                recorder.detector = detector
+                val live = transcriber ?: LiveTranscriber(context, ModelManager(context)) { text ->
+                    phrases.add(text)
+                }.also { transcriber = it }
+                recorder.onChunk = { bytes, count -> live.onChunk(bytes, count, recorder.speechProb) }
+                Log.i(TAG, "распознавание на ходу готово (VAD доступен: %s)".format(detector.available))
+            } catch (t: Throwable) {
+                Log.e(TAG, "не удалось поднять распознавание", t)
+            }
+        }
+    }
+
+    // Остановка записи: забрать остаток звука в распознавание.
+    LaunchedEffect(recording) {
+        if (!recording) transcriber?.finish()
+    }
+
     DisposableEffect(Unit) {
-        onDispose { recorder.cancel() }
+        onDispose {
+            transcriber?.close()
+            vad?.close()
+            recorder.cancel()
+        }
     }
 
     LaunchedEffect(recording) {
@@ -346,6 +385,30 @@ fun RecordingScreen(autoStart: Boolean = false) {
                 }
             }
 
+            // Тикер распознанных фраз: новые снизу, старые бледнее — «бегущая строка» под развёрткой.
+            if (phrases.isNotEmpty()) {
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(64.dp)
+                            .padding(top = 6.dp),
+                    verticalArrangement = Arrangement.Bottom,
+                ) {
+                    val tail = phrases.takeLast(4)
+                    tail.forEachIndexed { index, phrase ->
+                        val age = (tail.size - 1 - index).toFloat()
+                        Text(
+                            text = phrase,
+                            color = Design.textPrimary.copy(alpha = (0.60f - 0.15f * age).coerceAtLeast(0.12f)),
+                            fontSize = 13.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+
             Text(
                 text = if (recording) "Слушаю…" else "Готов записывать",
                 color = Design.textPrimary,
@@ -441,6 +504,7 @@ fun RecordingScreen(autoStart: Boolean = false) {
                             .clickable {
                                 if (recording) {
                                     recorder.stop()
+                                    transcriber?.finish()
                                     recording = false
                                     Log.i(TAG, "запись остановлена на %d с".format(seconds))
                                 } else if (granted) {
