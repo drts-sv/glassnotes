@@ -219,6 +219,8 @@ fun RecordingScreen(
 
     val trace = remember { ArrayDeque<Float>(TRACE + 2) }
 
+    var transcriber by remember { mutableStateOf<LiveTranscriber?>(null) }
+
     /** Остановить запись и сохранить заметку: путь общий для кнопки и авто-остановки. */
     fun stopAndSave() {
         recorder.stop()
@@ -255,7 +257,6 @@ fun RecordingScreen(
             }
         }
     }
-    var transcriber by remember { mutableStateOf<LiveTranscriber?>(null) }
     var vad by remember { mutableStateOf<SileroVad?>(null) }
     var showDev by remember { mutableStateOf(false) }
     var geometryLogged by remember { mutableStateOf(false) }
