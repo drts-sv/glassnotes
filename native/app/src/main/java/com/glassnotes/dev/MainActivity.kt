@@ -90,6 +90,34 @@ class MainActivity : ComponentActivity() {
         Reminders.scheduleReview(applicationContext)
 
         // Проверку ставим ПОСЛЕ ежедневной: иначе она затирается тем же запросом PendingIntent.
+        if (intent?.getBooleanExtra("seed_test", false) == true) {
+            // Проверочные заметки: по одной на каждый отбор главного экрана.
+            val store = NotesStore(applicationContext)
+            val now = System.currentTimeMillis()
+            fun at(
+                days: Int,
+                hour: Int,
+            ): Long =
+                java.util.Calendar.getInstance(java.util.Locale("ru")).apply {
+                    timeInMillis = now
+                    add(java.util.Calendar.DAY_OF_MONTH, days)
+                    set(java.util.Calendar.HOUR_OF_DAY, hour)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                }.timeInMillis
+            store.add("Вчерашнее дело", "work", at(-1, 10))
+            store.add("Сегодня в обед", "personal", at(0, 13))
+            store.add("Завтра в 10:00 утра позвонить маме", null, at(1, 10))
+            store.add("Через три дня купить хлеб", "shopping", at(3, 9))
+            store.add("Через десять дней отчёт", "work", at(10, 12))
+            store.add("Важное: оплатить счета", "important", null)
+            store.add("Без срока", null, null)
+            val doneId = store.add("Выполненное дело", "work", null)
+            store.setStatus(doneId, "done")
+            Log.i(TAG, "seed_test: проверочных заметок добавлено, всего %d".format(store.count()))
+        }
+
         if (intent?.getBooleanExtra("list_test", false) == true) {
             // Проверка отборов главного экрана на реальной базе: те же правила, что видит экран.
             val store = NotesStore(applicationContext)
