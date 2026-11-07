@@ -622,7 +622,9 @@ private fun NoteCard(
                 }.combinedClickable(
                     onClick = {
                         Haptics.tick(view)
-                        onToggle()
+                        // Как в боевом приложении: нажатие открывает лист заметки.
+                        // «Выполнено» осталось на свайпе вправо и в меню по долгому нажатию.
+                        onEdit()
                     },
                     onLongClick = {
                         Haptics.longPress(view)
@@ -647,6 +649,14 @@ private fun NoteCard(
                     },
                 )
             }
+            DropdownMenuItem(
+                text = { Text(if (note.status == "done") "Вернуть в активные" else "Отметить выполненным", fontSize = 15.sp) },
+                onClick = {
+                    Haptics.tick(view)
+                    onToggle()
+                    menuOpen = false
+                },
+            )
             DropdownMenuItem(
                 text = { Text("Изменить текст", fontSize = 15.sp) },
                 onClick = {
