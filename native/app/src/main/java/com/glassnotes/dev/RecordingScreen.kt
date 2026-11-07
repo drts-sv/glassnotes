@@ -170,6 +170,8 @@ fun RecordingScreen(
     /** Формат времени напоминания для логов. */
     val CLOCK_TEXT = java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US)
 
+    val scope = rememberCoroutineScope()
+
     /** Сохранить надиктованное одной заметкой и очистить сеанс. Пустой текст не сохраняем. */
     fun saveSession() {
         val text = session.toString().trim()
@@ -655,8 +657,21 @@ fun RecordingScreen(
                                     transcriber?.finish()
                                     recording = false
                                     Log.i(TAG, "запись остановлена на %d с".format(seconds))
-                                    // Одна заметка за сеанс, затем закрываем окно записи.
-                                    saveSession(); onClose()
+                                    // ВАЖНО: finish() только просит движок доработать остаток, а фразы
+                                    // приходят ещё какое-то время. Раньше заметка сохранялась сразу и
+                                    // выходила пустой — теперь ждём, пока распознавание успокоится.
+                                    scope.launch {
+                                        val engine = transcriber
+                                        var waited = 0
+                                        while (engine?.busy == true && waited < 15000) {
+                                            delay(200)
+                                            waited += 200
+                                        }
+                                        delay(300)
+                                        Log.i(TAG, "распознавание успокоилось через %d мс".format(waited))
+                                        saveSession()
+                                        onClose()
+                                    }
                                 } else if (granted) {
                                     recording = recorder.start()
                                     Log.i(TAG, "запись запущена: %s".format(recording))

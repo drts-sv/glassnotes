@@ -369,12 +369,14 @@ private fun HeaderCard(
             }
         }
 
+        // Как в боевом приложении: две ровные половины на всю ширину, без «таблеток»,
+        // поля 11 px и шрифт 0.76rem (12 px) полужирный — поэтому вкладки невысокие.
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(1.dp),
         ) {
-            TabButton("Активные", active, tab == "active", accent) { onTab("active") }
-            TabButton("Выполнено", done, tab == "done", accent) { onTab("done") }
+            TabButton("Активные", active, tab == "active", accent, Modifier.weight(1f)) { onTab("active") }
+            TabButton("Выполнено", done, tab == "done", accent, Modifier.weight(1f)) { onTab("done") }
         }
     }
 }
@@ -469,27 +471,34 @@ private fun TabButton(
     count: Int,
     selected: Boolean,
     accent: Color,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val view = LocalView.current
     Row(
         modifier =
-            Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (selected) accent.copy(alpha = Design.cardAlpha) else Design.glassRgb.copy(alpha = 0.5f))
+            modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (selected) accent.copy(alpha = Design.cardAlpha) else Design.glassRgb.copy(alpha = 0.4f))
                 .clickable {
                     Haptics.tick(view)
                     onClick()
-                }.padding(horizontal = 12.dp, vertical = 8.dp),
+                }.padding(horizontal = 4.dp, vertical = 11.dp),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = title, color = Design.textPrimary, fontSize = 14.sp)
-        Spacer(Modifier.width(6.dp))
+        Text(
+            text = title,
+            color = Design.textPrimary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.width(5.dp))
         Text(
             text = count.toString(),
             color = if (selected) Design.textPrimary else Design.textSecondary.copy(alpha = 0.8f),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }
