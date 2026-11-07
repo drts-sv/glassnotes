@@ -844,7 +844,7 @@ private fun NoteCard(
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                text = note.time.ifBlank { "—" },
+                text = whenText(note).ifBlank { note.time.ifBlank { "—" } },
                 color = Design.textSecondary.copy(alpha = 0.8f),
                 fontSize = 12.sp,
             )
@@ -870,4 +870,38 @@ private fun NoteCard(
             }
         }
     }
+}
+
+
+/**
+ * Подпись даты в карточке — как formatDateTimeDisplay в боевом приложении: «Сегодня», «Завтра»,
+ * «Послезавтра», иначе «9 нояб.» (с годом, если год другой). У дела на весь день часа нет,
+ * поэтому показываем только день; у дела с часом — день и время.
+ */
+private fun whenText(note: NoteRow): String {
+    val at = note.datetime ?: return ""
+    fun midnight(ms: Long): Long =
+        java.util.Calendar.getInstance().apply {
+            timeInMillis = ms
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    val days = ((midnight(at) - midnight(System.currentTimeMillis())) / 86400000L).toInt()
+    val label =
+        when (days) {
+            0 -> "Сегодня"
+            1 -> "Завтра"
+            2 -> "Послезавтра"
+            else -> {
+                val sameYear =
+                    java.util.Calendar.getInstance().apply { timeInMillis = at }.get(java.util.Calendar.YEAR) ==
+                        java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+                val fmt = if (sameYear) "d MMM" else "d MMM yyyy"
+                java.text.SimpleDateFormat(fmt, java.util.Locale("ru")).format(java.util.Date(at)).replace(".", "")
+            }
+        }
+    if (note.allDay) return label
+    return label + " " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(at))
 }
