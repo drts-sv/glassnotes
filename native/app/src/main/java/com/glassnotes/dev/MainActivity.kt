@@ -72,6 +72,11 @@ class MainActivity : ComponentActivity() {
         intent?.getStringExtra("asr_file")?.let { name -> thread(name = "AsrFile") { recognizeWhole(name) } }
         intent?.getStringExtra("asr_replay")?.let { name -> thread(name = "AsrReplay") { replayThroughLive(name) } }
 
+        if (intent?.getBooleanExtra("date_test", false) == true) {
+            // Таблица разбора дат и времени: сверяем с эталоном, снятым с боевого приложения.
+            dateSelfTest().lines().forEach { line -> Log.i(TAG, "date_test: $line") }
+        }
+
         if (intent?.getBooleanExtra("settings_probe", false) == true) {
             // Пишем набор значений и читаем его обратно — тем же кодом, что и экран записи.
             val store = NotesStore(applicationContext)
