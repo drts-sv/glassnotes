@@ -77,6 +77,7 @@ class ReminderReceiver : BroadcastReceiver() {
         val builder =
             NotificationCompat.Builder(context, Reminders.CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_popup_reminder)
+                .setLargeIcon(appIcon(context))
                 .setContentTitle("🌅 Утреннее ревью")
                 .setContentText(summary)
                 .setStyle(
@@ -99,6 +100,17 @@ class ReminderReceiver : BroadcastReceiver() {
             ),
         )
     }
+
+
+    /** Иконка приложения для крупной картинки уведомления (как largeIcon в боевом). */
+    private fun appIcon(context: Context): android.graphics.Bitmap? =
+        try {
+            val info = context.packageManager.getApplicationInfo(context.packageName, 0)
+            android.graphics.BitmapFactory.decodeResource(context.resources, info.icon)
+        } catch (t: Throwable) {
+            Log.w(TAG, "иконка приложения для уведомления не получена", t)
+            null
+        }
 
     private fun dismiss(
         context: Context,

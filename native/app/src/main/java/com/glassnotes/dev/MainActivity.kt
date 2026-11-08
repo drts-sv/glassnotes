@@ -71,6 +71,17 @@ class MainActivity : ComponentActivity() {
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
 
+        // Настройки из базы — сразу при запуске: плотность стекла, затемнение, размытие фона,
+        // времена периодов дня, разбор фразы и число потоков распознавания.
+        runCatching {
+            val settingsStore = NotesStore(applicationContext)
+            AppSettings.applyAll(settingsStore)
+            NluOptions.voiceCategory = AppSettings.flag(settingsStore, AppSettings.VOICE_CATEGORY, true)
+            NluOptions.fillerCleanup = AppSettings.flag(settingsStore, AppSettings.FILLER, true)
+            settingsStore.getKv("threads")?.trim()?.toIntOrNull()?.let { if (it > 0) GigaAmOnnxRecognizer.intraOpThreads = it }
+            Log.i(TAG, "настройки загружены: стекло %.2f, затемнение %.2f".format(Design.cardAlpha, Design.veil))
+        }
+
         if (intent?.getBooleanExtra("wave_test", false) == true) {
             Log.i(TAG, "=== самопроверка полос запущена из интента ===")
             WaveSelfTest.run()

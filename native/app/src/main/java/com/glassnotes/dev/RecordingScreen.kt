@@ -785,24 +785,6 @@ fun RecordingScreen(
                         fontSize = 11.sp,
                         modifier = Modifier.padding(top = 8.dp),
                     )
-                    ParamSlider("Чувствительность (шкала, дБ)", dbWindow, accent, 40f..90f) { dbWindow = it }
-ParamSlider("Порог тишины", noiseGate, accent, 0f..0.30f) { noiseGate = it }
-ParamSlider("Отзывчивость на тихий голос", curve, accent, 0.40f..1.30f) { curve = it }
-                    ParamSlider(
-                        label = "Потоки распознавания (всего ядер: %d; движок пересоздаётся)".format(cores),
-                        value = asrThreads,
-                        accent = accent,
-                        range = 1f..cores.toFloat(),
-                        onChange = { asrThreads = it },
-                        onFinished = {
-                            val chosen = asrThreads.toInt().coerceIn(1, cores)
-                            GigaAmOnnxRecognizer.intraOpThreads = chosen
-                            Log.i(TAG, "потоки распознавания выбраны: %d, движок пересоздаётся".format(chosen))
-                            transcriber?.close()
-                            transcriber = null
-                            engineVersion++
-                        },
-                    )
                     if (!geometryLogged) {
                         LaunchedEffect(Unit) {
                             geometryLogged = true

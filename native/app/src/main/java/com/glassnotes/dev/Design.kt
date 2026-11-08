@@ -26,16 +26,16 @@ import android.app.WallpaperManager
  */
 object Design {
     /** --glass-rgb: 28 30 42 */
-    val glassRgb = Color(0xFF1C1E2A)
+    val glassRgb = Color(0xFF13151D)
 
     /** --app-veil: 0.35 — матовая подложка под всем приложением. */
-    const val veil = 0.35f
+    var veil = 0.35f
 
     /** --card-alpha: 0.55 */
-    const val cardAlpha = 0.55f
+    var cardAlpha = 0.80f
 
     /** --bg-blur: 14px */
-    val backdropBlur = 14.dp
+    var backdropBlur = 14.dp
 
     /** --surface-border: rgba(255,255,255,0.10) */
     val border = Color(0x1AFFFFFF)

@@ -36,15 +36,7 @@ private val DEFAULT_CATEGORIES: List<Pair<String, String>> =
  * Времена суток по умолчанию (DEFAULT_TIME_SETTINGS из index.html). В боевом приложении их
  * задаёт пользователь в настройках; здесь взяты штатные значения.
  */
-private val PERIOD_TIMES: Map<String, Pair<Int, Int>> =
-    mapOf(
-        "morning" to (9 to 0),
-        "beforeNoon" to (11 to 0),
-        "noon" to (13 to 0),
-        "afterNoon" to (15 to 0),
-        "evening" to (18 to 0),
-        "night" to (21 to 0),
-    )
+// Времена периодов дня приходят из настроек: см. TimeDefaults (AppSettings.kt).
 
 /** Регистронезависимый регекс с юникод-фолдингом: для кириллицы нужен (?u), иначе /i бесполезен. */
 private fun ci(source: String): Regex = Regex("(?iu)$source")
@@ -352,9 +344,9 @@ private fun sameDate(
 fun parseDateNlu(
     rawText: String,
     now: Long = System.currentTimeMillis(),
-    voiceCategory: Boolean = true,
+    voiceCategory: Boolean = NluOptions.voiceCategory,
 ): ParsedNote {
-    var working = normalizeOrdinalDates(cleanDictation(stripCommandWords(rawText)))
+    var working = normalizeOrdinalDates(cleanDictation(stripCommandWords(rawText), NluOptions.fillerCleanup))
     var lower = working.lowercase(RU)
     val nowCal = Calendar.getInstance(RU).apply { timeInMillis = now }
 
@@ -561,7 +553,7 @@ fun parseDateNlu(
         if (!timeResult) {
             for ((re, key) in PERIODS) {
                 val pm = re.find(lower) ?: continue
-                val t = PERIOD_TIMES.getValue(key)
+                val t = TimeDefaults.map.getValue(key)
                 timeResult = true
                 timeHours = t.first
                 timeMinutes = t.second

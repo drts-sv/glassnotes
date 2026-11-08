@@ -33,6 +33,21 @@ object Categories {
         return name.first().uppercase()
     }
 
+    /**
+     * Значок категории для крупной иконки уведомления (раньше рисовалась первая буква названия).
+     * Цвет остаётся за категорией — по нему и различаются уведомления в шторке.
+     */
+    fun glyph(categoryId: String?): String =
+        when (categoryId) {
+            "important" -> "❗"
+            "work" -> "💼"
+            "personal" -> "👤"
+            "shopping" -> "🛒"
+            "dev" -> "💻"
+            "other" -> "📌"
+            else -> "🔔"
+        }
+
     /** Название категории для заголовка уведомления. */
     fun title(categoryId: String?): String? = names.firstOrNull { it.first == categoryId }?.second
 }

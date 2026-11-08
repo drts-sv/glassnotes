@@ -210,15 +210,18 @@ object Reminders {
             }
         val radius = sizePx / 2f
         canvas.drawCircle(radius, radius, radius, fill)
-        val letter =
+        // Вместо буквы — значок категории (владелец: «в оповещениях вместо буквы добавь значки»).
+        // Цветной эмодзи рисуется той же кистью; по вертикали центрируем по границам глифа.
+        val glyph =
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = android.graphics.Color.WHITE
-                textSize = sizePx * 0.5f
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                textSize = sizePx * 0.58f
                 textAlign = Paint.Align.CENTER
             }
-        val baseline = radius - (letter.descent() + letter.ascent()) / 2f
-        canvas.drawText(Categories.letter(categoryId), radius, baseline, letter)
+        val mark = Categories.glyph(categoryId)
+        val bounds = android.graphics.Rect()
+        glyph.getTextBounds(mark, 0, mark.length, bounds)
+        val baseline = radius - (bounds.top + bounds.bottom) / 2f
+        canvas.drawText(mark, radius, baseline, glyph)
         return bitmap
     }
 }

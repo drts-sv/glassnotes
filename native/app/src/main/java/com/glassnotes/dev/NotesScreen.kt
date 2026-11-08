@@ -63,6 +63,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -135,7 +136,34 @@ fun NotesScreen(
     }
 
     if (settingsOpen) {
-        SettingsScreen(store = store, accent = accent, onClose = { settingsOpen = false })
+        SettingsScreen(store = store, accent = accent, onClose = {
+            settingsOpen = false
+            // Плотность стекла могла поменяться — перечитываем заметки, чтобы шапка и карточки
+            // перерисовались с новыми значениями.
+            revision++
+        })
+        return
+    }
+
+    // Утреннее ревью: один раз в день, после времени из настроек (reviewShownFor, как в боевом).
+    var reviewOpen by remember { mutableStateOf(false) }
+    // Решаем один раз за запуск: иначе ревью всплывает повторно, пока список догружается.
+    var reviewChecked by remember { mutableStateOf(false) }
+    LaunchedEffect(notes.size) {
+        if (!reviewChecked && notes.isNotEmpty()) {
+            reviewChecked = true
+            if (AppSettings.reviewDue(store)) {
+                reviewOpen = true
+                Log.i("GlasNotesDev", "утреннее ревью: показываем список дел")
+            }
+        }
+    }
+    if (reviewOpen) {
+        MorningReviewScreen(notes = notes, accent = accent, onClose = {
+            reviewOpen = false
+            store.setKv(AppSettings.REVIEW_SHOWN_FOR, AppSettings.todayKey())
+            Log.i("GlasNotesDev", "утреннее ревью закрыто, до завтра не показываем")
+        })
         return
     }
 
@@ -461,8 +489,13 @@ private fun Modifier.androidxShadow(): Modifier =
         spotColor = Color.Black,
     )
 
-/** Карточка заголовка: кольцо прогресса, название, три кнопки, отборы и вкладки.
- *  FlowRow (облако чипов) в Compose пока экспериментальный — отсюда OptIn. */
+/**
+ * Карточка заголовка — числа сняты с боевого `.header` (index.html), а не на глаз:
+ * стекло 0.75 плотности, рамка 1px surface-border, радиус 22, поля 0.15rem/0.6rem,
+ * логотип 28 с эмодзи 15 и кольцом 2.5, название 1.6rem/700/-0.3, кнопки 28 с иконками 16,
+ * вкладки — нижняя полоса карточки заподлицо с её краями.
+ * FlowRow (облако чипов) в Compose пока экспериментальный — отсюда OptIn.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HeaderCard(
@@ -487,37 +520,60 @@ private fun HeaderCard(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(Design.glassRgb.copy(alpha = Design.cardAlpha))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .clip(RoundedCornerShape(22.dp))
+                .background(Design.glassRgb.copy(alpha = Design.cardAlpha * 0.75f))
+                .border(1.dp, Design.border, RoundedCornerShape(22.dp)),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            LogoRing(done = done, total = notes.size, accent = accent)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = "GlasNote",
-                color = Design.textPrimary,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Medium,
-            )
-            Spacer(Modifier.width(6.dp))
-            // Счётчик активных дел — как значок рядом с названием в боевом приложении.
-            Text(
-                text = active.toString(),
-                color = Design.textSecondary.copy(alpha = 0.8f),
-                fontSize = 13.sp,
-            )
-            Spacer(Modifier.weight(1f))
-            HeaderButton(R.drawable.ic_search, searchOpen, onToggleSearch)
+        // .header-main: поля 0.6rem по бокам, 8px сверху, зазор 7px между элементами.
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 9.6.dp, end = 9.6.dp, top = 10.4.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LogoBadge(done = done, total = notes.size, accent = accent)
+            // .title: 1.6rem, 700, межбуквенный -0.3; внутри — счётчик .badge (зазор 10).
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "GlasNote",
+                    color = Design.textPrimary,
+                    fontSize = 25.6.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.3).sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Box(
+                    modifier =
+                        Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(accent.copy(alpha = 0.2f))
+                            .padding(horizontal = 10.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        text = active.toString(),
+                        color = Color.White.copy(alpha = 0.82f),
+                        fontSize = 9.6.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
+            // Порядок кнопок боевого: фильтр → поиск → настройки.
             HeaderButton(R.drawable.ic_filter, filtersOpen, onToggleFilters)
+            HeaderButton(R.drawable.ic_search, searchOpen, onToggleSearch)
             HeaderButton(R.drawable.ic_settings, false, onOpenSettings)
         }
 
-        // Вкладки и отборы — только когда открыт отбор: в боевом вторая строка шапки свёрнута,
-        // поэтому карточка заголовка компактная.
+        // Чипы отбора появляются только при открытом отборе — как вторая строка шапки.
         if (filtersOpen) {
             FlowRow(
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 9.6.dp, end = 9.6.dp, top = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -530,52 +586,70 @@ private fun HeaderCard(
             }
         }
 
-        // Как в боевом приложении: две ровные половины на всю ширину, без «таблеток»,
-        // поля 11 px и шрифт 0.76rem (12 px) полужирный — поэтому вкладки невысокие.
+        // .tabs: полоса стекла 0.55 на всю ширину карточки, зазор 1px, низ повторяет радиус 21.
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .background(Design.glassRgb.copy(alpha = 0.55f)),
             horizontalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             TabButton("Активные", active, tab == "active", accent, Modifier.weight(1f)) { onTab("active") }
-            TabButton("Выполнено", done, tab == "done", accent, Modifier.weight(1f)) { onTab("done") }
+            TabButton("Выполнено", done, tab == "done", accent, Modifier.weight(1f), doneTab = true) {
+                onTab("done")
+            }
         }
     }
 }
 
-/** Кольцо прогресса: доля выполненных дел (как logo-ring в боевом приложении). */
+/**
+ * .app-logo: круг 28, стекло 0.06, рамка 1px, эмодзи 🎙️ 15 и кольцо прогресса (stroke 2.5).
+ * Кольцо показывает долю выполненных дел — как в боевом приложении (updateLogoRing).
+ */
 @Composable
-private fun LogoRing(
+private fun LogoBadge(
     done: Int,
     total: Int,
     accent: Color,
 ) {
     val fraction = if (total == 0) 0f else done.toFloat() / total
-    Canvas(modifier = Modifier.size(22.dp)) {
-        val stroke = 2.6.dp.toPx()
-        val inset = stroke / 2
-        drawArc(
-            color = Design.textSecondary.copy(alpha = 0.35f),
-            startAngle = -90f,
-            sweepAngle = 360f,
-            useCenter = false,
-            topLeft = Offset(inset, inset),
-            size = Size(size.width - stroke, size.height - stroke),
-            style = Stroke(width = stroke, cap = StrokeCap.Round),
-        )
-        if (fraction > 0f) {
-            drawArc(
-                color = accent,
-                startAngle = -90f,
-                sweepAngle = 360f * fraction,
-                useCenter = false,
-                topLeft = Offset(inset, inset),
-                size = Size(size.width - stroke, size.height - stroke),
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
+    Box(
+        modifier =
+            Modifier
+                .size(28.dp)
+                .clip(RoundedCornerShape(50))
+                .background(Color.White.copy(alpha = 0.06f))
+                .border(1.dp, Design.border, RoundedCornerShape(50)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = "🎙️", fontSize = 15.sp)
+        Canvas(modifier = Modifier.size(28.dp)) {
+            val stroke = 2.5.dp.toPx()
+            val radius = (size.minDimension - stroke) / 2f
+            val center = Offset(size.width / 2f, size.height / 2f)
+            drawCircle(
+                color = Design.textSecondary.copy(alpha = 0.25f),
+                radius = radius,
+                center = center,
+                style = Stroke(width = stroke),
             )
+            if (fraction > 0f) {
+                drawArc(
+                    color = accent,
+                    startAngle = -90f,
+                    sweepAngle = 360f * fraction,
+                    useCenter = false,
+                    topLeft = Offset(center.x - radius, center.y - radius),
+                    size = Size(radius * 2f, radius * 2f),
+                    style = Stroke(width = stroke, cap = StrokeCap.Round),
+                )
+            }
         }
     }
 }
 
+/** .header-btn: круг 28, стекло 0.06 (выбранный — 0.16), рамка 1px, иконка SVG 16. */
 @Composable
 private fun HeaderButton(
     icon: Int,
@@ -586,19 +660,21 @@ private fun HeaderButton(
     Box(
         modifier =
             Modifier
-                .padding(start = 4.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (selected) Design.textPrimary.copy(alpha = 0.12f) else Color.Transparent)
+                .size(28.dp)
+                .clip(RoundedCornerShape(50))
+                .background(Color.White.copy(alpha = if (selected) 0.16f else 0.06f))
+                .border(1.dp, Design.border, RoundedCornerShape(50))
                 .clickable {
                     Haptics.tick(view)
                     onClick()
-                }.padding(horizontal = 7.dp, vertical = 6.dp),
+                },
+        contentAlignment = Alignment.Center,
     ) {
         Image(
             painter = painterResource(icon),
             contentDescription = null,
             colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.textPrimary.copy(alpha = 0.9f)),
-            modifier = Modifier.size(19.dp),
+            modifier = Modifier.size(16.dp),
         )
     }
 }
@@ -633,14 +709,23 @@ private fun TabButton(
     selected: Boolean,
     accent: Color,
     modifier: Modifier = Modifier,
+    doneTab: Boolean = false,
     onClick: () -> Unit,
 ) {
     val view = LocalView.current
+    // .tab: padding 11x4, 0.76rem/600, без своего радиуса (низ карточки задаёт радиус),
+    // активная — сплошной акцент, «Выполнено» — зелёный #1f8f4d под белый текст.
     Row(
         modifier =
             modifier
-                .clip(RoundedCornerShape(6.dp))
-                .background(if (selected) accent.copy(alpha = Design.cardAlpha) else Design.glassRgb.copy(alpha = 0.4f))
+                .clip(RoundedCornerShape(0.dp))
+                .background(
+                    when {
+                        !selected -> Color.Transparent
+                        doneTab -> Color(0xFF1F8F4D)
+                        else -> accent
+                    },
+                )
                 .clickable {
                     Haptics.tick(view)
                     onClick()
@@ -651,15 +736,15 @@ private fun TabButton(
         Text(
             text = title,
             color = Design.textPrimary,
-            fontSize = 12.sp,
+            fontSize = 12.16.sp,
             fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.width(5.dp))
         Text(
             text = count.toString(),
-            color = if (selected) Design.textPrimary else Design.textSecondary.copy(alpha = 0.8f),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
+            color = Design.textPrimary.copy(alpha = if (selected) 0.85f else 0.6f),
+            fontSize = 11.2.sp,
+            fontWeight = FontWeight.Normal,
         )
     }
 }
