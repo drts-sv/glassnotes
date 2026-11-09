@@ -62,6 +62,19 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -86,7 +99,10 @@ import kotlin.math.roundToInt
  * Вид карточек заметок не меняется: он одобрен владельцем (стекло, радиус 14, поля 14×12,
  * оттенок по категории, свайпы вправо/влево, меню по долгому нажатию).
  */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
+    ExperimentalMaterial3Api::class,
+)
 @Composable
 fun NotesScreen(
     store: NotesStore,
@@ -117,8 +133,14 @@ fun NotesScreen(
     // Лист заметки: открывается нажатием на карточку. Меняются текст, дата/время, категория —
     // как в боевом приложении (там это openNoteSheet + openEdit).
     var editNote by remember { mutableStateOf<NoteRow?>(null) }
+    // Просмотр заметки (noteSheet боевого): карточка с текстом и кнопками
+    // «Изменить»/«Удалить». Редактор открывается только по «Изменить».
+    var sheetNote by remember { mutableStateOf<NoteRow?>(null) }
     var editText by remember { mutableStateOf("") }
-    var editWhen by remember { mutableStateOf("") }
+    // Дата и время — отдельными значениями, как в боевом editDate/editTime: дата без
+    // времени = «весь день», время без даты ставит сегодняшнюю дату.
+    var editDate by remember { mutableStateOf<LocalDate?>(null) }
+    var editTime by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var editCats by remember { mutableStateOf(emptySet<String>()) }
     /** «Сегодня»/«Завтра» — дата без часа: показывает так же, как «весь день» в поле. */
     fun dayText(plusDays: Int): String {
@@ -182,152 +204,397 @@ fun NotesScreen(
         return
     }
 
-    editNote?.let { note ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { editNote = null },
-            title = { Text("Текст заметки", color = Design.textPrimary, fontSize = 16.sp) },
-            text = {
-                Column {
-                    Text("Когда", color = Design.textSecondary.copy(alpha = 0.8f), fontSize = 12.sp)
-                    Spacer(Modifier.height(4.dp))
-                    BasicTextField(
-                        value = editWhen,
-                        onValueChange = { editWhen = it },
-                        singleLine = true,
-                        textStyle = TextStyle(color = Design.textPrimary, fontSize = 15.sp),
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Design.glassRgb.copy(alpha = 0.5f))
-                                .padding(10.dp),
+    sheetNote?.let { note ->
+        Dialog(onDismissRequest = { sheetNote = null }) {
+            Column(
+                modifier =
+                    Modifier
+                        .fillMaxWidth(0.94f)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(Design.glassRgb)
+                        .padding(18.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = WhenInput.display(note.datetime, note.allDay).ifEmpty { "Без даты" },
+                        color = if (note.datetime == null) Design.textSecondary else Design.textPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("Сегодня" to 0, "Завтра" to 1).forEach { (title, days) ->
-                            Text(
-                                text = title,
-                                color = accent.copy(alpha = 0.9f),
-                                fontSize = 12.sp,
-                                modifier =
-                                    Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(Design.glassRgb.copy(alpha = 0.45f))
-                                        .clickable {
-                                            Haptics.tick(screenView)
-                                            editWhen = dayText(days)
-                                        }.padding(horizontal = 8.dp, vertical = 4.dp),
-                            )
-                        }
-                        Text(
-                            text = "Без даты",
-                            color = Design.textSecondary.copy(alpha = 0.9f),
-                            fontSize = 12.sp,
-                            modifier =
-                                Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Design.glassRgb.copy(alpha = 0.45f))
-                                    .clickable {
-                                        Haptics.tick(screenView)
-                                        editWhen = ""
-                                    }.padding(horizontal = 8.dp, vertical = 4.dp),
-                        )
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-                    Text("Текст", color = Design.textSecondary.copy(alpha = 0.8f), fontSize = 12.sp)
-                    Spacer(Modifier.height(4.dp))
-                    BasicTextField(
-                        value = editText,
-                        onValueChange = { editText = it },
-                        textStyle = TextStyle(color = Design.textPrimary, fontSize = 16.sp),
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 56.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Design.glassRgb.copy(alpha = 0.5f))
-                                .padding(10.dp),
+                    Text(
+                        text = "✕",
+                        color = Design.textSecondary,
+                        fontSize = 18.sp,
+                        modifier = Modifier.clickable { sheetNote = null }.padding(6.dp),
                     )
-
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = note.text,
+                    color = Design.textPrimary.copy(alpha = if (note.done) 0.6f else 1f),
+                    fontSize = 17.sp,
+                )
+                if (note.categoryIds.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
-                    Text("Категория", color = Design.textSecondary.copy(alpha = 0.8f), fontSize = 12.sp)
-                    Spacer(Modifier.height(4.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Categories.names.forEach { pair ->
-                            val id = pair.first
-                            val on = id in editCats
-                            Text(
-                                text = pair.second,
-                                color = Design.textPrimary.copy(alpha = if (on) 0.98f else 0.8f),
-                                fontSize = 12.sp,
-                                modifier =
-                                    Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(
-                                            (Categories.colors[id] ?: Design.glassRgb)
-                                                .copy(alpha = if (on) 0.45f else 0.14f),
-                                        ).clickable {
-                                            Haptics.tick(screenView)
-                                            editCats = if (on) editCats - id else editCats + id
-                                        }.padding(horizontal = 8.dp, vertical = 4.dp),
+                        note.categoryIds.forEach { id ->
+                            Badge(
+                                text = Categories.title(id) ?: id,
+                                fg = Color.White.copy(alpha = 0.95f),
+                                bg = (Categories.colors[id] ?: Design.textSecondary).copy(alpha = 0.38f),
+                                bold = true,
                             )
                         }
                     }
                 }
-            },
-            confirmButton = {
-                Text(
-                    text = "Сохранить",
-                    color = accent,
-                    fontSize = 15.sp,
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Изменить",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(40.dp))
+                                .background(accent.copy(alpha = 0.9f))
+                                .clickable {
+                                    Haptics.tick(screenView)
+                                    sheetNote = null
+                                    editNote = note
+                                }.padding(vertical = 13.dp),
+                    )
+                    Text(
+                        text = "Удалить",
+                        color = Design.stopRed,
+                        fontSize = 15.sp,
+                        textAlign = TextAlign.Center,
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(40.dp))
+                                .background(Design.stopRed.copy(alpha = 0.12f))
+                                .clickable {
+                                    Haptics.tick(screenView)
+                                    Reminders.cancel(context, note.id)
+                                    store.remove(note.id)
+                                    revision++
+                                    sheetNote = null
+                                    Log.i("GlasNotesDev", "заметка #%d удалена из листа просмотра".format(note.id))
+                                }.padding(vertical = 13.dp),
+                    )
+                }
+            }
+        }
+    }
+
+    editNote?.let { note ->
+        // Окно редактирования — как в боевом приложении (index.html #editOverlay):
+        // «📝 Текст», «🏷 Категории», сворачиваемые «📅 Дата» и «⏰ Время» с плитками
+        // (Сегодня / Завтра / Послезавтра / 🕐 Выбрать / 🗑 Очистить) и системными пикерами.
+        var dateOpen by remember { mutableStateOf(false) }
+        var timeOpen by remember { mutableStateOf(false) }
+        var datePickerOpen by remember { mutableStateOf(false) }
+        var timePickerOpen by remember { mutableStateOf(false) }
+
+        fun timeText(): String = editTime?.let { "%02d:%02d".format(it.first, it.second) } ?: "Не задано"
+        fun dateText(): String =
+            editDate?.let { d ->
+                val today = LocalDate.now()
+                when (d) {
+                    today -> "Сегодня, " + WhenInput.display(
+                        d.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli(), true,
+                    )
+                    today.plusDays(1) -> "Завтра"
+                    today.plusDays(2) -> "Послезавтра"
+                    else -> WhenInput.display(
+                        d.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli(), true,
+                    )
+                }
+            } ?: "Не задано"
+
+        Dialog(onDismissRequest = { editNote = null }) {
+            Column(
+                modifier =
+                    Modifier
+                        .fillMaxWidth(0.95f)
+                        .heightIn(max = 700.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(Design.glassRgb)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "✏️ Редактирование",
+                        color = Design.textPrimary,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = "✕",
+                        color = Design.textSecondary,
+                        fontSize = 18.sp,
+                        modifier = Modifier.clickable { editNote = null }.padding(6.dp),
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+
+                Text("📝 Текст", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
+                Spacer(Modifier.height(4.dp))
+                BasicTextField(
+                    value = editText,
+                    onValueChange = { editText = it },
+                    textStyle = TextStyle(color = Design.textPrimary, fontSize = 16.sp),
                     modifier =
-                        Modifier.clickable {
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 64.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Design.glassRgb.copy(alpha = 0.5f))
+                            .padding(10.dp),
+                )
+                Spacer(Modifier.height(12.dp))
+
+                Text("🏷 Категории", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
+                Spacer(Modifier.height(4.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Categories.names.forEach { pair ->
+                        val id = pair.first
+                        val on = id in editCats
+                        EditTile(
+                            text = pair.second,
+                            active = on,
+                            bg = Categories.colors[id],
+                            accent = accent,
+                            onClick = {
+                                Haptics.tick(screenView)
+                                editCats = if (on) editCats - id else editCats + id
+                            },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+
+                // 📅 Дата — сворачиваемый блок: заголовок показывает выбранное значение.
+                EditSectionHeader(
+                    title = "📅 Дата",
+                    value = dateText(),
+                    open = dateOpen,
+                    onClick = {
+                        Haptics.tick(screenView)
+                        dateOpen = !dateOpen
+                    },
+                )
+                if (dateOpen) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        EditTile("Сегодня", accent = accent) {
                             Haptics.tick(screenView)
-                            val value = editText.trim()
-                            if (value.isNotEmpty()) {
-                                // Дата: сначала точный формат, затем разбор естественной речи.
-                                // parseDateNlu().datetime — это Long (миллисекунды), не Calendar.
-                                // Дата и время: и «10.11.2026 18:30», и «10.11.2026», и «завтра в 8».
-                                // Дата без часа — 09:00 и «весь день», как при диктовке.
-                                val parsedWhen = WhenInput.parse(editWhen)
-                                val at = parsedWhen?.ms
-                                val allDay = parsedWhen?.allDay == true
-                                store.setText(note.id, value)
-                                store.setCategories(note.id, editCats.toList())
-                                store.setDatetime(note.id, at, allDay)
-                                Reminders.cancel(context, note.id)
-                                if (at != null && at > System.currentTimeMillis()) {
-                                    Reminders.schedule(context, note.id, at, value, editCats.firstOrNull(), allDay)
-                                }
-                                revision++
-                                Log.i(
-                                    "GlasNotesDev",
-                                    "заметка #%d изменена: текст %d симв., дата %s, категорий %d".format(
-                                        note.id,
-                                        value.length,
-                                        WhenInput.display(at, allDay).ifEmpty { "нет" },
-                                        editCats.size,
-                                    ),
-                                )
+                            editDate = LocalDate.now()
+                        }
+                        EditTile("Завтра", accent = accent) {
+                            Haptics.tick(screenView)
+                            editDate = LocalDate.now().plusDays(1)
+                        }
+                        EditTile("Послезавтра", accent = accent) {
+                            Haptics.tick(screenView)
+                            editDate = LocalDate.now().plusDays(2)
+                        }
+                        EditTile("📅 Выбрать", accent = accent) {
+                            Haptics.tick(screenView)
+                            datePickerOpen = true
+                        }
+                        EditTile("🗑 Очистить", danger = true, accent = accent) {
+                            Haptics.tick(screenView)
+                            editDate = null
+                            editTime = null
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+
+                // ⏰ Время — как в боевом: шесть готовых времён из настроек + выбор + очистка.
+                EditSectionHeader(
+                    title = "⏰ Время",
+                    value = timeText(),
+                    open = timeOpen,
+                    onClick = {
+                        Haptics.tick(screenView)
+                        timeOpen = !timeOpen
+                    },
+                )
+                if (timeOpen) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        DEFAULT_TIMES.forEach { (emoji, hour, minute) ->
+                            EditTile("$emoji %02d:%02d".format(hour, minute), accent = accent) {
+                                Haptics.tick(screenView)
+                                editTime = hour to minute
+                                if (editDate == null) editDate = LocalDate.now()
                             }
-                            editNote = null
-                        }.padding(8.dp),
-                )
-            },
-            dismissButton = {
-                Text(
-                    text = "Отмена",
-                    color = Design.textSecondary.copy(alpha = 0.85f),
-                    fontSize = 15.sp,
-                    modifier =
-                        Modifier.clickable {
+                        }
+                        EditTile("🕐 Выбрать", accent = accent) {
                             Haptics.tick(screenView)
-                            editNote = null
-                        }.padding(8.dp),
+                            timePickerOpen = true
+                        }
+                        EditTile("🗑 Очистить", danger = true, accent = accent) {
+                            Haptics.tick(screenView)
+                            editTime = null
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Отмена",
+                        color = Design.textSecondary.copy(alpha = 0.9f),
+                        fontSize = 15.sp,
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(40.dp))
+                                .background(Design.glassRgb.copy(alpha = 0.5f))
+                                .clickable {
+                                    Haptics.tick(screenView)
+                                    editNote = null
+                                }.padding(vertical = 13.dp),
+                        textAlign = TextAlign.Center,
+                    )
+                    Text(
+                        text = "Сохранить",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(40.dp))
+                                .background(accent.copy(alpha = 0.9f))
+                                .clickable {
+                                    Haptics.tick(screenView)
+                                    val value = editText.trim()
+                                    if (value.isNotEmpty()) {
+                                        val date = editDate
+                                        val time = editTime
+                                        // Дата без времени = «весь день» (09:00, как при диктовке).
+                                        val at: Long? =
+                                            date?.let { d ->
+                                                val h = time?.first ?: WhenInput.ALL_DAY_HOUR
+                                                val m = time?.second ?: 0
+                                                d.atTime(h, m).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                                            }
+                                        val allDay = time == null
+                                        store.setText(note.id, value)
+                                        store.setCategories(note.id, editCats.toList())
+                                        store.setDatetime(note.id, at, allDay)
+                                        Reminders.cancel(context, note.id)
+                                        if (at != null && at > System.currentTimeMillis()) {
+                                            Reminders.schedule(context, note.id, at, value, editCats.firstOrNull(), allDay)
+                                        }
+                                        revision++
+                                        Log.i(
+                                            "GlasNotesDev",
+                                            "заметка #%d изменена: текст %d симв., дата %s, категорий %d".format(
+                                                note.id,
+                                                value.length,
+                                                WhenInput.display(at, allDay).ifEmpty { "нет" },
+                                                editCats.size,
+                                            ),
+                                        )
+                                    }
+                                    editNote = null
+                                }.padding(vertical = 13.dp),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+
+        // Системный календарь. DatePicker живёт в UTC, поэтому туда и обратно переводим явно.
+        if (datePickerOpen) {
+            val picker =
+                rememberDatePickerState(
+                    initialSelectedDateMillis =
+                        (editDate ?: LocalDate.now())
+                            .atStartOfDay(ZoneOffset.UTC)
+                            .toInstant()
+                            .toEpochMilli(),
                 )
-            },
-        )
+            DatePickerDialog(
+                onDismissRequest = { datePickerOpen = false },
+                confirmButton = {
+                    Text(
+                        text = "Готово",
+                        color = accent,
+                        fontSize = 15.sp,
+                        modifier =
+                            Modifier.clickable {
+                                picker.selectedDateMillis?.let { ms ->
+                                    editDate = Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate()
+                                }
+                                datePickerOpen = false
+                            }.padding(8.dp),
+                    )
+                },
+                dismissButton = {
+                    Text(
+                        text = "Отмена",
+                        color = Design.textSecondary,
+                        fontSize = 15.sp,
+                        modifier = Modifier.clickable { datePickerOpen = false }.padding(8.dp),
+                    )
+                },
+            ) {
+                DatePicker(state = picker)
+            }
+        }
+
+        // Системные часы.
+        if (timePickerOpen) {
+            val now = editTime
+            val picker =
+                rememberTimePickerState(
+                    initialHour = now?.first ?: WhenInput.ALL_DAY_HOUR,
+                    initialMinute = now?.second ?: 0,
+                    is24Hour = true,
+                )
+            Dialog(onDismissRequest = { timePickerOpen = false }) {
+                Column(
+                    modifier =
+                        Modifier
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(Design.glassRgb)
+                            .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    TimePicker(state = picker)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "Отмена",
+                            color = Design.textSecondary,
+                            fontSize = 15.sp,
+                            modifier = Modifier.clickable { timePickerOpen = false }.padding(10.dp),
+                        )
+                        Text(
+                            text = "Готово",
+                            color = accent,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier =
+                                Modifier.clickable {
+                                    editTime = picker.hour to picker.minute
+                                    if (editDate == null) editDate = LocalDate.now()
+                                    timePickerOpen = false
+                                }.padding(10.dp),
+                        )
+                    }
+                }
+            }
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -407,10 +674,19 @@ fun NotesScreen(
                             store.setCategory(note.id, category)
                             revision++
                         },
+                        onOpen = { sheetNote = note },
                         onEdit = {
                             editText = note.text
                             editCats = note.categoryIds.toSet()
-                            editWhen = WhenInput.display(note.datetime, note.allDay)
+                            val at = note.datetime
+                            if (at != null && at > 0L) {
+                                val dt = Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault())
+                                editDate = dt.toLocalDate()
+                                editTime = if (note.allDay) null else (dt.hour to dt.minute)
+                            } else {
+                                editDate = null
+                                editTime = null
+                            }
                             editNote = note
                         },
                         holdDoneSec =
@@ -830,6 +1106,7 @@ private fun NoteCard(
     onToggle: () -> Unit,
     onCategory: (String) -> Unit,
     onEdit: () -> Unit,
+    onOpen: () -> Unit,
     onDelete: () -> Unit,
     holdDoneSec: Int = 2,
     holdDeleteSec: Int = 3,
@@ -1003,7 +1280,15 @@ private fun NoteCard(
                         ),
                     ).then(
                         if (categoryColor != null) {
-                            Modifier.background(categoryColor.copy(alpha = if (Design.light) 0.14f else 0.18f))
+                            // «Разработка» — синий #4D6BFE: при 0.14/0.18 на стекле он почти не
+                            // читается (в отличие от красного «Важного»), поэтому у dev плотнее.
+                            val catAlpha =
+                                if (note.categoryIds.firstOrNull() == "dev") {
+                                    if (Design.light) 0.26f else 0.30f
+                                } else {
+                                    if (Design.light) 0.14f else 0.18f
+                                }
+                            Modifier.background(categoryColor.copy(alpha = catAlpha))
                         } else {
                             Modifier
                         },
@@ -1062,8 +1347,8 @@ private fun NoteCard(
                         onClick = {
                             Haptics.tick(view)
                             // Как в боевом приложении: нажатие открывает лист заметки.
-                            // «Выполнено» — удержание на свайпе вправо и пункт меню.
-                            onEdit()
+                            // Тап — просмотр (как noteSheet боевого); редактор — из меню.
+                            onOpen()
                         },
                         onLongClick = {
                             Haptics.longPress(view)
@@ -1223,4 +1508,83 @@ private fun statusLabel(note: NoteRow): String {
     val at = note.datetime
     if (at == null || at <= 0L) return "📝 без даты"
     return if (at < System.currentTimeMillis()) "⏰ просрочено" else "🟢 активное"
+}
+
+
+/** Готовые времена — как DEFAULT_TIME_SETTINGS боевого: эмодзи, часы, минуты. */
+private val DEFAULT_TIMES =
+    listOf(
+        Triple("🌅", 9, 0),
+        Triple("☀️", 11, 0),
+        Triple("🍽", 13, 0),
+        Triple("🌇", 15, 0),
+        Triple("🌆", 18, 0),
+        Triple("🌙", 21, 0),
+    )
+
+/** Плитка редактора (.edit-tile боевого): 14 dp скругление, поля 10×6 dp, 0.8rem ≈ 13 sp. */
+@Composable
+private fun EditTile(
+    text: String,
+    accent: Color,
+    active: Boolean = false,
+    danger: Boolean = false,
+    bg: Color? = null,
+    onClick: () -> Unit,
+) {
+    val background =
+        when {
+            active && bg != null -> bg.copy(alpha = 0.45f)
+            active -> accent.copy(alpha = 0.15f)
+            else -> Design.glassRgb.copy(alpha = 0.45f)
+        }
+    val color =
+        when {
+            danger -> Color(0xFFFF6B6B)
+            active && bg != null -> Color.White
+            active -> Design.textPrimary
+            else -> Design.textSecondary
+        }
+    Text(
+        text = text,
+        color = color,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Medium,
+        textAlign = TextAlign.Center,
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(14.dp))
+                .background(background)
+                .clickable { onClick() }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
+}
+
+/** Заголовок сворачиваемого блока: название, текущее значение, стрелка. */
+@Composable
+private fun EditSectionHeader(
+    title: String,
+    value: String,
+    open: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { onClick() }
+                .padding(vertical = 8.dp),
+    ) {
+        Text(title, color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = value,
+            color = Design.textPrimary.copy(alpha = 0.9f),
+            fontSize = 13.sp,
+            modifier = Modifier.weight(1f),
+        )
+        Text(text = if (open) "▾" else "▸", color = Design.textSecondary, fontSize = 13.sp)
+    }
 }
