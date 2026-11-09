@@ -822,7 +822,7 @@ private fun SearchField(
  * Свайп: вправо — галочка «выполнено», влево — урна «удалить». Значки лежат под карточкой
  * и проявляются по мере сдвига; отпустили — пружина возвращает карточку.
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 private fun NoteCard(
     note: NoteRow,
@@ -1120,32 +1120,38 @@ private fun NoteCard(
                 fontSize = 16.sp,
             )
             Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = whenText(note).ifBlank { note.time.ifBlank { "—" } },
-                    color = Design.textSecondary.copy(alpha = 0.8f),
-                    fontSize = 12.sp,
+            // Бейджи карточки — как в боевом index.html (.result-datetime, .category-label,
+            // .status-label, .important-chip): плашки, а не мелкий серый текст.
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                val whenLabel = whenText(note).ifBlank { note.time }
+                if (whenLabel.isNotBlank()) {
+                    Badge(
+                        text = whenLabel,
+                        fg = if (note.done) Design.done else Design.textSecondary,
+                        bg = if (note.done) Design.done.copy(alpha = 0.14f) else Design.tint(0.10f),
+                        bold = true,
+                    )
+                }
+                note.categoryIds.forEach { id ->
+                    Badge(
+                        text = Categories.title(id) ?: id,
+                        fg = Color.White.copy(alpha = if (note.done) 0.75f else 0.95f),
+                        bg = (Categories.colors[id] ?: Design.textSecondary).copy(alpha = 0.38f),
+                        bold = true,
+                    )
+                }
+                if (note.categoryIds.contains("important") && !note.done) {
+                    // .important-chip боевого — плотнее остальных.
+                    Badge(text = "🔥 важное", fg = Color.White, bg = Color(0xFFFF6B4A).copy(alpha = 0.72f), bold = true)
+                }
+                Badge(
+                    text = statusLabel(note),
+                    fg = if (note.done) Design.done else Design.textSecondary.copy(alpha = 0.9f),
+                    bg = Design.tint(0.07f),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    note.categoryIds.forEach { id ->
-                        Row(
-                            modifier =
-                                Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Categories.colors[id]?.copy(alpha = 0.35f) ?: Design.glassRgb.copy(alpha = 0.35f))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                        ) {
-                            Text(
-                                text = Categories.title(id) ?: id,
-                                color = Design.textPrimary.copy(alpha = 0.92f),
-                                fontSize = 11.sp,
-                            )
-                        }
-                    }
-                }
-                if (note.done) {
-                    Text(text = "выполнено", color = Design.done, fontSize = 12.sp)
-                }
             }
         }
     }
@@ -1183,4 +1189,38 @@ private fun whenText(note: NoteRow): String {
         }
     if (note.allDay) return label
     return label + " " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(at))
+}
+
+
+/** Плашка бейджа карточки: скругление 8 dp, поля 8×3 dp — размеры из index.html. */
+@Composable
+private fun Badge(
+    text: String,
+    fg: Color,
+    bg: Color,
+    bold: Boolean = false,
+) {
+    Box(
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(bg)
+                .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) {
+        Text(
+            text = text,
+            color = fg,
+            fontSize = 11.sp,
+            fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+        )
+    }
+}
+
+/** Статус словами — как `sl` в renderCard боевого. */
+private fun statusLabel(note: NoteRow): String {
+    if (note.done) return "✓ выполнено"
+    val at = note.datetime
+    if (at == null || at <= 0L) return "📝 без даты"
+    return if (at < System.currentTimeMillis()) "⏰ просрочено" else "🟢 активное"
 }
