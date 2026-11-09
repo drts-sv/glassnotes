@@ -7,7 +7,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.heightIn
 
 import android.util.Log
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -111,10 +114,14 @@ fun NotesScreen(
     // держим в памяти, пока идёт таймер undoTimerSec из настроек. 0 с — без плашки.
     var undo by remember { mutableStateOf<Deleted?>(null) }
     var undoTick by remember { mutableIntStateOf(0) }
+    // Сколько секунд дано на отмену — ровно то, что стоит ползунком в настройках (undoTimerSec).
+    var undoSeconds by remember { mutableIntStateOf(AppSettings.DEFAULT_UNDO_SEC) }
+    // Кольцо-таймер на плашке: 1 → 0 за undoSeconds. Один отсчёт и гасит плашку, и рисует кольцо.
+    val undoProgress = remember { Animatable(0f) }
     LaunchedEffect(undoTick) {
         val pending = undo ?: return@LaunchedEffect
-        val seconds = AppSettings.int(store, AppSettings.UNDO_SEC, AppSettings.DEFAULT_UNDO_SEC, 0..15)
-        kotlinx.coroutines.delay(seconds * 1000L)
+        undoProgress.snapTo(1f)
+        undoProgress.animateTo(0f, tween(durationMillis = undoSeconds * 1000, easing = LinearEasing))
         if (undo == pending) undo = null
     }
     val context = LocalContext.current
@@ -441,8 +448,10 @@ fun NotesScreen(
                             val seconds =
                                 AppSettings.int(store, AppSettings.UNDO_SEC, AppSettings.DEFAULT_UNDO_SEC, 0..15)
                             if (seconds > 0 && row != null) {
+                                undoSeconds = seconds
                                 undo = Deleted(note.id, row.first, row.second)
                                 undoTick++
+                                Log.i("GlasNotesDev", "удаление #%d: отмена %d с".format(note.id, seconds))
                             }
                         },
                     )
@@ -472,6 +481,41 @@ fun NotesScreen(
                         .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // Кольцо обратного отсчёта: сколько осталось до окончательного удаления.
+                Box(modifier = Modifier.size(26.dp), contentAlignment = Alignment.Center) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val stroke = 2.5.dp.toPx()
+                        val ring = Size(size.width - stroke, size.height - stroke)
+                        drawArc(
+                            color = Design.border,
+                            startAngle = -90f,
+                            sweepAngle = 360f,
+                            useCenter = false,
+                            topLeft = Offset(stroke / 2f, stroke / 2f),
+                            size = ring,
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke),
+                        )
+                        drawArc(
+                            color = accent,
+                            startAngle = -90f,
+                            sweepAngle = 360f * undoProgress.value,
+                            useCenter = false,
+                            topLeft = Offset(stroke / 2f, stroke / 2f),
+                            size = ring,
+                            style =
+                                androidx.compose.ui.graphics.drawscope.Stroke(
+                                    width = stroke,
+                                    cap = StrokeCap.Round,
+                                ),
+                        )
+                    }
+                    Text(
+                        text = "%d".format(kotlin.math.ceil(undoProgress.value * undoSeconds).toInt().coerceIn(0, undoSeconds)),
+                        color = Design.textSecondary,
+                        fontSize = 10.sp,
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
                 Text(text = "Заметка удалена", color = Design.textSecondary, fontSize = 14.sp)
                 Text(
                     text = "Отменить",
@@ -930,10 +974,11 @@ private fun NoteCard(
             contentAlignment = Alignment.CenterStart,
         ) {
             if (progressRight > 0.02f) {
+                // Значок растёт вместе со сдвигом: 26 dp в начале → 40 dp на пороге.
                 Box(
                     modifier =
                         Modifier
-                            .size(34.dp)
+                            .size((26f + 14f * progressRight).dp)
                             .clip(CircleShape)
                             .background(Design.done.copy(alpha = 0.20f * progressRight)),
                     contentAlignment = Alignment.Center,
@@ -942,7 +987,7 @@ private fun NoteCard(
                         painter = painterResource(R.drawable.ic_check),
                         contentDescription = "Выполнено",
                         colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.done.copy(alpha = 0.45f + 0.55f * progressRight)),
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size((14f + 10f * progressRight).dp),
                     )
                 }
             }
@@ -956,7 +1001,7 @@ private fun NoteCard(
                 Box(
                     modifier =
                         Modifier
-                            .size(34.dp)
+                            .size((26f + 14f * progressLeft).dp)
                             .clip(CircleShape)
                             .background(Design.stopRed.copy(alpha = 0.22f * progressLeft)),
                     contentAlignment = Alignment.Center,
@@ -965,7 +1010,7 @@ private fun NoteCard(
                         painter = painterResource(R.drawable.ic_trash),
                         contentDescription = "Удалить",
                         colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.stopRed.copy(alpha = 0.5f + 0.5f * progressLeft)),
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size((14f + 10f * progressLeft).dp),
                     )
                 }
             }
