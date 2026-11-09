@@ -142,6 +142,32 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
         writableDatabase.delete("notes", "id = ?", arrayOf(id.toString()))
     }
 
+    /**
+     * Сырой JSON заметки и её метка времени — нужны, чтобы удаление можно было отменить
+     * (плашка «Отменить»): вернуть строку на то же место в списке.
+     */
+    fun rawRow(id: Long): Pair<String, Long>? =
+        readableDatabase
+            .rawQuery("SELECT json, ts FROM notes WHERE id = ?", arrayOf(id.toString()))
+            .use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) to cursor.getLong(1) else null
+            }
+
+    /** Вернуть удалённую заметку на место: тот же id, тот же JSON, тот же ts. */
+    fun restore(
+        id: Long,
+        json: String,
+        ts: Long,
+    ) {
+        val values =
+            ContentValues().apply {
+                put("id", id)
+                put("json", json)
+                put("ts", ts)
+            }
+        writableDatabase.insertWithOnConflict("notes", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
     /** Правка заметки: читаем JSON, меняем, пишем обратно — как это делает боевое приложение. */
     private fun patch(
         id: Long,

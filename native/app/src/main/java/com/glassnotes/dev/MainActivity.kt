@@ -76,10 +76,33 @@ class MainActivity : ComponentActivity() {
         runCatching {
             val settingsStore = NotesStore(applicationContext)
             AppSettings.applyAll(settingsStore)
+            // Тема: "auto" идёт за системной настройкой Android — ставим до первого кадра.
+            Design.setTheme(
+                AppSettings.themeMode(settingsStore),
+                (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES,
+            )
             NluOptions.voiceCategory = AppSettings.flag(settingsStore, AppSettings.VOICE_CATEGORY, true)
             NluOptions.fillerCleanup = AppSettings.flag(settingsStore, AppSettings.FILLER, true)
             settingsStore.getKv("threads")?.trim()?.toIntOrNull()?.let { if (it > 0) GigaAmOnnxRecognizer.intraOpThreads = it }
-            Log.i(TAG, "настройки загружены: стекло %.2f, затемнение %.2f".format(Design.cardAlpha, Design.veil))
+            // Диагностика: --es theme_test light|dark|auto — выставить тему и запомнить выбор.
+            intent?.getStringExtra("theme_test")?.let { mode ->
+                settingsStore.setKv(AppSettings.THEME, mode)
+                Design.setTheme(
+                    mode,
+                    (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                        android.content.res.Configuration.UI_MODE_NIGHT_YES,
+                )
+            }
+            Log.i(
+                TAG,
+                "настройки загружены: стекло %.2f, затемнение %.2f, тема %s (%s)".format(
+                    Design.cardAlpha,
+                    Design.veil,
+                    Design.themeMode,
+                    if (Design.light) "светлая" else "тёмная",
+                ),
+            )
         }
 
         if (intent?.getBooleanExtra("wave_test", false) == true) {

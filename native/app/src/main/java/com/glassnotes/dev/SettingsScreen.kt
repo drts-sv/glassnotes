@@ -2,6 +2,7 @@ package com.glassnotes.dev
 
 import android.util.Log
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -76,6 +77,9 @@ fun SettingsScreen(
     var blur by remember {
         mutableFloatStateOf(AppSettings.int(store, AppSettings.BG_BLUR, AppSettings.DEFAULT_BG_BLUR, 0..40).toFloat())
     }
+    // Тема: "auto" — за системой (isSystemInDarkTheme), иначе явный выбор.
+    val systemDark = isSystemInDarkTheme()
+    var themeMode by remember { mutableStateOf(AppSettings.themeMode(store)) }
 
     // График записи: числа по умолчанию — из боевого (шкала 65 дБ, порог 0.11, кривая 0.54).
     var dbWindow by remember { mutableFloatStateOf(store.getKv("dbWindow")?.toFloatOrNull() ?: 65f) }
@@ -154,7 +158,7 @@ fun SettingsScreen(
                             Modifier
                                 .size(36.dp)
                                 .clip(RoundedCornerShape(50))
-                                .background(Color.White.copy(alpha = 0.06f))
+                                .background(Design.tint(0.06f))
                                 .clickable {
                                     Haptics.tick(view)
                                     onClose()
@@ -183,11 +187,24 @@ fun SettingsScreen(
                             store.setKv(AppSettings.BG_BLUR, blur.roundToInt().toString())
                             Design.backdropBlur = blur.roundToInt().dp
                         }
-                        Text(
-                            text = "Светлая тема в нативную сборку пока не перенесена — работает тёмная.",
-                            color = Design.textSecondary.copy(alpha = 0.6f),
-                            fontSize = 11.5.sp,
-                        )
+                        // Светлая/тёмная тема — как в боевом приложении: выбор из трёх плиток,
+                        // «как в системе» идёт за настройкой Android.
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            listOf(
+                                "dark" to "🌙 Тёмная",
+                                "light" to "☀️ Светлая",
+                                "auto" to "🔄 Системная",
+                            ).forEach { (mode, label) ->
+                                Tile(label, themeMode == mode, accent, Modifier.weight(1f)) {
+                                    themeMode = mode
+                                    store.setKv(AppSettings.THEME, mode)
+                                    Design.setTheme(mode, systemDark)
+                                }
+                            }
+                        }
                     }
 
                     // ---------- 🎛 График записи (перенесено с экрана записи) ----------
@@ -264,7 +281,7 @@ fun SettingsScreen(
                                 Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(16.dp))
-                                    .background(Color.White.copy(alpha = 0.06f))
+                                    .background(Design.tint(0.06f))
                                     .border(1.dp, Design.border, RoundedCornerShape(16.dp)),
                         ) {
                             AppSettings.timeRows.forEachIndexed { index, row ->
@@ -286,7 +303,7 @@ fun SettingsScreen(
                                     Text(text = times[key] ?: "", color = accent, fontSize = 13.6.sp, fontWeight = FontWeight.Medium)
                                 }
                                 if (index < AppSettings.timeRows.size - 1) {
-                                    Box(Modifier.fillMaxWidth().size(1.dp).background(Color.White.copy(alpha = 0.03f)))
+                                    Box(Modifier.fillMaxWidth().size(1.dp).background(Design.tint(0.03f)))
                                 }
                             }
                         }
@@ -305,7 +322,7 @@ fun SettingsScreen(
                                 Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(16.dp))
-                                    .background(Color.White.copy(alpha = 0.06f))
+                                    .background(Design.tint(0.06f))
                                     .border(1.dp, Design.border, RoundedCornerShape(16.dp))
                                     .clickable {
                                         Haptics.tick(view)
@@ -336,7 +353,7 @@ fun SettingsScreen(
                                 Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(16.dp))
-                                    .background(Color.White.copy(alpha = 0.06f))
+                                    .background(Design.tint(0.06f))
                                     .border(1.dp, Design.border, RoundedCornerShape(16.dp))
                                     .padding(horizontal = 14.dp, vertical = 12.dp),
                         ) {
@@ -422,7 +439,7 @@ fun SettingsScreen(
                             Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(60.dp))
-                                .background(Color.White.copy(alpha = 0.06f))
+                                .background(Design.tint(0.06f))
                                 .border(1.dp, Design.border, RoundedCornerShape(60.dp))
                                 .clickable {
                                     Haptics.confirm(view)
@@ -552,7 +569,7 @@ private fun SettingsGroup(
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White.copy(alpha = 0.06f))
+                    .background(Design.tint(0.06f))
                     .border(1.dp, Design.border, RoundedCornerShape(14.dp))
                     .clickable {
                         Haptics.tick(view)
@@ -603,7 +620,7 @@ private fun SliderRow(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(Color.White.copy(alpha = 0.06f))
+                .background(Design.tint(0.06f))
                 .border(1.dp, Design.border, RoundedCornerShape(16.dp))
                 .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
@@ -645,7 +662,7 @@ private fun ToggleRow(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(Color.White.copy(alpha = 0.06f))
+                .background(Design.tint(0.06f))
                 .border(1.dp, Design.border, RoundedCornerShape(16.dp))
                 .padding(horizontal = 14.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,

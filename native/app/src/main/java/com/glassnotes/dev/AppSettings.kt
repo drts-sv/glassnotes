@@ -22,6 +22,8 @@ object AppSettings {
     const val GLASS_ALPHA = "glassAlpha"
     const val APP_VEIL = "appVeil"
     const val BG_BLUR = "bgBlur"
+    const val THEME = "theme"
+    const val DEFAULT_THEME = "auto"
 
     // ---- значения по умолчанию ----
     const val DEFAULT_REVIEW_TIME = "08:00"
@@ -85,6 +87,12 @@ object AppSettings {
         Design.veil = int(store, APP_VEIL, DEFAULT_APP_VEIL, 0..90) / 100f
         Design.backdropBlur = int(store, BG_BLUR, DEFAULT_BG_BLUR, 0..40).dp
         TimeDefaults.load(store)
+    }
+
+    /** Режим темы из базы: "auto" (за системой), "dark", "light". */
+    fun themeMode(store: NotesStore): String {
+        val raw = store.getKv(THEME)?.trim()?.lowercase()
+        return if (raw == "light" || raw == "dark" || raw == "auto") raw else DEFAULT_THEME
     }
 
     /** Ключ дня для флага «ревью показано»: «2026-11-08». */

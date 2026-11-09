@@ -8,7 +8,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
@@ -25,24 +28,68 @@ import android.app.WallpaperManager
  * дизайн переносится числами, иначе он «похож», но не тот.
  */
 object Design {
-    /** --glass-rgb: 28 30 42 */
-    val glassRgb = Color(0xFF13151D)
+    /**
+     * Тема — числа из `body.dark` / `body.light` боевого приложения, а не на глаз:
+     * стекло 28 30 42 против 252 253 255, текст white / #1a1c2c против
+     * rgba(230,235,255,0.9) / #2c3e66, рамка 0.10 белого против 0.10 чёрного.
+     */
+    var light by mutableStateOf(false)
+        private set
 
-    /** --app-veil: 0.35 — матовая подложка под всем приложением. */
-    var veil = 0.35f
+    /** Режим из настроек: "auto" | "dark" | "light" — храним как есть, чтобы показать выбор. */
+    var themeMode by mutableStateOf("auto")
+        private set
 
-    /** --card-alpha: 0.55 */
-    var cardAlpha = 0.80f
+    /** Переключить тему: auto идёт за системой (isSystemInDarkTheme). */
+    fun setTheme(
+        mode: String,
+        systemDark: Boolean,
+    ) {
+        themeMode = mode
+        light =
+            when (mode) {
+                "light" -> true
+                "dark" -> false
+                else -> !systemDark
+            }
+    }
+
+    /** --glass-rgb: 28 30 42 (тёмная) / 252 253 255 (светлая). */
+    val glassRgb: Color
+        get() = if (light) Color(0xFFFCFDFF) else Color(0xFF13151D)
+
+    /**
+     * --card-alpha. Именно состояние, а не обычная переменная: раньше ползунок менял число,
+     * но Compose не знал об изменении, и карточки (они в LazyColumn со стабильными ключами)
+     * оставались с прежней плотностью — перерисовывалась только карточка заголовка.
+     */
+    var cardAlpha by mutableStateOf(0.80f)
+
+    /** --app-veil: матовая подложка под всем приложением. */
+    var veil by mutableStateOf(0.35f)
 
     /** --bg-blur: 14px */
-    var backdropBlur = 14.dp
+    var backdropBlur by mutableStateOf(14.dp)
 
-    /** --surface-border: rgba(255,255,255,0.10) */
-    val border = Color(0x1AFFFFFF)
+    /** --surface-border / --glass-border */
+    val border: Color
+        get() = if (light) Color(0x1A000000) else Color(0x1AFFFFFF)
+
+    /** Верхняя светлая кромка «парящего» стекла. */
+    val highlight: Color
+        get() = if (light) Color(0xB3FFFFFF) else Color(0x33FFFFFF)
+
+    /**
+     * Мягкая подложка/разделитель под тему: на тёмном стекле — белая, в светлой теме — чёрная.
+     * Без этого плитки настроек в светлой теме становились невидимыми (белое на белом).
+     */
+    fun tint(alpha: Float): Color = if (light) Color.Black.copy(alpha = alpha) else Color.White.copy(alpha = alpha)
 
     /** --text-primary / --text-secondary */
-    val textPrimary = Color.White
-    val textSecondary = Color(0xE6E6EBFF)
+    val textPrimary: Color
+        get() = if (light) Color(0xFF1A1C2C) else Color.White
+    val textSecondary: Color
+        get() = if (light) Color(0xFF2C3E66) else Color(0xE6E6EBFF)
 
     /** --accent: #007aff (переопределяется палитрой системы) */
     val accentDefault = Color(0xFF007AFF)
@@ -128,7 +175,16 @@ fun GlassBackdrop() {
     val wallpaper = remember { runCatching { WallpaperManager.getInstance(context).drawable }.getOrNull() }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        if (wallpaper != null && Build.VERSION.SDK_INT >= 31) {
+        if (Design.light) {
+            // body.light: --bg-start #e8edf5, --bg-end #d0d8e8 — обои в светлой теме не показываем,
+            // иначе тёмный текст на фотографии нечитаем.
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .background(Brush.verticalGradient(listOf(Color(0xFFE8EDF5), Color(0xFFD0D8E8)))),
+            )
+        } else if (wallpaper != null && Build.VERSION.SDK_INT >= 31) {
             AndroidView(
                 factory = { ctx ->
                     ImageView(ctx).apply {
@@ -160,7 +216,13 @@ fun GlassBackdrop() {
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .background(Design.glassRgb.copy(alpha = Design.veil)),
+                    .background(
+                        if (Design.light) {
+                            Color.White.copy(alpha = Design.veil * 0.8f)
+                        } else {
+                            Design.glassRgb.copy(alpha = Design.veil)
+                        },
+                    ),
         )
     }
 }

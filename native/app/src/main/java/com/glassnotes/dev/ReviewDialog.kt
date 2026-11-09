@@ -158,7 +158,7 @@ fun MorningReviewScreen(
                             .padding(top = 14.dp, end = 14.dp)
                             .size(38.dp)
                             .clip(RoundedCornerShape(50))
-                            .background(Color.White.copy(alpha = 0.06f))
+                            .background(Design.tint(0.06f))
                             .clickable {
                                 Haptics.tick(view)
                                 onClose()

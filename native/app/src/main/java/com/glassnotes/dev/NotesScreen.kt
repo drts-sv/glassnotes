@@ -7,7 +7,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.heightIn
 
 import android.util.Log
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -33,6 +37,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.DropdownMenu
@@ -52,6 +57,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -93,6 +99,24 @@ fun NotesScreen(
     var dateFilter by remember { mutableStateOf<String?>(null) }
     var categoryFilter by remember { mutableStateOf<String?>(null) }
     var revision by remember { mutableIntStateOf(0) }
+
+    // Тема: "auto" идёт за системой. Перечитываем при открытии/закрытии настроек,
+    // потому что там выбирают «светлая / тёмная / как в системе».
+    val systemDark = isSystemInDarkTheme()
+    LaunchedEffect(settingsOpen, systemDark) {
+        Design.setTheme(AppSettings.themeMode(store), systemDark)
+    }
+
+    // Удаление с отменой (showUndoFab в боевом): заметка исчезает сразу, а её JSON
+    // держим в памяти, пока идёт таймер undoTimerSec из настроек. 0 с — без плашки.
+    var undo by remember { mutableStateOf<Deleted?>(null) }
+    var undoTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(undoTick) {
+        val pending = undo ?: return@LaunchedEffect
+        val seconds = AppSettings.int(store, AppSettings.UNDO_SEC, AppSettings.DEFAULT_UNDO_SEC, 0..15)
+        kotlinx.coroutines.delay(seconds * 1000L)
+        if (undo == pending) undo = null
+    }
     val context = LocalContext.current
     // Отклик в диалоге: LocalView читаем здесь — внутри clickable его вызывать нельзя.
     val screenView = LocalView.current
@@ -410,15 +434,61 @@ fun NotesScreen(
                             editNote = note
                         },
                         onDelete = {
+                            val row = store.rawRow(note.id)
                             store.remove(note.id)
                             Reminders.cancel(context, note.id)
                             revision++
+                            val seconds =
+                                AppSettings.int(store, AppSettings.UNDO_SEC, AppSettings.DEFAULT_UNDO_SEC, 0..15)
+                            if (seconds > 0 && row != null) {
+                                undo = Deleted(note.id, row.first, row.second)
+                                undoTick++
+                            }
                         },
                     )
                     }
                 }
             }
         }
+        }
+
+        // Плашка «Отменить» над кнопкой записи — как showUndoFab в боевом приложении.
+        undo?.let { pending ->
+            val pillShape = RoundedCornerShape(14.dp)
+            Row(
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 92.dp)
+                        .shadow(
+                            elevation = 10.dp,
+                            shape = pillShape,
+                            clip = false,
+                            ambientColor = Color.Black.copy(alpha = 0.40f),
+                            spotColor = Color.Black.copy(alpha = 0.45f),
+                        ).clip(pillShape)
+                        .background(Design.glassRgb.copy(alpha = 0.97f))
+                        .border(1.dp, Design.border, pillShape)
+                        .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = "Заметка удалена", color = Design.textSecondary, fontSize = 14.sp)
+                Text(
+                    text = "Отменить",
+                    color = accent,
+                    fontSize = 14.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    modifier =
+                        Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable {
+                                Haptics.confirm(screenView)
+                                store.restore(pending.id, pending.json, pending.ts)
+                                undo = null
+                                revision++
+                            }.padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            }
         }
 
         // Кнопка записи: по ней открывается окно записи. Положение — из настроек.
@@ -619,7 +689,7 @@ private fun LogoBadge(
             Modifier
                 .size(28.dp)
                 .clip(RoundedCornerShape(50))
-                .background(Color.White.copy(alpha = 0.06f))
+                .background(Design.tint(0.06f))
                 .border(1.dp, Design.border, RoundedCornerShape(50)),
         contentAlignment = Alignment.Center,
     ) {
@@ -662,7 +732,7 @@ private fun HeaderButton(
             Modifier
                 .size(28.dp)
                 .clip(RoundedCornerShape(50))
-                .background(Color.White.copy(alpha = if (selected) 0.16f else 0.06f))
+                .background(Design.tint(if (selected) 0.16f else 0.06f))
                 .border(1.dp, Design.border, RoundedCornerShape(50))
                 .clickable {
                     Haptics.tick(view)
@@ -803,7 +873,21 @@ private fun SearchField(
     }
 }
 
-/** Карточка заметки — вид одобрен владельцем, не меняется. */
+/** Удалённая заметка, которую ещё можно вернуть: id, JSON и метка времени — как были. */
+private data class Deleted(
+    val id: Long,
+    val json: String,
+    val ts: Long,
+)
+
+/**
+ * Карточка заметки — «парящее стекло»: градиент плотности (верхняя грань светлее),
+ * светлая кромка в рамке, тень под карточкой и оттенок категории ПОВЕРХ стекла.
+ * Раньше цветная карточка была просто заливкой 0.22 без стекла — текст терялся.
+ *
+ * Свайп: вправо — галочка «выполнено», влево — урна «удалить». Значки лежат под карточкой
+ * и проявляются по мере сдвига; отпустили — пружина возвращает карточку.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NoteCard(
@@ -815,143 +899,233 @@ private fun NoteCard(
     onDelete: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
+    var dragX by remember { mutableFloatStateOf(0f) }
+    var dragging by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val swipeThreshold = with(density) { 60.dp.toPx() }
     val view = LocalView.current
     var wasAtEdge by remember { mutableStateOf(false) }
 
+    // Пальцем тянем мгновенно (snap), после отпускания — пружина назад.
+    val offsetX by animateFloatAsState(
+        targetValue = dragX,
+        animationSpec = if (dragging) snap() else spring(dampingRatio = 0.82f, stiffness = 420f),
+        label = "cardOffset",
+    )
+
     val categoryColor = note.categoryIds.firstOrNull()?.let { Categories.colors[it] }
-    val tinted = categoryColor != null
+    val shape = RoundedCornerShape(14.dp)
 
-    Column(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(
-                    if (tinted) {
-                        categoryColor!!.copy(alpha = 0.22f)
-                    } else {
-                        Design.glassRgb.copy(alpha = Design.cardAlpha)
-                    },
-                ).offset { IntOffset(offsetX.roundToInt(), 0) }
-                .pointerInput(note.id) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { Haptics.tick(view) },
-                        onHorizontalDrag = { change, dragAmount ->
-                            change.consume()
-                            offsetX += dragAmount
-                            val atEdge = abs(offsetX) > swipeThreshold
-                            if (atEdge != wasAtEdge) {
-                                wasAtEdge = atEdge
-                                Haptics.threshold(view, atEdge)
-                            }
+    // Парящее стекло: верх плотнее, низ прозрачнее — плитка «играет» на свету.
+    val topAlpha = (Design.cardAlpha + 0.08f).coerceIn(0.05f, 0.98f)
+    val bottomAlpha = (Design.cardAlpha - 0.12f).coerceIn(0.02f, 0.95f)
+
+    val progressRight = (offsetX / swipeThreshold).coerceIn(0f, 1f)
+    val progressLeft = (-offsetX / swipeThreshold).coerceIn(0f, 1f)
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        // Подсказка «выполнено» под карточкой — слева.
+        Box(
+            modifier = Modifier.matchParentSize().padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            if (progressRight > 0.02f) {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(Design.done.copy(alpha = 0.20f * progressRight)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_check),
+                        contentDescription = "Выполнено",
+                        colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.done.copy(alpha = 0.45f + 0.55f * progressRight)),
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+        }
+        // Подсказка «удалить» под карточкой — справа.
+        Box(
+            modifier = Modifier.matchParentSize().padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterEnd,
+        ) {
+            if (progressLeft > 0.02f) {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(Design.stopRed.copy(alpha = 0.22f * progressLeft)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_trash),
+                        contentDescription = "Удалить",
+                        colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.stopRed.copy(alpha = 0.5f + 0.5f * progressLeft)),
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+        }
+
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .offset { IntOffset(offsetX.roundToInt(), 0) }
+                    .shadow(
+                        elevation = if (Design.light) 6.dp else 12.dp,
+                        shape = shape,
+                        clip = false,
+                        ambientColor = Color.Black.copy(alpha = 0.40f),
+                        spotColor = Color.Black.copy(alpha = 0.50f),
+                    ).clip(shape)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Design.glassRgb.copy(alpha = topAlpha),
+                                Design.glassRgb.copy(alpha = bottomAlpha),
+                            ),
+                        ),
+                    ).then(
+                        if (categoryColor != null) {
+                            Modifier.background(categoryColor.copy(alpha = if (Design.light) 0.14f else 0.18f))
+                        } else {
+                            Modifier
                         },
-                        onDragEnd = {
-                            val dx = offsetX
-                            offsetX = 0f
-                            wasAtEdge = false
-                            when {
-                                dx > swipeThreshold -> {
-                                    Haptics.confirm(view)
-                                    onToggle()
+                    ).border(
+                        1.dp,
+                        Brush.verticalGradient(listOf(Design.highlight, Design.border)),
+                        shape,
+                    ).pointerInput(note.id) {
+                        detectHorizontalDragGestures(
+                            onDragStart = {
+                                dragging = true
+                                Haptics.tick(view)
+                            },
+                            onHorizontalDrag = { change, dragAmount ->
+                                change.consume()
+                                dragX += dragAmount
+                                val atEdge = abs(dragX) > swipeThreshold
+                                if (atEdge != wasAtEdge) {
+                                    wasAtEdge = atEdge
+                                    Haptics.threshold(view, atEdge)
                                 }
+                            },
+                            onDragEnd = {
+                                val dx = dragX
+                                dragging = false
+                                dragX = 0f
+                                wasAtEdge = false
+                                when {
+                                    dx > swipeThreshold -> {
+                                        Haptics.confirm(view)
+                                        onToggle()
+                                    }
 
-                                dx < -swipeThreshold -> {
-                                    Haptics.destructive(view)
-                                    onDelete()
+                                    dx < -swipeThreshold -> {
+                                        Haptics.destructive(view)
+                                        onDelete()
+                                    }
                                 }
-                            }
+                            },
+                            onDragCancel = {
+                                dragging = false
+                                dragX = 0f
+                                wasAtEdge = false
+                            },
+                        )
+                    }.combinedClickable(
+                        onClick = {
+                            Haptics.tick(view)
+                            // Как в боевом приложении: нажатие открывает лист заметки.
+                            // «Выполнено» осталось на свайпе вправо и в меню по долгому нажатию.
+                            onEdit()
+                        },
+                        onLongClick = {
+                            Haptics.longPress(view)
+                            menuOpen = true
+                        },
+                    ).padding(horizontal = 14.dp, vertical = 12.dp),
+        ) {
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                Text(
+                    text = "Категория",
+                    color = Design.textSecondary.copy(alpha = 0.7f),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 2.dp),
+                )
+                Categories.names.forEach { (id, name) ->
+                    DropdownMenuItem(
+                        text = { Text(name, fontSize = 15.sp) },
+                        onClick = {
+                            Haptics.tick(view)
+                            onCategory(id)
+                            menuOpen = false
                         },
                     )
-                }.combinedClickable(
-                    onClick = {
-                        Haptics.tick(view)
-                        // Как в боевом приложении: нажатие открывает лист заметки.
-                        // «Выполнено» осталось на свайпе вправо и в меню по долгому нажатию.
-                        onEdit()
-                    },
-                    onLongClick = {
-                        Haptics.longPress(view)
-                        menuOpen = true
-                    },
-                ).padding(horizontal = 14.dp, vertical = 12.dp),
-    ) {
-        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            Text(
-                text = "Категория",
-                color = Design.textSecondary.copy(alpha = 0.7f),
-                fontSize = 12.sp,
-                modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 2.dp),
-            )
-            Categories.names.forEach { (id, name) ->
+                }
                 DropdownMenuItem(
-                    text = { Text(name, fontSize = 15.sp) },
+                    text = { Text(if (note.status == "done") "Вернуть в активные" else "Отметить выполненным", fontSize = 15.sp) },
                     onClick = {
                         Haptics.tick(view)
-                        onCategory(id)
+                        onToggle()
+                        menuOpen = false
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Изменить текст", fontSize = 15.sp) },
+                    onClick = {
+                        Haptics.tick(view)
+                        onEdit()
+                        menuOpen = false
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Удалить заметку", fontSize = 15.sp) },
+                    onClick = {
+                        Haptics.longPress(view)
+                        onDelete()
                         menuOpen = false
                     },
                 )
             }
-            DropdownMenuItem(
-                text = { Text(if (note.status == "done") "Вернуть в активные" else "Отметить выполненным", fontSize = 15.sp) },
-                onClick = {
-                    Haptics.tick(view)
-                    onToggle()
-                    menuOpen = false
-                },
-            )
-            DropdownMenuItem(
-                text = { Text("Изменить текст", fontSize = 15.sp) },
-                onClick = {
-                    Haptics.tick(view)
-                    onEdit()
-                    menuOpen = false
-                },
-            )
-            DropdownMenuItem(
-                text = { Text("Удалить заметку", fontSize = 15.sp) },
-                onClick = {
-                    Haptics.longPress(view)
-                    onDelete()
-                    menuOpen = false
-                },
-            )
-        }
 
-        Text(
-            text = note.text,
-            color = Design.textPrimary.copy(alpha = if (note.done) 0.5f else 1f),
-            fontSize = 16.sp,
-        )
-        Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                text = whenText(note).ifBlank { note.time.ifBlank { "—" } },
-                color = Design.textSecondary.copy(alpha = 0.8f),
-                fontSize = 12.sp,
+                text = note.text,
+                color = Design.textPrimary.copy(alpha = if (note.done) 0.5f else 1f),
+                fontSize = 16.sp,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                note.categoryIds.forEach { id ->
-                    Row(
-                        modifier =
-                            Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Categories.colors[id]?.copy(alpha = 0.35f) ?: Design.glassRgb.copy(alpha = 0.35f))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                    ) {
-                        Text(
-                            text = Categories.title(id) ?: id,
-                            color = Design.textPrimary.copy(alpha = 0.92f),
-                            fontSize = 11.sp,
-                        )
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = whenText(note).ifBlank { note.time.ifBlank { "—" } },
+                    color = Design.textSecondary.copy(alpha = 0.8f),
+                    fontSize = 12.sp,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    note.categoryIds.forEach { id ->
+                        Row(
+                            modifier =
+                                Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Categories.colors[id]?.copy(alpha = 0.35f) ?: Design.glassRgb.copy(alpha = 0.35f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Text(
+                                text = Categories.title(id) ?: id,
+                                color = Design.textPrimary.copy(alpha = 0.92f),
+                                fontSize = 11.sp,
+                            )
+                        }
                     }
                 }
-            }
-            if (note.done) {
-                Text(text = "выполнено", color = Design.done, fontSize = 12.sp)
+                if (note.done) {
+                    Text(text = "выполнено", color = Design.done, fontSize = 12.sp)
+                }
             }
         }
     }
