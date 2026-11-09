@@ -38,8 +38,19 @@ class WaveLevel(
     var noiseGate: Float = 0.11f,
     /** Кривая отображения: меньше 1 подтягивает слабые значения. */
     var curve: Float = 0.54f,
-    /** Окно оценки фона, секунды. */
+    /** Окно оценки фона, секунды (процентиль — резервный путь, когда трекер не включён). */
     var windowSeconds: Float = 10f,
+    /** Время спуска фона к тишине, секунды. Быстро: иначе после шума фон «висит». */
+    var floorFallSeconds: Float = 0.05f,
+    /** Время подъёма фона к стационарному шуму, секунды. Медленно, чтобы речь не «съедалась». */
+    var floorRiseSeconds: Float = 2.5f,
+    /**
+     * Насколько выше фона ещё считаем шумом. Больше — фон подтягивается к шуму и гасит его,
+     * но заодно съедает и тихую речь. 0.22 по шкале 65 дБ ≈ 14 дБ: обычная речь уходит
+     * над фоном на 0.3–0.5, так что запас есть, а скачок шума от включившегося кондиционера
+     * (+0.15–0.2) фон ещё догоняет.
+     */
+    var floorTrackMax: Float = 0.22f,
     /** Сколько остаётся от недавнего пика за секунду. */
     var peakDecayPerSecond: Float = 0.70f,
     /** Время подъёма огибающей, секунды. */
@@ -93,7 +104,15 @@ class WaveLevel(
         val cutoff = nowNs - (windowSeconds * 1e9f).toLong()
         while (samples.isNotEmpty() && samples.first()[0] < cutoff) samples.removeFirst()
 
-        floorLevel = percentile()
+        // Фон отслеживается НЕ процентилем за 10 с, а трекером: к постоянному шуму (кондиционер,
+        // телевизор) он подползает, а речь пропускает. Процентиль этого не умел: стационарный шум
+        // с колебаниями ±5 дБ всё равно торчал над нижним процентилем, и полосы на нём ходили.
+        if (floorLevel < 0f) floorLevel = sample
+        if (env < floorLevel) {
+            floorLevel += (env - floorLevel) * (1f - exp(-dt / floorFallSeconds))
+        } else if (env - floorLevel < floorTrackMax) {
+            floorLevel += (env - floorLevel) * (1f - exp(-dt / floorRiseSeconds))
+        }
         val rel = max(0f, env - floorLevel - noiseGate)
         peakLevel = max(rel, peakLevel * peakDecayPerSecond.pow(dt))
 
@@ -159,6 +178,75 @@ object WaveSelfTest {
                 ),
             )
         }
+
+        // «Кондиционер»: ровный шум с дрожанием ±0.05 — главная жалоба владельца.
+        val hum = WaveLevel()
+        var humNs = 0L
+        val humTail = ArrayDeque<Float>()
+        var rnd = 12345L
+        repeat(600) { i ->
+            humNs += 16_666_667L
+            rnd = (rnd * 6364136223846793005L + 1442695040888963407L)
+            val jitter = ((rnd ushr 33) % 1000L) / 1000f * 0.10f - 0.05f
+            val band = hum.value((0.45f + jitter).coerceIn(0f, 1f), humNs)
+            if (i > 360) {
+                humTail.addLast(band)
+                if (humTail.size > 120) humTail.removeFirst()
+            }
+        }
+        Log.i(
+            TAG,
+            "САМОПРОВЕРКА G кондиционер (0.45 ±0.05): полосы %.2f (макс %.2f), фон %.3f".format(
+                humTail.average(),
+                humTail.max(),
+                hum.floor,
+            ),
+        )
+
+        // Тот же кондиционер, затем речь: шум должен остаться в нуле, речь — подняться.
+        val humSpeech = WaveLevel()
+        var hsNs = 0L
+        val hsTail = ArrayDeque<Float>()
+        repeat(420) {
+            hsNs += 16_666_667L
+            rnd = (rnd * 6364136223846793005L + 1442695040888963407L)
+            val jitter = ((rnd ushr 33) % 1000L) / 1000f * 0.10f - 0.05f
+            humSpeech.value((0.45f + jitter).coerceIn(0f, 1f), hsNs)
+        }
+        repeat(90) {
+            hsNs += 16_666_667L
+            hsTail.addLast(humSpeech.value(0.78f, hsNs))
+        }
+        Log.i(
+            TAG,
+            "САМОПРОВЕРКА H кондиционер + речь: речь %.2f (макс %.2f), фон %.3f".format(
+                hsTail.average(),
+                hsTail.max(),
+                humSpeech.floor,
+            ),
+        )
+
+        // Шум нарастает (вентилятор усилился): после подстройки полосы должны снова лечь в ноль.
+        val ramp = WaveLevel()
+        var rampNs = 0L
+        val rampTail = ArrayDeque<Float>()
+        repeat(900) { i ->
+            rampNs += 16_666_667L
+            val target = (0.40f + (if (i < 300) i else 300) / 300f * 0.20f).coerceAtMost(1f)
+            val band = ramp.value(target, rampNs)
+            if (i > 780) {
+                rampTail.addLast(band)
+                if (rampTail.size > 120) rampTail.removeFirst()
+            }
+        }
+        Log.i(
+            TAG,
+            "САМОПРОВЕРКА I шум 0.40→0.60: полосы %.2f (макс %.2f), фон %.3f".format(
+                rampTail.average(),
+                rampTail.max(),
+                ramp.floor,
+            ),
+        )
 
         // Тихая комната без речи: так выглядел живой микрофон, когда фон уходил в 0,000.
         val quiet = WaveLevel()
