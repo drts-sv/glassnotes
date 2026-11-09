@@ -63,6 +63,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.animation.core.AnimationEndReason
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DatePicker
@@ -108,8 +112,11 @@ fun NotesScreen(
     store: NotesStore,
     accent: Color,
     onRecord: () -> Unit = {},
+    onExport: () -> Unit = {},
+    onImport: () -> Unit = {},
 ) {
     var notes by remember { mutableStateOf<List<NoteRow>>(emptyList()) }
+    val badgeContext = LocalContext.current
     var tab by remember { mutableStateOf("active") }
     var query by remember { mutableStateOf("") }
     var searchOpen by remember { mutableStateOf(false) }
@@ -142,6 +149,22 @@ fun NotesScreen(
     var editDate by remember { mutableStateOf<LocalDate?>(null) }
     var editTime by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var editCats by remember { mutableStateOf(emptySet<String>()) }
+
+    /** Заполняет редактор значениями заметки и открывает его. Вызывать и из меню, и из листа. */
+    fun openEditor(n: NoteRow) {
+        editText = n.text
+        editCats = n.categoryIds.toSet()
+        val at = n.datetime
+        if (at != null && at > 0L) {
+            val dt = Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault())
+            editDate = dt.toLocalDate()
+            editTime = if (n.allDay) null else (dt.hour to dt.minute)
+        } else {
+            editDate = null
+            editTime = null
+        }
+        editNote = n
+    }
     /** «Сегодня»/«Завтра» — дата без часа: показывает так же, как «весь день» в поле. */
     fun dayText(plusDays: Int): String {
         val cal = java.util.Calendar.getInstance()
@@ -172,13 +195,22 @@ fun NotesScreen(
         )
     }
 
+    // Число на иконке: обновляем на старте и после каждого действия (revision).
+    LaunchedEffect(revision) { NoteBadge.update(badgeContext, store) }
+
     if (settingsOpen) {
-        SettingsScreen(store = store, accent = accent, onClose = {
-            settingsOpen = false
-            // Плотность стекла могла поменяться — перечитываем заметки, чтобы шапка и карточки
-            // перерисовались с новыми значениями.
-            revision++
-        })
+        SettingsScreen(
+            store = store,
+            accent = accent,
+            onExport = onExport,
+            onImport = onImport,
+            onClose = {
+                settingsOpen = false
+                // Плотность стекла могла поменяться — перечитываем заметки, чтобы шапка и карточки
+                // перерисовались с новыми значениями.
+                revision++
+            },
+        )
         return
     }
 
@@ -205,14 +237,17 @@ fun NotesScreen(
     }
 
     sheetNote?.let { note ->
-        Dialog(onDismissRequest = { sheetNote = null }) {
+        // Просмотр — на весь экран (как утреннее ревью), чтобы читать длинный текст.
+        Dialog(
+            onDismissRequest = { sheetNote = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
             Column(
                 modifier =
                     Modifier
-                        .fillMaxWidth(0.94f)
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(Design.glassRgb)
-                        .padding(18.dp),
+                        .fillMaxSize()
+                        .background(Design.appBackground())
+                        .padding(horizontal = 18.dp, vertical = 16.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -225,35 +260,40 @@ fun NotesScreen(
                     Text(
                         text = "✕",
                         color = Design.textSecondary,
-                        fontSize = 18.sp,
-                        modifier = Modifier.clickable { sheetNote = null }.padding(6.dp),
+                        fontSize = 20.sp,
+                        modifier = Modifier.clickable { sheetNote = null }.padding(8.dp),
                     )
                 }
                 Spacer(Modifier.height(10.dp))
-                Text(
-                    text = note.text,
-                    color = Design.textPrimary.copy(alpha = if (note.done) 0.6f else 1f),
-                    fontSize = 17.sp,
-                )
-                if (note.categoryIds.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        note.categoryIds.forEach { id ->
-                            Badge(
-                                text = Categories.title(id) ?: id,
-                                fg = Color.White.copy(alpha = 0.95f),
-                                bg = (Categories.colors[id] ?: Design.textSecondary).copy(alpha = 0.38f),
-                                bold = true,
-                            )
+                Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                    Text(
+                        text = note.text,
+                        color = Design.textPrimary.copy(alpha = if (note.done) 0.6f else 1f),
+                        fontSize = 18.sp,
+                    )
+                    if (note.categoryIds.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            note.categoryIds.forEach { id ->
+                                Badge(
+                                    text = Categories.title(id) ?: id,
+                                    fg = Color.White.copy(alpha = 0.95f),
+                                    bg = (Categories.colors[id] ?: Design.textSecondary).copy(alpha = 0.38f),
+                                    bold = true,
+                                )
+                            }
                         }
                     }
                 }
-                Spacer(Modifier.height(16.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
                     Text(
                         text = "Изменить",
                         color = Color.White,
-                        fontSize = 15.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                         modifier =
@@ -264,27 +304,22 @@ fun NotesScreen(
                                 .clickable {
                                     Haptics.tick(screenView)
                                     sheetNote = null
-                                    editNote = note
-                                }.padding(vertical = 13.dp),
+                                    openEditor(note)
+                                }.padding(vertical = 14.dp),
                     )
-                    Text(
-                        text = "Удалить",
-                        color = Design.stopRed,
-                        fontSize = 15.sp,
-                        textAlign = TextAlign.Center,
-                        modifier =
-                            Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(40.dp))
-                                .background(Design.stopRed.copy(alpha = 0.12f))
-                                .clickable {
-                                    Haptics.tick(screenView)
-                                    Reminders.cancel(context, note.id)
-                                    store.remove(note.id)
-                                    revision++
-                                    sheetNote = null
-                                    Log.i("GlasNotesDev", "заметка #%d удалена из листа просмотра".format(note.id))
-                                }.padding(vertical = 13.dp),
+                    // Удаление — маленькой круглой кнопкой и только удержанием: случайный тап
+                    // по кнопке на весь экран стирал заметку сразу.
+                    HoldToDelete(
+                        sec = AppSettings.int(store, AppSettings.HOLD_DELETE_SEC, AppSettings.DEFAULT_HOLD_DELETE_SEC, 0..10),
+                        onFire = {
+                            Haptics.triple(screenView)
+                            Reminders.cancel(context, note.id)
+                            store.remove(note.id)
+                            revision++
+                            sheetNote = null
+                            Ui.toast(context, "Заметка удалена")
+                            Log.i("GlasNotesDev", "заметка #%d удалена из листа просмотра".format(note.id))
+                        },
                     )
                 }
             }
@@ -316,16 +351,16 @@ fun NotesScreen(
                 }
             } ?: "Не задано"
 
-        Dialog(onDismissRequest = { editNote = null }) {
+        Dialog(
+            onDismissRequest = { editNote = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
             Column(
                 modifier =
                     Modifier
-                        .fillMaxWidth(0.95f)
-                        .heightIn(max = 700.dp)
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(Design.glassRgb)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .fillMaxSize()
+                        .background(Design.appBackground())
+                        .padding(horizontal = 18.dp, vertical = 16.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -342,8 +377,9 @@ fun NotesScreen(
                         modifier = Modifier.clickable { editNote = null }.padding(6.dp),
                     )
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(14.dp))
 
+                Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                 Text("📝 Текст", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
                 Spacer(Modifier.height(4.dp))
                 BasicTextField(
@@ -446,7 +482,9 @@ fun NotesScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(16.dp))
+                }
+
+                Spacer(Modifier.height(12.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
@@ -496,6 +534,7 @@ fun NotesScreen(
                                             Reminders.schedule(context, note.id, at, value, editCats.firstOrNull(), allDay)
                                         }
                                         revision++
+                                        Ui.toast(context, "Заметка сохранена")
                                         Log.i(
                                             "GlasNotesDev",
                                             "заметка #%d изменена: текст %d симв., дата %s, категорий %d".format(
@@ -669,26 +708,14 @@ fun NotesScreen(
                             store.setStatus(note.id, if (note.done) "active" else "done")
                             if (!note.done) Reminders.cancel(context, note.id)
                             revision++
+                            Ui.toast(context, if (note.done) "Снова активна" else "Отмечено выполненной")
                         },
                         onCategory = { category ->
                             store.setCategory(note.id, category)
                             revision++
                         },
                         onOpen = { sheetNote = note },
-                        onEdit = {
-                            editText = note.text
-                            editCats = note.categoryIds.toSet()
-                            val at = note.datetime
-                            if (at != null && at > 0L) {
-                                val dt = Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault())
-                                editDate = dt.toLocalDate()
-                                editTime = if (note.allDay) null else (dt.hour to dt.minute)
-                            } else {
-                                editDate = null
-                                editTime = null
-                            }
-                            editNote = note
-                        },
+                        onEdit = { openEditor(note) },
                         holdDoneSec =
                             AppSettings.int(store, AppSettings.HOLD_DONE_SEC, AppSettings.DEFAULT_HOLD_DONE_SEC, 0..10),
                         holdDeleteSec =
@@ -699,6 +726,7 @@ fun NotesScreen(
                             store.remove(note.id)
                             Reminders.cancel(context, note.id)
                             revision++
+                            Ui.toast(context, "Заметка удалена")
                             Log.i("GlasNotesDev", "удаление #%d".format(note.id))
                         },
                     )
@@ -1488,14 +1516,15 @@ private fun Badge(
     Box(
         modifier =
             Modifier
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(7.dp))
                 .background(bg)
-                .padding(horizontal = 8.dp, vertical = 3.dp),
+                .padding(horizontal = 7.dp, vertical = 1.dp),
     ) {
         Text(
             text = text,
             color = fg,
-            fontSize = 11.sp,
+            fontSize = 10.sp,
+            lineHeight = 12.sp,
             fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal,
             maxLines = 1,
         )
@@ -1586,5 +1615,66 @@ private fun EditSectionHeader(
             modifier = Modifier.weight(1f),
         )
         Text(text = if (open) "▾" else "▸", color = Design.textSecondary, fontSize = 13.sp)
+    }
+}
+
+
+/**
+ * Маленькая кнопка удаления с удержанием: кольцо заполняется за [sec] секунд, срабатывание —
+ * тройная вибрация и удаление. Отпустили раньше — ничего не происходит. Тот же предохранитель,
+ * что на свайпе карточки, только для кнопки в листе просмотра.
+ */
+@Composable
+private fun HoldToDelete(
+    sec: Int,
+    onFire: () -> Unit,
+) {
+    var pressed by remember { mutableStateOf(false) }
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(pressed, sec) {
+        if (!pressed) {
+            progress.snapTo(0f)
+            return@LaunchedEffect
+        }
+        val result = progress.animateTo(1f, tween(sec.coerceAtLeast(1) * 1000, easing = LinearEasing))
+        if (result.endReason == AnimationEndReason.Finished) onFire()
+    }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier =
+            Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(Design.stopRed.copy(alpha = 0.10f))
+                .pointerInput(sec) {
+                    detectTapGestures(
+                        onPress = {
+                            pressed = true
+                            tryAwaitRelease()
+                            pressed = false
+                        },
+                    )
+                },
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_trash),
+            contentDescription = "Удалить (удерживать)",
+            colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.stopRed.copy(alpha = 0.85f)),
+            modifier = Modifier.size(18.dp),
+        )
+        if (progress.value > 0f) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val stroke = 3.dp.toPx()
+                drawArc(
+                    color = Design.stopRed,
+                    startAngle = -90f,
+                    sweepAngle = 360f * progress.value,
+                    useCenter = false,
+                    topLeft = Offset(stroke / 2f, stroke / 2f),
+                    size = Size(size.width - stroke, size.height - stroke),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke, cap = StrokeCap.Round),
+                )
+            }
+        }
     }
 }

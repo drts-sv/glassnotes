@@ -5,6 +5,8 @@ import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -29,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -299,6 +302,22 @@ class MainActivity : ComponentActivity() {
             store.recent(5).forEach { json -> Log.i(TAG, "заметка: $json") }
         }
 
+        // Резервная копия без диалогов: выгрузить в файл приложения и прочитать обратно.
+        if (intent?.getBooleanExtra("backup_test", false) == true) {
+            val store = NotesStore(applicationContext)
+            val before = store.count()
+            val json = Backup.exportJson(store)
+            val file = File(filesDir, "backup-test.json")
+            file.writeText(json)
+            val read = file.readText()
+            val count = Backup.importJson(store, read)
+            Log.i(
+                TAG,
+                "САМОПРОВЕРКА КОПИИ: заметок %d, файл %d байт, импортировано %d, после импорта %d"
+                    .format(before, read.length, count, store.count()),
+            )
+        }
+
         setContent {
             MaterialTheme(
                 colorScheme =
@@ -310,6 +329,38 @@ class MainActivity : ComponentActivity() {
             ) {
                 val accent = remember { systemAccent(applicationContext) }
                 val store = remember { NotesStore(applicationContext) }
+                val uiContext = LocalContext.current
+                // Резервная копия: системный диалог «сохранить как», без своих файловых диалогов.
+                val exportLauncher =
+                    rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+                        if (uri == null) return@rememberLauncherForActivityResult
+                        val ok =
+                            runCatching {
+                                uiContext.contentResolver.openOutputStream(uri)?.use {
+                                    it.write(Backup.exportJson(store).toByteArray())
+                                } != null
+                            }.getOrDefault(false)
+                        Ui.toast(uiContext, if (ok) "Заметки выгружены" else "Не удалось записать файл")
+                        Log.i(TAG, "экспорт: %s".format(if (ok) "ок" else "ошибка записи"))
+                    }
+                val importLauncher =
+                    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                        if (uri == null) return@rememberLauncherForActivityResult
+                        val text =
+                            runCatching {
+                                uiContext.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                            }.getOrNull()
+                        val count = text?.let { Backup.importJson(store, it) } ?: -1
+                        Ui.toast(
+                            uiContext,
+                            when {
+                                count > 0 -> "Импортировано записей: $count"
+                                count == 0 -> "В файле нет записей"
+                                else -> "Это не файл GlasNote"
+                            },
+                        )
+                        Log.i(TAG, "импорт: %d".format(count))
+                    }
                 // Тестовых вкладок «Запись/Список» больше нет: главный экран — список заметок,
                 // а запись открывается кнопкой микрофона в правом нижнем углу.
                 var recordingOpen by remember {
@@ -319,7 +370,13 @@ class MainActivity : ComponentActivity() {
                 if (recordingOpen) {
                     RecordingScreen(autoStart = true, onClose = { recordingOpen = false })
                 } else {
-                    NotesScreen(store = store, accent = accent, onRecord = { recordingOpen = true })
+                    NotesScreen(
+                        store = store,
+                        accent = accent,
+                        onRecord = { recordingOpen = true },
+                        onExport = { exportLauncher.launch("glasnote-" + Backup.stamp() + ".json") },
+                        onImport = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
+                    )
                 }
             }
         }

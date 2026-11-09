@@ -139,6 +139,21 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
         }
     }
 
+    /**
+     * Все заметки как сырые строки (id, json, ts) — для резервной копии. Порядок по id,
+     * чтобы файл был предсказуемым и сравнимым между выгрузками.
+     */
+    fun allRows(): List<Triple<Long, String, Long>> =
+        readableDatabase
+            .rawQuery("SELECT id, json, ts FROM notes ORDER BY id", null)
+            .use { cursor ->
+                val out = ArrayList<Triple<Long, String, Long>>(cursor.count)
+                while (cursor.moveToNext()) {
+                    out.add(Triple(cursor.getLong(0), cursor.getString(1), cursor.getLong(2)))
+                }
+                out
+            }
+
     fun remove(id: Long) {
         writableDatabase.delete("notes", "id = ?", arrayOf(id.toString()))
     }

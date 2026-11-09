@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -64,6 +65,8 @@ fun SettingsScreen(
     store: NotesStore,
     accent: Color,
     onClose: () -> Unit,
+    onExport: () -> Unit = {},
+    onImport: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -125,6 +128,7 @@ fun SettingsScreen(
     var openTimes by remember { mutableStateOf(false) }
     var openReview by remember { mutableStateOf(false) }
     var openModel by remember { mutableStateOf(false) }
+    var openData by remember { mutableStateOf(false) }
 
     val model =
         remember {
@@ -399,6 +403,54 @@ fun SettingsScreen(
                             Tile("Справа ⇥", fabPos == "right", accent, Modifier.weight(1f)) {
                                 fabPos = "right"
                                 store.setKv("fabPos", "right")
+                            }
+                        }
+                    }
+
+                    // ---------- 💾 Данные ----------
+                    SettingsGroup(
+                        "💾 Данные",
+                        "экспорт и импорт",
+                        openData,
+                        { openData = !openData },
+                    ) {
+                        Text(
+                            text = "Файл JSON: те же записи, что в базе. Импорт перезаписывает " +
+                                "совпадающие заметки и добавляет новые — перед импортом чужих " +
+                                "копий лучше сделать экспорт.",
+                            color = Design.textSecondary.copy(alpha = 0.75f),
+                            fontSize = 12.sp,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(40.dp))
+                                        .background(accent.copy(alpha = 0.9f))
+                                        .clickable {
+                                            Haptics.tick(view)
+                                            onExport()
+                                        }.padding(vertical = 12.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("⬇ Экспорт", color = Color.White, fontSize = 14.4.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(40.dp))
+                                        .background(Design.tint(0.08f))
+                                        .border(1.dp, Design.border, RoundedCornerShape(40.dp))
+                                        .clickable {
+                                            Haptics.tick(view)
+                                            onImport()
+                                        }.padding(vertical = 12.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("⬆ Импорт", color = Design.textPrimary, fontSize = 14.4.sp)
                             }
                         }
                     }
