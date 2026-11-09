@@ -846,7 +846,10 @@ private fun NoteCard(
     var holdTick by remember { mutableIntStateOf(0) } // перезапуск отсчёта
     val holdRing = remember { Animatable(0f) }
     val density = LocalDensity.current
-    val swipeThreshold = with(density) { 60.dp.toPx() }
+    // Порог срабатывания и предел хода. Порог 60 dp владелец назвал слишком близким к краю:
+    // действие начиналось от лёгкого движения. 96 dp — примерно ширина подушечки пальца.
+    val swipeThreshold = with(density) { 96.dp.toPx() }
+    val swipeMax = with(density) { 120.dp.toPx() }
     val view = LocalView.current
     var wasAtEdge by remember { mutableStateOf(false) }
 
@@ -1017,7 +1020,8 @@ private fun NoteCard(
                             onHorizontalDrag = { change, dragAmount ->
                                 change.consume()
                                 // За порогом карточка почти не идёт: палец «упирается», идёт отсчёт.
-                                dragX += dragAmount
+                                // Дальше предела карточка не уезжает: значок и так открыт целиком.
+                                dragX = (dragX + dragAmount).coerceIn(-swipeMax, swipeMax)
                                 val atEdge = abs(dragX) > swipeThreshold
                                 if (atEdge != wasAtEdge) {
                                     wasAtEdge = atEdge
