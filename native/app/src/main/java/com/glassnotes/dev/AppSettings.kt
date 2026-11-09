@@ -15,6 +15,10 @@ object AppSettings {
     const val REVIEW_ENABLED = "reviewEnabled"
     const val REVIEW_SHOWN_FOR = "reviewShownFor"
     const val UNDO_SEC = "undoTimerSec"
+
+    /** Удержание свайпа: сколько держать за порогом, чтобы сработало действие. */
+    const val HOLD_DONE_SEC = "holdDoneSec"
+    const val HOLD_DELETE_SEC = "holdDeleteSec"
     const val CAT_SHEET_SEC = "catSheetTimerSec"
     const val ASK_CATEGORY = "askCategory"
     const val VOICE_CATEGORY = "voiceCategory"
@@ -28,6 +32,9 @@ object AppSettings {
     // ---- значения по умолчанию ----
     const val DEFAULT_REVIEW_TIME = "08:00"
     const val DEFAULT_UNDO_SEC = 3
+    // Выполнение подтверждается быстрее удаления: удалить случайно дороже.
+    const val DEFAULT_HOLD_DONE_SEC = 2
+    const val DEFAULT_HOLD_DELETE_SEC = 3
     const val DEFAULT_CAT_SHEET_SEC = 3
     const val DEFAULT_GLASS_ALPHA = 80
     const val DEFAULT_APP_VEIL = 35

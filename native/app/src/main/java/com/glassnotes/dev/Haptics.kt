@@ -64,6 +64,16 @@ object Haptics {
     /** Удаление — отклик сильнее: действие необратимое. */
     fun destructive(view: View) = perform(view, HapticFeedbackConstants.CONTEXT_CLICK)
 
+    /**
+     * Тройная отдача — «действие подтверждено удержанием» (свайп с удержанием).
+     * Три коротких импульса с паузами: их не спутать с одиночным подтверждением.
+     */
+    fun triple(view: View) {
+        perform(view, HapticFeedbackConstants.LONG_PRESS)
+        view.postDelayed({ perform(view, HapticFeedbackConstants.CONTEXT_CLICK) }, 130)
+        view.postDelayed({ perform(view, HapticFeedbackConstants.CONTEXT_CLICK) }, 260)
+    }
+
     /** Долгое нажатие (открылось меню). */
     fun longPress(view: View) = perform(view, HapticFeedbackConstants.LONG_PRESS)
 }

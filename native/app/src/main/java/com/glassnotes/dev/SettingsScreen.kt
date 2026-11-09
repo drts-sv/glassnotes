@@ -95,6 +95,16 @@ fun SettingsScreen(
         mutableFloatStateOf(AppSettings.int(store, AppSettings.CAT_SHEET_SEC, AppSettings.DEFAULT_CAT_SHEET_SEC, 0..15).toFloat())
     }
 
+    // Удержание свайпа: сколько держать карточку за порогом, чтобы сработало действие.
+    var holdDoneSec by remember {
+        mutableFloatStateOf(AppSettings.int(store, AppSettings.HOLD_DONE_SEC, AppSettings.DEFAULT_HOLD_DONE_SEC, 0..10).toFloat())
+    }
+    var holdDeleteSec by remember {
+        mutableFloatStateOf(
+            AppSettings.int(store, AppSettings.HOLD_DELETE_SEC, AppSettings.DEFAULT_HOLD_DELETE_SEC, 0..10).toFloat(),
+        )
+    }
+
     var askCategory by remember { mutableStateOf(AppSettings.flag(store, AppSettings.ASK_CATEGORY, true)) }
     var voiceCategory by remember { mutableStateOf(AppSettings.flag(store, AppSettings.VOICE_CATEGORY, true)) }
     var filler by remember { mutableStateOf(AppSettings.flag(store, AppSettings.FILLER, true)) }
@@ -243,10 +253,18 @@ fun SettingsScreen(
                     // ---------- ⏱ Таймеры ----------
                     SettingsGroup(
                         "⏱ Таймеры",
-                        "отмена %d с · сплэш %d с".format(undoSec.roundToInt(), catSheetSec.roundToInt()),
+                        "держ. %d/%d с · отмена %d с".format(holdDoneSec.roundToInt(), holdDeleteSec.roundToInt(), undoSec.roundToInt()),
                         openTimers,
                         { openTimers = !openTimers },
                     ) {
+                        // Удержание свайпа: вправо — «выполнено», влево — «удалить». Удаление дольше,
+                        // чтобы не снести заметку случайным движением.
+                        SliderRow("Удержание свайпа вправо (выполнено)", holdDoneSec, 0f..10f, 19, "%d с".format(holdDoneSec.roundToInt()), accent, { holdDoneSec = it }) {
+                            store.setKv(AppSettings.HOLD_DONE_SEC, holdDoneSec.roundToInt().toString())
+                        }
+                        SliderRow("Удержание свайпа влево (удалить)", holdDeleteSec, 0f..10f, 19, "%d с".format(holdDeleteSec.roundToInt()), accent, { holdDeleteSec = it }) {
+                            store.setKv(AppSettings.HOLD_DELETE_SEC, holdDeleteSec.roundToInt().toString())
+                        }
                         SliderRow("Таймер отмены удаления", undoSec, 0f..15f, 14, "%d с".format(undoSec.roundToInt()), accent, { undoSec = it }) {
                             store.setKv(AppSettings.UNDO_SEC, undoSec.roundToInt().toString())
                         }
@@ -408,6 +426,8 @@ fun SettingsScreen(
                                         glass = (Design.cardAlpha * 100).roundToInt().toFloat()
                                         veil = (Design.veil * 100).roundToInt().toFloat()
                                         blur = Design.backdropBlur.value
+                                        holdDoneSec = AppSettings.DEFAULT_HOLD_DONE_SEC.toFloat()
+                                        holdDeleteSec = AppSettings.DEFAULT_HOLD_DELETE_SEC.toFloat()
                                         undoSec = AppSettings.DEFAULT_UNDO_SEC.toFloat()
                                         catSheetSec = AppSettings.DEFAULT_CAT_SHEET_SEC.toFloat()
                                         dbWindow = 65f
