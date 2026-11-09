@@ -88,9 +88,6 @@ fun SettingsScreen(
     var threads by remember { mutableFloatStateOf(store.getKv("threads")?.toFloatOrNull() ?: 1f) }
     var silenceSec by remember { mutableFloatStateOf(store.getKv("silenceSec")?.toFloatOrNull() ?: 3f) }
 
-    var undoSec by remember {
-        mutableFloatStateOf(AppSettings.int(store, AppSettings.UNDO_SEC, AppSettings.DEFAULT_UNDO_SEC, 0..15).toFloat())
-    }
     var catSheetSec by remember {
         mutableFloatStateOf(AppSettings.int(store, AppSettings.CAT_SHEET_SEC, AppSettings.DEFAULT_CAT_SHEET_SEC, 0..15).toFloat())
     }
@@ -253,7 +250,7 @@ fun SettingsScreen(
                     // ---------- ⏱ Таймеры ----------
                     SettingsGroup(
                         "⏱ Таймеры",
-                        "держ. %d/%d с · отмена %d с".format(holdDoneSec.roundToInt(), holdDeleteSec.roundToInt(), undoSec.roundToInt()),
+                        "держ. %d с вправо · %d с влево".format(holdDoneSec.roundToInt(), holdDeleteSec.roundToInt()),
                         openTimers,
                         { openTimers = !openTimers },
                     ) {
@@ -264,9 +261,6 @@ fun SettingsScreen(
                         }
                         SliderRow("Удержание свайпа влево (удалить)", holdDeleteSec, 0f..10f, 19, "%d с".format(holdDeleteSec.roundToInt()), accent, { holdDeleteSec = it }) {
                             store.setKv(AppSettings.HOLD_DELETE_SEC, holdDeleteSec.roundToInt().toString())
-                        }
-                        SliderRow("Таймер отмены удаления", undoSec, 0f..15f, 14, "%d с".format(undoSec.roundToInt()), accent, { undoSec = it }) {
-                            store.setKv(AppSettings.UNDO_SEC, undoSec.roundToInt().toString())
                         }
                         SliderRow("Таймер сплэша категорий", catSheetSec, 0f..15f, 14, "%d с".format(catSheetSec.roundToInt()), accent, { catSheetSec = it }) {
                             store.setKv(AppSettings.CAT_SHEET_SEC, catSheetSec.roundToInt().toString())
@@ -428,7 +422,6 @@ fun SettingsScreen(
                                         blur = Design.backdropBlur.value
                                         holdDoneSec = AppSettings.DEFAULT_HOLD_DONE_SEC.toFloat()
                                         holdDeleteSec = AppSettings.DEFAULT_HOLD_DELETE_SEC.toFloat()
-                                        undoSec = AppSettings.DEFAULT_UNDO_SEC.toFloat()
                                         catSheetSec = AppSettings.DEFAULT_CAT_SHEET_SEC.toFloat()
                                         dbWindow = 65f
                                         noiseGate = 0.11f
@@ -545,7 +538,7 @@ private fun resetAll(store: NotesStore) {
     val keys =
         mutableListOf(
             AppSettings.GLASS_ALPHA, AppSettings.APP_VEIL, AppSettings.BG_BLUR,
-            AppSettings.UNDO_SEC, AppSettings.CAT_SHEET_SEC,
+            AppSettings.HOLD_DONE_SEC, AppSettings.HOLD_DELETE_SEC, AppSettings.CAT_SHEET_SEC,
             AppSettings.ASK_CATEGORY, AppSettings.VOICE_CATEGORY, AppSettings.FILLER,
             AppSettings.REVIEW_ENABLED, Reminders.REVIEW_TIME_KEY,
             "dbWindow", "noiseGate", "curve", "threads", "silenceSec", "fabPos",
@@ -555,7 +548,8 @@ private fun resetAll(store: NotesStore) {
     store.setKv(AppSettings.GLASS_ALPHA, AppSettings.DEFAULT_GLASS_ALPHA.toString())
     store.setKv(AppSettings.APP_VEIL, AppSettings.DEFAULT_APP_VEIL.toString())
     store.setKv(AppSettings.BG_BLUR, AppSettings.DEFAULT_BG_BLUR.toString())
-    store.setKv(AppSettings.UNDO_SEC, AppSettings.DEFAULT_UNDO_SEC.toString())
+    store.setKv(AppSettings.HOLD_DONE_SEC, AppSettings.DEFAULT_HOLD_DONE_SEC.toString())
+    store.setKv(AppSettings.HOLD_DELETE_SEC, AppSettings.DEFAULT_HOLD_DELETE_SEC.toString())
     store.setKv(AppSettings.CAT_SHEET_SEC, AppSettings.DEFAULT_CAT_SHEET_SEC.toString())
     store.setKv(Reminders.REVIEW_TIME_KEY, Reminders.DEFAULT_REVIEW_TIME)
 }

@@ -110,20 +110,6 @@ fun NotesScreen(
         Design.setTheme(AppSettings.themeMode(store), systemDark)
     }
 
-    // Удаление с отменой (showUndoFab в боевом): заметка исчезает сразу, а её JSON
-    // держим в памяти, пока идёт таймер undoTimerSec из настроек. 0 с — без плашки.
-    var undo by remember { mutableStateOf<Deleted?>(null) }
-    var undoTick by remember { mutableIntStateOf(0) }
-    // Сколько секунд дано на отмену — ровно то, что стоит ползунком в настройках (undoTimerSec).
-    var undoSeconds by remember { mutableIntStateOf(AppSettings.DEFAULT_UNDO_SEC) }
-    // Кольцо-таймер на плашке: 1 → 0 за undoSeconds. Один отсчёт и гасит плашку, и рисует кольцо.
-    val undoProgress = remember { Animatable(0f) }
-    LaunchedEffect(undoTick) {
-        val pending = undo ?: return@LaunchedEffect
-        undoProgress.snapTo(1f)
-        undoProgress.animateTo(0f, tween(durationMillis = undoSeconds * 1000, easing = LinearEasing))
-        if (undo == pending) undo = null
-    }
     val context = LocalContext.current
     // Отклик в диалоге: LocalView читаем здесь — внутри clickable его вызывать нельзя.
     val screenView = LocalView.current
@@ -445,98 +431,18 @@ fun NotesScreen(
                         holdDeleteSec =
                             AppSettings.int(store, AppSettings.HOLD_DELETE_SEC, AppSettings.DEFAULT_HOLD_DELETE_SEC, 0..10),
                         onDelete = {
-                            val row = store.rawRow(note.id)
+                            // Предохранитель — удержание пальца на карточке (holdDeleteSec),
+                            // отдельного таймера отмены после удаления нет.
                             store.remove(note.id)
                             Reminders.cancel(context, note.id)
                             revision++
-                            val seconds =
-                                AppSettings.int(store, AppSettings.UNDO_SEC, AppSettings.DEFAULT_UNDO_SEC, 0..15)
-                            if (seconds > 0 && row != null) {
-                                undoSeconds = seconds
-                                undo = Deleted(note.id, row.first, row.second)
-                                undoTick++
-                                Log.i("GlasNotesDev", "удаление #%d: отмена %d с".format(note.id, seconds))
-                            }
+                            Log.i("GlasNotesDev", "удаление #%d".format(note.id))
                         },
                     )
                     }
                 }
             }
         }
-        }
-
-        // Плашка «Отменить» над кнопкой записи — как showUndoFab в боевом приложении.
-        undo?.let { pending ->
-            val pillShape = RoundedCornerShape(14.dp)
-            Row(
-                modifier =
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 92.dp)
-                        .shadow(
-                            elevation = 10.dp,
-                            shape = pillShape,
-                            clip = false,
-                            ambientColor = Color.Black.copy(alpha = 0.40f),
-                            spotColor = Color.Black.copy(alpha = 0.45f),
-                        ).clip(pillShape)
-                        .background(Design.glassRgb.copy(alpha = 0.97f))
-                        .border(1.dp, Design.border, pillShape)
-                        .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Кольцо обратного отсчёта: сколько осталось до окончательного удаления.
-                Box(modifier = Modifier.size(26.dp), contentAlignment = Alignment.Center) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val stroke = 2.5.dp.toPx()
-                        val ring = Size(size.width - stroke, size.height - stroke)
-                        drawArc(
-                            color = Design.border,
-                            startAngle = -90f,
-                            sweepAngle = 360f,
-                            useCenter = false,
-                            topLeft = Offset(stroke / 2f, stroke / 2f),
-                            size = ring,
-                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke),
-                        )
-                        drawArc(
-                            color = accent,
-                            startAngle = -90f,
-                            sweepAngle = 360f * undoProgress.value,
-                            useCenter = false,
-                            topLeft = Offset(stroke / 2f, stroke / 2f),
-                            size = ring,
-                            style =
-                                androidx.compose.ui.graphics.drawscope.Stroke(
-                                    width = stroke,
-                                    cap = StrokeCap.Round,
-                                ),
-                        )
-                    }
-                    Text(
-                        text = "%d".format(kotlin.math.ceil(undoProgress.value * undoSeconds).toInt().coerceIn(0, undoSeconds)),
-                        color = Design.textSecondary,
-                        fontSize = 10.sp,
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(text = "Заметка удалена", color = Design.textSecondary, fontSize = 14.sp)
-                Text(
-                    text = "Отменить",
-                    color = accent,
-                    fontSize = 14.sp,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                    modifier =
-                        Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable {
-                                Haptics.confirm(screenView)
-                                store.restore(pending.id, pending.json, pending.ts)
-                                undo = null
-                                revision++
-                            }.padding(horizontal = 12.dp, vertical = 8.dp),
-                )
-            }
         }
 
         // Кнопка записи: по ней открывается окно записи. Положение — из настроек.
@@ -920,13 +826,6 @@ private fun SearchField(
         }
     }
 }
-
-/** Удалённая заметка, которую ещё можно вернуть: id, JSON и метка времени — как были. */
-private data class Deleted(
-    val id: Long,
-    val json: String,
-    val ts: Long,
-)
 
 /**
  * Карточка заметки — «парящее стекло»: градиент плотности (верхняя грань светлее),
