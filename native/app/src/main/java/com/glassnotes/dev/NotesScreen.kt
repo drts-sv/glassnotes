@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -49,7 +50,11 @@ import androidx.compose.foundation.Image
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -106,6 +111,7 @@ import kotlin.math.roundToInt
  */
 @OptIn(
     androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
     ExperimentalMaterial3Api::class,
 )
 @Composable
@@ -258,6 +264,13 @@ fun NotesScreen(
         var datePickerOpen by remember { mutableStateOf(false) }
         var timePickerOpen by remember { mutableStateOf(false) }
 
+        // Раскрытый раздел даты/времени прокручиваем внутрь видимой части: раньше он уходил
+        // за нижний край, и до него приходилось скроллить вручную.
+        val settingsScroll = rememberScrollState()
+        val editScope = rememberCoroutineScope()
+        val dateRequester = remember { BringIntoViewRequester() }
+        val timeRequester = remember { BringIntoViewRequester() }
+
         fun timeText(): String = editTime?.let { "%02d:%02d".format(it.first, it.second) } ?: "Не задано"
         fun dateText(): String =
             editDate?.let { d ->
@@ -302,11 +315,13 @@ fun NotesScreen(
                 Text("📝 Текст", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
                 Spacer(Modifier.height(4.dp))
                 // Поле тянется на всё свободное место: раньше оно было min 64 dp и текст не влезал.
+                var textLines by remember { mutableStateOf(1) }
+                val fieldHeight = (textLines * 26 + 34).dp.coerceIn(150.dp, 430.dp)
                 Box(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .weight(1.6f)
+                            .height(fieldHeight)
                             .clip(RoundedCornerShape(16.dp))
                             .background(Design.glassRgb.copy(alpha = 0.55f))
                             .border(1.dp, Design.border, RoundedCornerShape(16.dp)),
@@ -314,7 +329,8 @@ fun NotesScreen(
                     BasicTextField(
                         value = editText,
                         onValueChange = { editText = it },
-                        textStyle = TextStyle(color = Design.textPrimary, fontSize = 16.sp),
+                        onTextLayout = { textLines = it.lineCount.coerceAtLeast(1) },
+                        textStyle = TextStyle(color = Design.textPrimary, fontSize = 17.sp, lineHeight = 26.sp),
                         modifier =
                             Modifier
                                 .fillMaxSize()
@@ -333,7 +349,7 @@ fun NotesScreen(
                             .clip(RoundedCornerShape(16.dp))
                             .background(Design.glassRgb.copy(alpha = 0.35f))
                             .border(1.dp, Design.border, RoundedCornerShape(16.dp))
-                            .verticalScroll(rememberScrollState())
+                            .verticalScroll(settingsScroll)
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                 ) {
                 Text("🏷 Категории", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
@@ -361,9 +377,11 @@ fun NotesScreen(
                     title = "📅 Дата",
                     value = dateText(),
                     open = dateOpen,
+                    modifier = Modifier.bringIntoViewRequester(dateRequester),
                     onClick = {
                         Haptics.tick(screenView)
                         dateOpen = !dateOpen
+                        if (dateOpen) editScope.launch { dateRequester.bringIntoView() }
                     },
                 )
                 if (dateOpen) {
@@ -398,9 +416,11 @@ fun NotesScreen(
                     title = "⏰ Время",
                     value = timeText(),
                     open = timeOpen,
+                    modifier = Modifier.bringIntoViewRequester(timeRequester),
                     onClick = {
                         Haptics.tick(screenView)
                         timeOpen = !timeOpen
+                        if (timeOpen) editScope.launch { timeRequester.bringIntoView() }
                     },
                 )
                 if (timeOpen) {
@@ -427,31 +447,29 @@ fun NotesScreen(
                 Spacer(Modifier.height(10.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "Отмена",
-                        color = Design.textSecondary.copy(alpha = 0.9f),
-                        fontSize = 15.sp,
+                    Box(
                         modifier =
                             Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(40.dp))
-                                .background(Design.glassRgb.copy(alpha = 0.5f))
+                                .height(50.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Design.glassRgb.copy(alpha = 0.55f))
+                                .border(1.dp, Design.border, RoundedCornerShape(16.dp))
                                 .clickable {
                                     Haptics.tick(screenView)
                                     editNote = null
-                                }.padding(vertical = 13.dp),
-                        textAlign = TextAlign.Center,
-                    )
-                    Text(
-                        text = "Сохранить",
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
+                                },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(text = "Отмена", color = Design.textPrimary, fontSize = 15.sp)
+                    }
+                    Box(
                         modifier =
                             Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(40.dp))
-                                .background(accent.copy(alpha = 0.9f))
+                                .height(50.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(accent.copy(alpha = 0.92f))
                                 .clickable {
                                     Haptics.tick(screenView)
                                     val value = editText.trim()
@@ -486,9 +504,11 @@ fun NotesScreen(
                                         )
                                     }
                                     editNote = null
-                                }.padding(vertical = 13.dp),
-                        textAlign = TextAlign.Center,
-                    )
+                                },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(text = "Сохранить", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
 
@@ -1562,12 +1582,13 @@ private fun EditSectionHeader(
     title: String,
     value: String,
     open: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier =
-            Modifier
+            modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
                 .clickable { onClick() }
@@ -1674,8 +1695,8 @@ private fun NoteSheet(
         Column(
             modifier =
                 Modifier
-                    .fillMaxWidth(0.92f)
-                    .heightIn(max = 620.dp)
+                    .fillMaxWidth(0.94f)
+                    .fillMaxHeight(0.88f)
                     .clip(RoundedCornerShape(26.dp))
                     .background(Design.glassRgb.copy(alpha = 0.94f))
                     .border(1.dp, Design.border, RoundedCornerShape(26.dp))
@@ -1687,7 +1708,7 @@ private fun NoteSheet(
                 Text(
                     text = WhenInput.display(note.datetime, note.allDay).ifEmpty { "Без даты" },
                     color = if (note.datetime == null) Design.textSecondary else Design.textPrimary,
-                    fontSize = 14.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                 )
@@ -1707,11 +1728,13 @@ private fun NoteSheet(
                 }
             }
             Spacer(Modifier.height(10.dp))
-            Column(modifier = Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+            // Текстовая зона тянется на всю карточку: кнопки остаются внизу, а не липнут к тексту.
+            Column(modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
                 Text(
                     text = note.text,
                     color = Design.textPrimary.copy(alpha = if (note.done) 0.6f else 1f),
-                    fontSize = 17.sp,
+                    fontSize = 21.sp,
+                    lineHeight = 29.sp,
                 )
                 if (note.categoryIds.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
@@ -1732,23 +1755,28 @@ private fun NoteSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text(
-                    text = "Изменить",
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
+                Spacer(Modifier.weight(1f))
+                // Правка — иконкой карандаша: текстовая кнопка занимала половину листа.
+                Box(
                     modifier =
                         Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(40.dp))
-                            .background(accent.copy(alpha = 0.9f))
-                            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(40.dp))
+                            .size(52.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(accent.copy(alpha = 0.92f))
+                            .border(1.dp, Color.White.copy(alpha = 0.20f), RoundedCornerShape(50))
                             .clickable {
                                 Haptics.tick(view)
                                 onEdit()
-                            }.padding(vertical = 12.dp),
-                )
+                            },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_pencil),
+                        contentDescription = "Изменить",
+                        colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.White),
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
                 HoldToDelete(sec = holdDeleteSec, onFire = onDelete)
             }
         }
