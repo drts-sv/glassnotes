@@ -618,8 +618,18 @@ fun NotesScreen(
             onToggleFilters = { filtersOpen = !filtersOpen },
             onToggleSearch = { searchOpen = !searchOpen },
             onOpenSettings = { settingsOpen = true },
-            onDateFilter = { dateFilter = if (dateFilter == it) null else it },
-            onCategoryFilter = { categoryFilter = if (categoryFilter == it) null else it },
+            onDateFilter = {
+                dateFilter = if (dateFilter == it) null else it
+                filtersOpen = false
+            },
+            onCategoryFilter = {
+                categoryFilter = if (categoryFilter == it) null else it
+                filtersOpen = false
+            },
+            onClearFilter = {
+                dateFilter = null
+                categoryFilter = null
+            },
             onTab = { tab = it },
         )
 
@@ -813,10 +823,20 @@ private fun HeaderCard(
     onOpenSettings: () -> Unit,
     onDateFilter: (String) -> Unit,
     onCategoryFilter: (String) -> Unit,
+    onClearFilter: () -> Unit,
     onTab: (String) -> Unit,
 ) {
     val active = notes.count { !it.done }
     val done = notes.count { it.done }
+    // Надпись применённого отбора: бейджем в строке заголовка, ✕ сбрасывает.
+    val filterLabel: String? =
+        when {
+            dateFilter != null && categoryFilter != null ->
+                NoteFilters.sectionName(dateFilter) + " · " + Categories.title(categoryFilter)
+            dateFilter != null -> NoteFilters.sectionName(dateFilter)
+            categoryFilter != null -> "🏷 " + Categories.title(categoryFilter)
+            else -> null
+        }
 
     Column(
         modifier =
@@ -831,7 +851,7 @@ private fun HeaderCard(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 9.6.dp, end = 9.6.dp, top = 10.4.dp),
+                    .padding(start = 9.6.dp, end = 9.6.dp, top = 7.dp),
             horizontalArrangement = Arrangement.spacedBy(7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -839,18 +859,9 @@ private fun HeaderCard(
             // .title: 1.6rem, 700, межбуквенный -0.3; внутри — счётчик .badge (зазор 10).
             Row(
                 modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "GlasNote",
-                    color = Design.textPrimary,
-                    fontSize = 25.6.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.3).sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
                 Box(
                     modifier =
                         Modifier
@@ -865,9 +876,12 @@ private fun HeaderCard(
                         fontWeight = FontWeight.Medium,
                     )
                 }
+                if (filterLabel != null) {
+                    FilterBadge(filterLabel, accent, onClearFilter)
+                }
             }
             // Порядок кнопок боевого: фильтр → поиск → настройки.
-            HeaderButton(R.drawable.ic_filter, filtersOpen, onToggleFilters)
+            HeaderButton(R.drawable.ic_filter, filtersOpen || filterLabel != null, onToggleFilters)
             HeaderButton(R.drawable.ic_search, searchOpen, onToggleSearch)
             HeaderButton(R.drawable.ic_settings, false, onOpenSettings)
         }
@@ -893,7 +907,7 @@ private fun HeaderCard(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp)
+                    .padding(top = 6.dp)
                     .background(Design.glassRgb.copy(alpha = 0.55f)),
             horizontalArrangement = Arrangement.spacedBy(1.dp),
         ) {
@@ -981,6 +995,43 @@ private fun HeaderButton(
     }
 }
 
+/** Бейдж применённого отбора: показывает, что именно отфильтровано; тап — сброс. */
+@Composable
+private fun FilterBadge(
+    label: String,
+    accent: Color,
+    onClear: () -> Unit,
+) {
+    val view = LocalView.current
+    Row(
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(accent.copy(alpha = 0.28f))
+                .clickable {
+                    Haptics.tick(view)
+                    onClear()
+                }.padding(start = 7.dp, end = 6.dp, top = 1.dp, bottom = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f, fill = false),
+            color = Color.White.copy(alpha = 0.92f),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = "✕",
+            color = Color.White.copy(alpha = 0.75f),
+            fontSize = 9.sp,
+        )
+    }
+}
+
 @Composable
 private fun FilterChip(
     label: String,
@@ -1031,7 +1082,7 @@ private fun TabButton(
                 .clickable {
                     Haptics.tick(view)
                     onClick()
-                }.padding(horizontal = 4.dp, vertical = 11.dp),
+                }.padding(horizontal = 4.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
