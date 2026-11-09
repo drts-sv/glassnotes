@@ -376,6 +376,7 @@ class MainActivity : ComponentActivity() {
                         onRecord = { recordingOpen = true },
                         onExport = { exportLauncher.launch("glasnote-" + Backup.stamp() + ".json") },
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
+                        openOnStart = intent?.getStringExtra("open"),
                     )
                 }
             }

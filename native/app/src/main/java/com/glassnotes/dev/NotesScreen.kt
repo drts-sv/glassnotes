@@ -46,6 +46,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.Image
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -114,6 +115,7 @@ fun NotesScreen(
     onRecord: () -> Unit = {},
     onExport: () -> Unit = {},
     onImport: () -> Unit = {},
+    openOnStart: String? = null,
 ) {
     var notes by remember { mutableStateOf<List<NoteRow>>(emptyList()) }
     val badgeContext = LocalContext.current
@@ -178,6 +180,14 @@ fun NotesScreen(
         notes = store.recent(200).mapNotNull { parseNote(it) }
     }
 
+    // Диагностика: сразу открыть лист просмотра или редактор первой заметки, чтобы снять
+    // дамп UI и проверить раскладку числами (телефон часто заперт, тапать нечем).
+    LaunchedEffect(notes.size, openOnStart) {
+        if (notes.isEmpty() || openOnStart == null || sheetNote != null || editNote != null) return@LaunchedEffect
+        if (openOnStart == "sheet") sheetNote = notes.first() else openEditor(notes.first())
+        Log.i("GlasNotesDev", "диагностика: открыт %s для заметки #%d".format(openOnStart, notes.first().id))
+    }
+
     val shown = NoteFilters.apply(notes, tab, dateFilter, categoryFilter, query)
 
     // Снимок состояния списка в лог: снаружи интерфейс не читается, а проверять надо данными.
@@ -236,97 +246,10 @@ fun NotesScreen(
         return
     }
 
-    sheetNote?.let { note ->
-        // Просмотр — на весь экран (как утреннее ревью), чтобы читать длинный текст.
-        Dialog(
-            onDismissRequest = { sheetNote = null },
-            properties = DialogProperties(usePlatformDefaultWidth = false),
-        ) {
-            Column(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .background(Design.appBackground())
-                        .padding(horizontal = 18.dp, vertical = 16.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = WhenInput.display(note.datetime, note.allDay).ifEmpty { "Без даты" },
-                        color = if (note.datetime == null) Design.textSecondary else Design.textPrimary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        text = "✕",
-                        color = Design.textSecondary,
-                        fontSize = 20.sp,
-                        modifier = Modifier.clickable { sheetNote = null }.padding(8.dp),
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-                Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    Text(
-                        text = note.text,
-                        color = Design.textPrimary.copy(alpha = if (note.done) 0.6f else 1f),
-                        fontSize = 18.sp,
-                    )
-                    if (note.categoryIds.isNotEmpty()) {
-                        Spacer(Modifier.height(12.dp))
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            note.categoryIds.forEach { id ->
-                                Badge(
-                                    text = Categories.title(id) ?: id,
-                                    fg = Color.White.copy(alpha = 0.95f),
-                                    bg = (Categories.colors[id] ?: Design.textSecondary).copy(alpha = 0.38f),
-                                    bold = true,
-                                )
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text(
-                        text = "Изменить",
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                        modifier =
-                            Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(40.dp))
-                                .background(accent.copy(alpha = 0.9f))
-                                .clickable {
-                                    Haptics.tick(screenView)
-                                    sheetNote = null
-                                    openEditor(note)
-                                }.padding(vertical = 14.dp),
-                    )
-                    // Удаление — маленькой круглой кнопкой и только удержанием: случайный тап
-                    // по кнопке на весь экран стирал заметку сразу.
-                    HoldToDelete(
-                        sec = AppSettings.int(store, AppSettings.HOLD_DELETE_SEC, AppSettings.DEFAULT_HOLD_DELETE_SEC, 0..10),
-                        onFire = {
-                            Haptics.triple(screenView)
-                            Reminders.cancel(context, note.id)
-                            store.remove(note.id)
-                            revision++
-                            sheetNote = null
-                            Ui.toast(context, "Заметка удалена")
-                            Log.i("GlasNotesDev", "заметка #%d удалена из листа просмотра".format(note.id))
-                        },
-                    )
-                }
-            }
-        }
-    }
-
-    editNote?.let { note ->
+    val editing = editNote
+    if (editing != null) {
+        val note = editing
+        BackHandler(enabled = true) { editNote = null }
         // Окно редактирования — как в боевом приложении (index.html #editOverlay):
         // «📝 Текст», «🏷 Категории», сворачиваемые «📅 Дата» и «⏰ Время» с плитками
         // (Сегодня / Завтра / Послезавтра / 🕐 Выбрать / 🗑 Очистить) и системными пикерами.
@@ -351,17 +274,14 @@ fun NotesScreen(
                 }
             } ?: "Не задано"
 
-        Dialog(
-            onDismissRequest = { editNote = null },
-            properties = DialogProperties(usePlatformDefaultWidth = false),
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .background(Design.appBackground())
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
         ) {
-            Column(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .background(Design.appBackground())
-                        .padding(horizontal = 18.dp, vertical = 16.dp),
-            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = "✏️ Редактирование",
@@ -379,23 +299,43 @@ fun NotesScreen(
                 }
                 Spacer(Modifier.height(14.dp))
 
-                Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                 Text("📝 Текст", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
                 Spacer(Modifier.height(4.dp))
-                BasicTextField(
-                    value = editText,
-                    onValueChange = { editText = it },
-                    textStyle = TextStyle(color = Design.textPrimary, fontSize = 16.sp),
+                // Поле тянется на всё свободное место: раньше оно было min 64 dp и текст не влезал.
+                Box(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 64.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Design.glassRgb.copy(alpha = 0.5f))
-                            .padding(10.dp),
-                )
-                Spacer(Modifier.height(12.dp))
+                            .weight(1.6f)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Design.glassRgb.copy(alpha = 0.55f))
+                            .border(1.dp, Design.border, RoundedCornerShape(16.dp)),
+                ) {
+                    BasicTextField(
+                        value = editText,
+                        onValueChange = { editText = it },
+                        textStyle = TextStyle(color = Design.textPrimary, fontSize = 16.sp),
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .padding(12.dp),
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
 
+                // Категории, дата и время — вторая зона с весом: обе делят экран, ничего не вылезает.
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Design.glassRgb.copy(alpha = 0.35f))
+                            .border(1.dp, Design.border, RoundedCornerShape(16.dp))
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                ) {
                 Text("🏷 Категории", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
                 Spacer(Modifier.height(4.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -484,7 +424,7 @@ fun NotesScreen(
                 }
                 }
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
@@ -551,7 +491,6 @@ fun NotesScreen(
                     )
                 }
             }
-        }
 
         // Системный календарь. DatePicker живёт в UTC, поэтому туда и обратно переводим явно.
         if (datePickerOpen) {
@@ -635,6 +574,10 @@ fun NotesScreen(
             }
         }
     }
+
+    // Редактор — отдельный экран: без return список рисуется поверх него (позже по порядку),
+    // и были видны только края кнопок.
+    if (editing != null) return
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -751,6 +694,30 @@ fun NotesScreen(
                         },
                     ).padding(start = Design.padSide, end = Design.padSide, bottom = 20.dp),
         )
+
+        // Лист просмотра — карточка поверх списка, как noteSheet боевого приложения.
+        sheetNote?.let { note ->
+            NoteSheet(
+                note = note,
+                accent = accent,
+                holdDeleteSec =
+                    AppSettings.int(store, AppSettings.HOLD_DELETE_SEC, AppSettings.DEFAULT_HOLD_DELETE_SEC, 0..10),
+                onClose = { sheetNote = null },
+                onEdit = {
+                    sheetNote = null
+                    openEditor(note)
+                },
+                onDelete = {
+                    Haptics.triple(screenView)
+                    Reminders.cancel(context, note.id)
+                    store.remove(note.id)
+                    revision++
+                    sheetNote = null
+                    Ui.toast(context, "Заметка удалена")
+                    Log.i("GlasNotesDev", "заметка #%d удалена из листа просмотра".format(note.id))
+                },
+            )
+        }
     }
 }
 
@@ -1674,6 +1641,115 @@ private fun HoldToDelete(
                     size = Size(size.width - stroke, size.height - stroke),
                     style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke, cap = StrokeCap.Round),
                 )
+            }
+        }
+    }
+}
+
+
+/**
+ * Лист просмотра заметки — как `#noteSheet` боевого приложения: затемнённый фон, стеклянная
+ * карточка по центру, дата в шапке, текст с прокруткой, плашки категорий, внизу «Изменить»
+ * и маленькая кнопка удаления с удержанием.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun NoteSheet(
+    note: NoteRow,
+    accent: Color,
+    holdDeleteSec: Int,
+    onClose: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val view = LocalView.current
+    Box(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f))
+                .clickable(interactionSource = null, indication = null) { onClose() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth(0.92f)
+                    .heightIn(max = 620.dp)
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(Design.glassRgb.copy(alpha = 0.94f))
+                    .border(1.dp, Design.border, RoundedCornerShape(26.dp))
+                    // Тап внутри карточки не должен закрывать лист: гасим клик.
+                    .clickable(interactionSource = null, indication = null) {}
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = WhenInput.display(note.datetime, note.allDay).ifEmpty { "Без даты" },
+                    color = if (note.datetime == null) Design.textSecondary else Design.textPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Box(
+                    modifier =
+                        Modifier
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(Design.tint(0.07f))
+                            .clickable {
+                                Haptics.tick(view)
+                                onClose()
+                            },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(text = "✕", color = Design.textSecondary, fontSize = 15.sp)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Column(modifier = Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+                Text(
+                    text = note.text,
+                    color = Design.textPrimary.copy(alpha = if (note.done) 0.6f else 1f),
+                    fontSize = 17.sp,
+                )
+                if (note.categoryIds.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        note.categoryIds.forEach { id ->
+                            Badge(
+                                text = Categories.title(id) ?: id,
+                                fg = Color.White.copy(alpha = 0.95f),
+                                bg = (Categories.colors[id] ?: Design.textSecondary).copy(alpha = 0.38f),
+                                bold = true,
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = "Изменить",
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(40.dp))
+                            .background(accent.copy(alpha = 0.9f))
+                            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(40.dp))
+                            .clickable {
+                                Haptics.tick(view)
+                                onEdit()
+                            }.padding(vertical = 12.dp),
+                )
+                HoldToDelete(sec = holdDeleteSec, onFire = onDelete)
             }
         }
     }
