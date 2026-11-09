@@ -440,6 +440,7 @@ fun NotesScreen(
                             editWhen = note.datetime?.let { whenFormat.format(java.util.Date(it)) } ?: ""
                             editNote = note
                         },
+                        deleteDelaySec = AppSettings.int(store, AppSettings.UNDO_SEC, AppSettings.DEFAULT_UNDO_SEC, 0..15),
                         onDelete = {
                             val row = store.rawRow(note.id)
                             store.remove(note.id)
@@ -941,18 +942,37 @@ private fun NoteCard(
     onCategory: (String) -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    deleteDelaySec: Int = 0,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var dragX by remember { mutableFloatStateOf(0f) }
     var dragging by remember { mutableStateOf(false) }
+    // Подтверждение удаления свайпом: карточка осталась сдвинутой, кольцо вокруг урны
+    // отсчитывает deleteDelaySec, и только потом строка удаляется.
+    var pendingDelete by remember { mutableStateOf(false) }
+    val deleteRing = remember { Animatable(0f) }
+    LaunchedEffect(pendingDelete) {
+        if (!pendingDelete) {
+            deleteRing.snapTo(0f)
+            return@LaunchedEffect
+        }
+        deleteRing.snapTo(0f)
+        deleteRing.animateTo(1f, tween(durationMillis = deleteDelaySec * 1000, easing = LinearEasing))
+        pendingDelete = false
+        onDelete()
+    }
     val density = LocalDensity.current
     val swipeThreshold = with(density) { 60.dp.toPx() }
     val view = LocalView.current
     var wasAtEdge by remember { mutableStateOf(false) }
 
+    // Куда встаёт карточка, пока идёт отсчёт удаления: −96 dp — урна открыта целиком.
+    val holdOffset = with(density) { 96.dp.toPx() }
+
     // Пальцем тянем мгновенно (snap), после отпускания — пружина назад.
+    // Пока идёт отсчёт удаления, карточка стоит на месте и не возвращается.
     val offsetX by animateFloatAsState(
-        targetValue = dragX,
+        targetValue = if (pendingDelete) -holdOffset else dragX,
         animationSpec = if (dragging) snap() else spring(dampingRatio = 0.82f, stiffness = 420f),
         label = "cardOffset",
     )
@@ -978,16 +998,17 @@ private fun NoteCard(
                 Box(
                     modifier =
                         Modifier
-                            .size((26f + 14f * progressRight).dp)
+                            .size((20f + 44f * progressRight).dp)
+                            .offset(x = (-6f * progressRight).dp)
                             .clip(CircleShape)
-                            .background(Design.done.copy(alpha = 0.20f * progressRight)),
+                            .background(Design.done.copy(alpha = 0.18f + 0.22f * progressRight)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Image(
                         painter = painterResource(R.drawable.ic_check),
                         contentDescription = "Выполнено",
                         colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.done.copy(alpha = 0.45f + 0.55f * progressRight)),
-                        modifier = Modifier.size((14f + 10f * progressRight).dp),
+                        modifier = Modifier.size((10f + 26f * progressRight).dp),
                     )
                 }
             }
@@ -998,20 +1019,41 @@ private fun NoteCard(
             contentAlignment = Alignment.CenterEnd,
         ) {
             if (progressLeft > 0.02f) {
+                val ringSize = (20f + 44f * progressLeft).dp
                 Box(
                     modifier =
                         Modifier
-                            .size((26f + 14f * progressLeft).dp)
+                            .size(ringSize)
+                            .offset(x = (6f * progressLeft).dp)
                             .clip(CircleShape)
-                            .background(Design.stopRed.copy(alpha = 0.22f * progressLeft)),
+                            .background(Design.stopRed.copy(alpha = 0.18f + 0.22f * progressLeft)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Image(
                         painter = painterResource(R.drawable.ic_trash),
                         contentDescription = "Удалить",
                         colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.stopRed.copy(alpha = 0.5f + 0.5f * progressLeft)),
-                        modifier = Modifier.size((14f + 10f * progressLeft).dp),
+                        modifier = Modifier.size((10f + 26f * progressLeft).dp),
                     )
+                    // Кольцо-таймер вокруг урны: заполняется за deleteDelaySec, затем строка удаляется.
+                    if (pendingDelete || deleteRing.value > 0f) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val stroke = 3.dp.toPx()
+                            drawArc(
+                                color = Design.stopRed,
+                                startAngle = -90f,
+                                sweepAngle = 360f * deleteRing.value,
+                                useCenter = false,
+                                topLeft = Offset(stroke / 2f, stroke / 2f),
+                                size = Size(size.width - stroke, size.height - stroke),
+                                style =
+                                    androidx.compose.ui.graphics.drawscope.Stroke(
+                                        width = stroke,
+                                        cap = StrokeCap.Round,
+                                    ),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1073,7 +1115,12 @@ private fun NoteCard(
 
                                     dx < -swipeThreshold -> {
                                         Haptics.destructive(view)
-                                        onDelete()
+                                        if (deleteDelaySec <= 0) {
+                                            onDelete()
+                                        } else {
+                                            // Держим карточку открытой: удаление — после отсчёта.
+                                            pendingDelete = true
+                                        }
                                     }
                                 }
                             },
@@ -1085,10 +1132,16 @@ private fun NoteCard(
                         )
                     }.combinedClickable(
                         onClick = {
-                            Haptics.tick(view)
-                            // Как в боевом приложении: нажатие открывает лист заметки.
-                            // «Выполнено» осталось на свайпе вправо и в меню по долгому нажатию.
-                            onEdit()
+                            if (pendingDelete) {
+                                // Тап во время отсчёта — отмена удаления.
+                                Haptics.tick(view)
+                                pendingDelete = false
+                            } else {
+                                Haptics.tick(view)
+                                // Как в боевом приложении: нажатие открывает лист заметки.
+                                // «Выполнено» осталось на свайпе вправо и в меню по долгому нажатию.
+                                onEdit()
+                            }
                         },
                         onLongClick = {
                             Haptics.longPress(view)

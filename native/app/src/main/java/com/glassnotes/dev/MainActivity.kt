@@ -105,6 +105,19 @@ class MainActivity : ComponentActivity() {
             )
         }
 
+        // Диагностика: --es done_ids "36,42,44" — отметить заметки выполненными.
+        intent?.getStringExtra("done_ids")?.let { raw ->
+            runCatching {
+                val store = NotesStore(applicationContext)
+                val ids = raw.split(',').mapNotNull { it.trim().toLongOrNull() }
+                ids.forEach {
+                    store.setStatus(it, "done")
+                    Reminders.cancel(this, it)
+                }
+                Log.i(TAG, "отмечено выполненными: " + ids.joinToString())
+            }
+        }
+
         if (intent?.getBooleanExtra("wave_test", false) == true) {
             Log.i(TAG, "=== самопроверка полос запущена из интента ===")
             WaveSelfTest.run()
