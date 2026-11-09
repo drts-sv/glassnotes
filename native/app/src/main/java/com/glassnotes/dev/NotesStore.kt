@@ -121,7 +121,8 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
                 json.put("datetime", org.json.JSONObject.NULL)
                 json.put("allDay", false)
             } else {
-                json.put("datetime", datetime)
+                // Формат как у создания заметки и у боевого приложения: ISO-строка, а не число.
+                json.put("datetime", ISO.format(Date(datetime)))
                 json.put("allDay", allDay)
                 json.put("time", java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(datetime)))
             }
@@ -197,9 +198,7 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
                     val row = parseNote(raw) ?: continue
                     val json = JSONObject(raw)
                     if (row.done) continue
-                    val dt = json.optString("datetime")
-                    if (dt.isBlank() || dt == "null") continue
-                    val ms = runCatching { ISO.parse(dt)?.time }.getOrNull() ?: continue
+                    val ms = jsonDatetime(json) ?: continue
                     out.add(
                         DueNote(
                             id = row.id,
@@ -238,12 +237,11 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
                     val raw = cursor.getString(0)
                     val json = org.json.JSONObject(raw)
                     if (json.optString("status") != "active") continue
-                    val dt = json.optString("datetime")
-                    if (dt.isBlank() || dt == "null") {
+                    val ms = jsonDatetime(json)
+                    if (ms == null) {
                         noDate++
                         continue
                     }
-                    val ms = runCatching { ISO.parse(dt)?.time }.getOrNull() ?: continue
                     if (ms < todayStart) overdue++ else if (ms < todayEnd) today++
                 }
             }

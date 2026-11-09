@@ -26,6 +26,22 @@ private val NOTE_DATE = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'
 private fun parseIsoDate(value: String): Long? =
     if (value.isBlank() || value == "null") null else runCatching { NOTE_DATE.parse(value)?.time }.getOrNull()
 
+/**
+ * Момент из поля `datetime`. Боевое приложение и создание заметки пишут строку ISO, а правка
+ * даты из листа раньше писала число миллисекунд — читаем оба вида, иначе заметка с датой
+ * выглядела как «Без даты» (и не попадала в напоминания и ревью).
+ */
+fun jsonDatetime(o: JSONObject): Long? {
+    when (val raw = o.opt("datetime")) {
+        null, JSONObject.NULL -> return null
+        is Number -> return raw.toLong()
+        else -> Unit
+    }
+    val text = o.optString("datetime").trim()
+    if (text.isEmpty() || text == "null") return null
+    return parseIsoDate(text) ?: text.toLongOrNull()
+}
+
 /** Заметка с датой — то, что нужно планировщику напоминаний. */
 data class DueNote(
     val id: Long,
@@ -59,7 +75,7 @@ fun parseNote(json: String): NoteRow? =
             time = o.optString("time"),
             status = o.optString("status", "active"),
             categoryIds = categories,
-            datetime = parseIsoDate(o.optString("datetime")),
+            datetime = jsonDatetime(o),
             allDay = o.optBoolean("allDay"),
         )
     } catch (_: Throwable) {

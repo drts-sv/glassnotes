@@ -207,6 +207,40 @@ class MainActivity : ComponentActivity() {
             dateSelfTest().lines().forEach { line -> Log.i(TAG, "date_test: $line") }
         }
 
+        if (intent?.getBooleanExtra("when_test", false) == true) {
+            // Поле «Когда» в листе заметки: дата без часа больше не уходит в «Без даты».
+            val now =
+                java.util.Calendar.getInstance().apply {
+                    set(2026, java.util.Calendar.NOVEMBER, 9, 10, 0, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                }.timeInMillis
+            WhenInput.selfTest(now).lines().forEach { line -> Log.i(TAG, "when_test: $line") }
+        }
+
+        if (intent?.getBooleanExtra("when_save_test", false) == true) {
+            // Сквозная проверка: заметка → дата БЕЗ часа из листа → что видит список и ревью.
+            val store = NotesStore(applicationContext)
+            val w = WhenInput.parse("10.11.2026")
+            val id = store.add("проверка даты без часа", datetime = w?.ms, allDay = w?.allDay == true)
+            store.setDatetime(id, w?.ms, w?.allDay == true)
+            val row = store.rawRow(id)?.first?.let { parseNote(it) }
+            val cnt = store.reviewCounts()
+            Log.i(
+                TAG,
+                "when_save_test: в листе дата без часа → datetime=%s allDay=%s | список видит: %s | ревью: просроч %d, сегодня %d, без даты %d"
+                    .format(
+                        w?.ms,
+                        w?.allDay,
+                        if (row?.datetime == null) "БЕЗ ДАТЫ" else WhenInput.display(row.datetime, row.allDay),
+                        cnt.overdue,
+                        cnt.today,
+                        cnt.noDate,
+                    ),
+            )
+            // Убираем тестовую заметку: данные владельца не трогаем.
+            store.remove(id)
+        }
+
         if (intent?.getBooleanExtra("settings_probe", false) == true) {
             // Пишем набор значений и читаем его обратно — тем же кодом, что и экран записи.
             val store = NotesStore(applicationContext)

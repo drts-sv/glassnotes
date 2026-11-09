@@ -171,6 +171,13 @@ fun RecordingScreen(
     /** Для тактильной отдачи: отклик на кнопку, чипы и свайпы. */
     val hapticView = LocalView.current
 
+    // Экран не гаснет, пока идёт запись: раньше телефон засыпал посреди диктовки и запись
+    // обрывалась. Сбрасываем сразу, как только экран записи закрывается.
+    DisposableEffect(hapticView) {
+        hapticView.keepScreenOn = true
+        onDispose { hapticView.keepScreenOn = false }
+    }
+
     /** Формат времени напоминания для логов. */
     val CLOCK_TEXT = java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US)
 

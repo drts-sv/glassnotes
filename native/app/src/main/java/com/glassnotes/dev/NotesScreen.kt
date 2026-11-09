@@ -120,15 +120,13 @@ fun NotesScreen(
     var editText by remember { mutableStateOf("") }
     var editWhen by remember { mutableStateOf("") }
     var editCats by remember { mutableStateOf(emptySet<String>()) }
-    val whenFormat = java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.US)
-
-    /** «Сегодня»/«Завтра» в том же формате, что поле даты. */
+    /** «Сегодня»/«Завтра» — дата без часа: показывает так же, как «весь день» в поле. */
     fun dayText(plusDays: Int): String {
         val cal = java.util.Calendar.getInstance()
         cal.add(java.util.Calendar.DAY_OF_MONTH, plusDays)
-        cal.set(java.util.Calendar.HOUR_OF_DAY, 9)
+        cal.set(java.util.Calendar.HOUR_OF_DAY, WhenInput.ALL_DAY_HOUR)
         cal.set(java.util.Calendar.MINUTE, 0)
-        return whenFormat.format(cal.time)
+        return WhenInput.display(cal.timeInMillis, allDay = true)
     }
 
     LaunchedEffect(revision) {
@@ -290,22 +288,11 @@ fun NotesScreen(
                             if (value.isNotEmpty()) {
                                 // Дата: сначала точный формат, затем разбор естественной речи.
                                 // parseDateNlu().datetime — это Long (миллисекунды), не Calendar.
-                                val whenText = editWhen.trim()
-                                var at: Long? = null
-                                var allDay = false
-                                if (whenText.isNotEmpty()) {
-                                    val parsed =
-                                        runCatching { whenFormat.parse(whenText)?.time }.getOrNull()
-                                            ?: parseDateNlu(whenText).datetime
-                                    if (parsed != null) {
-                                        at = parsed
-                                        val c = java.util.Calendar.getInstance()
-                                        c.timeInMillis = parsed
-                                        allDay =
-                                            c.get(java.util.Calendar.HOUR_OF_DAY) == 0 &&
-                                                c.get(java.util.Calendar.MINUTE) == 0
-                                    }
-                                }
+                                // Дата и время: и «10.11.2026 18:30», и «10.11.2026», и «завтра в 8».
+                                // Дата без часа — 09:00 и «весь день», как при диктовке.
+                                val parsedWhen = WhenInput.parse(editWhen)
+                                val at = parsedWhen?.ms
+                                val allDay = parsedWhen?.allDay == true
                                 store.setText(note.id, value)
                                 store.setCategories(note.id, editCats.toList())
                                 store.setDatetime(note.id, at, allDay)
@@ -319,7 +306,7 @@ fun NotesScreen(
                                     "заметка #%d изменена: текст %d симв., дата %s, категорий %d".format(
                                         note.id,
                                         value.length,
-                                        at?.let { whenFormat.format(java.util.Date(it)) } ?: "нет",
+                                        WhenInput.display(at, allDay).ifEmpty { "нет" },
                                         editCats.size,
                                     ),
                                 )
@@ -423,7 +410,7 @@ fun NotesScreen(
                         onEdit = {
                             editText = note.text
                             editCats = note.categoryIds.toSet()
-                            editWhen = note.datetime?.let { whenFormat.format(java.util.Date(it)) } ?: ""
+                            editWhen = WhenInput.display(note.datetime, note.allDay)
                             editNote = note
                         },
                         holdDoneSec =
