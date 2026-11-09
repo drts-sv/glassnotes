@@ -610,6 +610,10 @@ fun parseDateNlu(
     cleanText = TRAILING_PUNCT.replace(cleanText, "")
     cleanText = Regex("\\s{2,}").replace(cleanText, " ").trim()
 
+    // Категория по смыслу, если её не назвали вслух: «позвонить маме» → личное, «созвон с
+    // клиентом» → работа, «починить баг» → разработка. Порог и веса — в CategoryHints.
+    if (voiceCategory && categoryId == null) categoryId = CategoryHints.detect(cleanText)
+
     return ParsedNote(
         text = cleanText,
         datetime = result?.timeInMillis,

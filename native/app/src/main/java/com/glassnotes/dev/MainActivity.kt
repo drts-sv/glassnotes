@@ -207,6 +207,11 @@ class MainActivity : ComponentActivity() {
             dateSelfTest().lines().forEach { line -> Log.i(TAG, "date_test: $line") }
         }
 
+        if (intent?.getBooleanExtra("cat_test", false) == true) {
+            // Автоопределение категории по ключевым словам: что и куда попадёт.
+            CategoryHints.selfTest().lines().forEach { line -> Log.i(TAG, "cat_test: $line") }
+        }
+
         if (intent?.getBooleanExtra("when_test", false) == true) {
             // Поле «Когда» в листе заметки: дата без часа больше не уходит в «Без даты».
             val now =

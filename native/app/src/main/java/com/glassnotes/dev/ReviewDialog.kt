@@ -10,10 +10,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -32,9 +32,10 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
 /**
- * Утреннее ревью — экран со списком дел на сегодня, как `#reviewSplash` в боевом приложении:
- * карточка 420 max, радиус 28, поля 1.4/1.2rem, зазор 10; группы «Просрочено · N» с ⚠️,
- * «На сегодня · N» и «Без срока · N» с •; закрытие — крестик или «Начать день».
+ * Утреннее ревью — НА ВЕСЬ ЭКРАН (требование владельца: раньше это была карточка 420×640
+ * по центру, то есть всплывающее окно, а не экран). Содержание то же, что у `#reviewSplash`
+ * боевого приложения: «Просрочено · N» с ⚠️, «На сегодня · N» и «Без срока · N»; блоки
+ * разделены линией.
  *
  * Правила отбора те же, что в `reviewItems()` боевого: активные заметки; без даты — «без срока»;
  * с датой на сегодня — «на сегодня»; с датой раньше сейчас (и не на сегодня) — «просрочено».
@@ -70,106 +71,129 @@ fun MorningReviewScreen(
             if (noDate.isNotEmpty()) append(" (+").append(noDate.size).append(" без срока)")
         }
 
+    // Разделитель рисуется только между непустыми блоками: пустых групп в списке нет.
+    val sections =
+        listOf(
+            ReviewSection("Просрочено", overdue, "⚠️"),
+            ReviewSection("На сегодня", today, "•"),
+            ReviewSection("Без срока", noDate, "•"),
+        ).filter { it.items.isNotEmpty() }
+
     val view = LocalView.current
 
     Dialog(
         onDismissRequest = onClose,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        properties =
+            DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false,
+            ),
     ) {
         Box(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.45f))
-                    // Тап по фону закрывает окно — как в боевом приложении.
-                    .clickable {
-                        Haptics.tick(view)
-                        onClose()
-                    },
-            contentAlignment = Alignment.Center,
+                    // Фон приложения — тот же градиент, что за списком заметок: это экран, а не карточка.
+                    .background(Design.appBackground()),
         ) {
-            Box(
+            Column(
                 modifier =
                     Modifier
-                        .padding(18.dp)
-                        .widthIn(max = 420.dp)
-                        .fillMaxWidth()
-                        .heightIn(max = 640.dp)
-                        .clip(RoundedCornerShape(28.dp))
-                        .background(Design.glassRgb.copy(alpha = 0.94f))
-                        .border(1.dp, Design.border, RoundedCornerShape(28.dp)),
+                        .fillMaxSize()
+                        .padding(start = 22.dp, end = 22.dp, top = 34.dp, bottom = 24.dp),
             ) {
+                Text(
+                    text = "🌅 Утреннее ревью",
+                    color = Design.textPrimary,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(end = 48.dp),
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(text = dateText, color = Design.textSecondary, fontSize = 14.sp)
+                Spacer(Modifier.height(18.dp))
+
                 Column(
-                    modifier = Modifier.padding(start = 19.2.dp, end = 19.2.dp, top = 22.4.dp, bottom = 22.4.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text(
-                        text = "🌅 Утреннее ревью",
-                        color = Design.textPrimary,
-                        fontSize = 18.4.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(end = 44.dp),
-                    )
-                    Text(text = dateText, color = Design.textSecondary, fontSize = 13.6.sp)
-
-                    Column(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 420.dp)
-                                .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        if (overdue.isEmpty() && today.isEmpty() && noDate.isEmpty()) {
-                            Text(
-                                text = "На сегодня дел нет — можно выдохнуть 🙂",
-                                color = Design.textSecondary,
-                                fontSize = 14.4.sp,
-                            )
-                        }
-                        reviewGroup("Просрочено", overdue, "⚠️")
-                        reviewGroup("На сегодня", today, "•")
-                        reviewGroup("Без срока", noDate, "•")
+                    if (sections.isEmpty()) {
+                        Text(
+                            text = "На сегодня дел нет — можно выдохнуть 🙂",
+                            color = Design.textSecondary,
+                            fontSize = 15.sp,
+                        )
                     }
-
-                    // «Начать день» — как .note-sheet-btn.edit: акцент 10 % и его рамка 35 %.
-                    Box(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(40.dp))
-                                .background(accent.copy(alpha = 0.10f))
-                                .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(40.dp))
-                                .clickable {
-                                    Haptics.confirm(view)
-                                    onClose()
-                                }.padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(text = "Начать день", color = accent, fontSize = 16.sp)
+                    sections.forEachIndexed { index, section ->
+                        if (index > 0) sectionDivider()
+                        reviewGroup(section.title, section.items, section.mark)
                     }
                 }
 
-                // Крестик .note-sheet-x: 38, круг, стекло 0.06, в правом верхнем углу.
+                Spacer(Modifier.height(16.dp))
+
+                // «Начать день» — как .note-sheet-btn.edit: акцент 10 % и его рамка 35 %.
                 Box(
                     modifier =
                         Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 14.dp, end = 14.dp)
-                            .size(38.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(Design.tint(0.06f))
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(40.dp))
+                            .background(accent.copy(alpha = 0.10f))
+                            .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(40.dp))
                             .clickable {
-                                Haptics.tick(view)
+                                Haptics.confirm(view)
                                 onClose()
-                            },
+                            }.padding(vertical = 16.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(text = "✕", color = Design.textPrimary, fontSize = 16.sp)
+                    Text(text = "Начать день", color = accent, fontSize = 16.sp)
                 }
+            }
+
+            // Крестик .note-sheet-x: 38, круг, стекло, в правом верхнем углу.
+            Box(
+                modifier =
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 24.dp, end = 18.dp)
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Design.tint(0.10f))
+                        .clickable {
+                            Haptics.tick(view)
+                            onClose()
+                        },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(text = "✕", color = Design.textPrimary, fontSize = 16.sp)
             }
         }
     }
+}
+
+/** Блок ревью: заголовок, метка и строки дел. */
+private data class ReviewSection(
+    val title: String,
+    val items: List<NoteRow>,
+    val mark: String,
+)
+
+/** Линия между блоками ревью. */
+@Composable
+private fun sectionDivider() {
+    Spacer(Modifier.height(2.dp))
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(Design.border.copy(alpha = 0.9f)),
+    )
+    Spacer(Modifier.height(2.dp))
 }
 
 /** Одна группа списка: заголовок «Просрочено · N» и строки с меткой. */
@@ -180,23 +204,23 @@ private fun reviewGroup(
     mark: String,
 ) {
     if (items.isEmpty()) return
-    Column(modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = "${title.uppercase()} · ${items.size}",
             color = Design.textSecondary,
-            fontSize = 11.5.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.5.sp,
         )
-        Spacer(Modifier.size(4.dp))
+        Spacer(Modifier.height(6.dp))
         for (note in items) {
-            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                Text(text = mark, fontSize = 14.7.sp, modifier = Modifier.padding(end = 8.dp))
+            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                Text(text = mark, fontSize = 15.sp, modifier = Modifier.width(22.dp))
                 Text(
                     text = note.text.ifBlank { "(без текста)" },
                     color = Design.textPrimary,
-                    fontSize = 14.7.sp,
-                    lineHeight = 19.sp,
+                    fontSize = 15.sp,
+                    lineHeight = 20.sp,
                 )
             }
         }

@@ -85,6 +85,22 @@ object Design {
      */
     fun tint(alpha: Float): Color = if (light) Color.Black.copy(alpha = alpha) else Color.White.copy(alpha = alpha)
 
+    /**
+     * Фон приложения — тот же вертикальный градиент, что за списком. Нужен экранам, которые
+     * открываются поверх (утреннее ревью на весь экран): иначе композиция «экран в экране»
+     * выглядит как всплывающая карточка, а не как отдельный экран.
+     */
+    fun appBackground(): androidx.compose.ui.graphics.Brush =
+        if (light) {
+            androidx.compose.ui.graphics.Brush.verticalGradient(
+                listOf(Color(0xFFE8EDF5), Color(0xFFD0D8E8)),
+            )
+        } else {
+            androidx.compose.ui.graphics.Brush.verticalGradient(
+                listOf(Color(0xFF192337), Color(0xFF0A0C12)),
+            )
+        }
+
     /** --text-primary / --text-secondary */
     val textPrimary: Color
         get() = if (light) Color(0xFF1A1C2C) else Color.White
