@@ -64,6 +64,10 @@ class ReminderReceiver : BroadcastReceiver() {
         val open =
             Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                // Признак «пришли из уведомления ревью»: без него приложение открывается на списке,
+                // а ревью молчит (reviewShownFor уже сегодня) — тап выглядел как «ничего не делает».
+                putExtra("review_open", true)
+                data = android.net.Uri.parse("glasnote://review")
             }
         val openPi =
             PendingIntent.getActivity(

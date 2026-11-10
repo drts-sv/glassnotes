@@ -8,12 +8,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -100,7 +103,11 @@ fun MorningReviewScreen(
                 modifier =
                     Modifier
                         .fillMaxSize()
-                        .padding(start = 22.dp, end = 22.dp, top = 34.dp, bottom = 24.dp),
+                        // Системные вставки: без них на Pixel с жестовой навигацией заголовок
+                        // уходил под строку состояния, а «Начать день» — под полосу жестов
+                        // (заметка #70: «не влезает в экран, кнопка закрытия за границей»).
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                        .padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 12.dp),
             ) {
                 Text(
                     text = "🌅 Утреннее ревью",
@@ -154,12 +161,14 @@ fun MorningReviewScreen(
                 }
             }
 
-            // Крестик .note-sheet-x: 38, круг, стекло, в правом верхнем углу.
+            // Крестик .note-sheet-x: 38, круг, стекло, в правом верхнем углу — но под строкой
+            // состояния, иначе кнопка оказывалась вне экрана (заметка #70).
             Box(
                 modifier =
                     Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = 24.dp, end = 18.dp)
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                        .padding(top = 10.dp, end = 18.dp)
                         .size(38.dp)
                         .clip(RoundedCornerShape(50))
                         .background(Design.tint(0.10f))

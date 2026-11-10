@@ -54,9 +54,31 @@ import kotlin.math.sqrt
  *  - `record` — начать запись сразу при запуске.
  */
 class MainActivity : ComponentActivity() {
+    /**
+     * Сигнал «показать утреннее ревью»: растёт при каждом тапе на уведомление, в том числе когда
+     * экран уже открыт (иначе повторное нажатие ничего не делает — заметка #72).
+     */
+    private val reviewSignal = androidx.compose.runtime.mutableIntStateOf(0)
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleReviewIntent(intent)
+    }
+
+    /** Тап по уведомлению ревью: открыть экран ревью и убрать само оповещение. */
+    private fun handleReviewIntent(intent: android.content.Intent?) {
+        if (intent?.getBooleanExtra("review_open", false) != true) return
+        reviewSignal.intValue++
+        androidx.core.app.NotificationManagerCompat.from(this)
+            .cancel(Reminders.REVIEW_NOTIFICATION_ID)
+        Log.i(TAG, "уведомление ревью: открываем экран по тапу")
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleReviewIntent(intent)
 
         // Полноэкранно, но строка состояния остаётся: прячем только панель навигации,
         // вернуть её можно свайпом от края.
@@ -106,6 +128,21 @@ class MainActivity : ComponentActivity() {
                     if (Design.light) "светлая" else "тёмная",
                 ),
             )
+        }
+
+        // Выполненные заметки не копим вечно (заметка #68): при запуске убираем те, что
+        // не менялись дольше срока из настроек. 0 в настройке — не удалять вовсе.
+        runCatching {
+            val store = NotesStore(applicationContext)
+            val days =
+                AppSettings.int(
+                    store,
+                    AppSettings.DONE_RETENTION_DAYS,
+                    AppSettings.DEFAULT_DONE_RETENTION_DAYS,
+                    0..3650,
+                )
+            val removed = store.purgeDoneOlderThan(days)
+            if (removed > 0) Log.i(TAG, "очистка выполненных: старше $days дн, удалено $removed, осталось ${store.count()}")
         }
 
         // Диагностика: --es done_ids "36,42,44" — отметить заметки выполненными.
@@ -377,6 +414,7 @@ class MainActivity : ComponentActivity() {
                         onExport = { exportLauncher.launch("glasnote-" + Backup.stamp() + ".json") },
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
                         openOnStart = intent?.getStringExtra("open"),
+                        reviewSignal = reviewSignal.intValue,
                     )
                 }
             }

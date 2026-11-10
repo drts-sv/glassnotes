@@ -27,7 +27,11 @@ object AppSettings {
     const val THEME = "theme"
     const val DEFAULT_THEME = "auto"
 
+    /** Сколько дней хранить выполненные заметки; 0 — хранить всегда (заметка #68). */
+    const val DONE_RETENTION_DAYS = "doneRetentionDays"
+
     // ---- значения по умолчанию ----
+    const val DEFAULT_DONE_RETENTION_DAYS = 14
     const val DEFAULT_REVIEW_TIME = "08:00"
     // Выполнение подтверждается быстрее удаления: удалить случайно дороже.
     const val DEFAULT_HOLD_DONE_SEC = 2

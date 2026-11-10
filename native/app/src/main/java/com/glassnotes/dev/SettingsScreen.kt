@@ -105,6 +105,13 @@ fun SettingsScreen(
         )
     }
 
+    // Сколько дней хранить выполненные заметки: 0 — не удалять (заметка #68).
+    var doneRetention by remember {
+        mutableFloatStateOf(
+            AppSettings.int(store, AppSettings.DONE_RETENTION_DAYS, AppSettings.DEFAULT_DONE_RETENTION_DAYS, 0..365).toFloat(),
+        )
+    }
+
     var askCategory by remember { mutableStateOf(AppSettings.flag(store, AppSettings.ASK_CATEGORY, true)) }
     var voiceCategory by remember { mutableStateOf(AppSettings.flag(store, AppSettings.VOICE_CATEGORY, true)) }
     var filler by remember { mutableStateOf(AppSettings.flag(store, AppSettings.FILLER, true)) }
@@ -268,6 +275,20 @@ fun SettingsScreen(
                         }
                         SliderRow("Таймер сплэша категорий", catSheetSec, 0f..15f, 14, "%d с".format(catSheetSec.roundToInt()), accent, { catSheetSec = it }) {
                             store.setKv(AppSettings.CAT_SHEET_SEC, catSheetSec.roundToInt().toString())
+                        }
+                        // Автоудаление выполненных (заметка #68): 0 — хранить всегда.
+                        // Чистка идёт при запуске приложения, чтобы не трогать список под пальцем.
+                        SliderRow(
+                            "Хранить выполненные",
+                            doneRetention,
+                            0f..90f,
+                            89,
+                            if (doneRetention < 1f) "всегда" else "%d дн".format(doneRetention.roundToInt()),
+                            accent,
+                            { doneRetention = it },
+                        ) {
+                            store.setKv(AppSettings.DONE_RETENTION_DAYS, doneRetention.roundToInt().toString())
+                            Log.i(TAG, "настройки: хранить выполненные %d дн".format(doneRetention.roundToInt()))
                         }
                     }
 

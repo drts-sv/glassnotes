@@ -184,6 +184,26 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
         writableDatabase.insertWithOnConflict("notes", null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
+    /**
+     * Удалить выполненные заметки, которые не менялись дольше [days] дней (заметка #68:
+     * копятся сотни выполненных, список и бейдж от них пухнут). 0 — не удалять вовсе.
+     * Возвращает число удалённых.
+     */
+    fun purgeDoneOlderThan(days: Int): Int {
+        if (days <= 0) return 0
+        val border = System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L
+        val ids = ArrayList<Long>()
+        readableDatabase.rawQuery("SELECT id, json, ts FROM notes WHERE ts < ?", arrayOf(border.toString())).use { c ->
+            while (c.moveToNext()) {
+                val status = runCatching { JSONObject(c.getString(1)).optString("status") }.getOrDefault("")
+                if (status == "done") ids.add(c.getLong(0))
+            }
+        }
+        if (ids.isEmpty()) return 0
+        val marks = ids.joinToString(",") { "?" }
+        return writableDatabase.delete("notes", "id IN ($marks)", ids.map { it.toString() }.toTypedArray())
+    }
+
     /** Правка заметки: читаем JSON, меняем, пишем обратно — как это делает боевое приложение. */
     private fun patch(
         id: Long,

@@ -587,32 +587,9 @@ fun RecordingScreen(
                 }
             }
 
-            // Тикер распознанных фраз: новые снизу, старые бледнее — «бегущая строка» под развёрткой.
-            // Место под тикер занято ВСЕГДА: раньше первые слова распознавания толкали вниз
-            // подпись «Слушаю…» и кнопку записи — владелец назвал это «кнопка прыгает».
-            Column(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(112.dp)
-                            .padding(top = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Bottom,
-                ) {
-                    val tail = phrases.takeLast(3)
-                    tail.forEachIndexed { index, phrase ->
-                        val age = (tail.size - 1 - index).toFloat()
-                        Text(
-                            text = phrase,
-                            color = Design.textPrimary.copy(alpha = (0.85f - 0.25f * age).coerceAtLeast(0.25f)),
-                            fontSize = 20.sp,
-                            textAlign = TextAlign.Center,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
+            // Распознанный текст во время записи НЕ показываем (заметка #73): владелец назвал это
+            // лишним и усложняющим — смотреть на бегущую строку во время речи не нужно.
+            // Текст всё равно уходит в заметку при остановке записи.
 
             Text(
                 text = if (recording) "Слушаю…" else "Готов записывать",

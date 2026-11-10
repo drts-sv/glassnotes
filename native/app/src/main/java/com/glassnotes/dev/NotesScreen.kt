@@ -122,6 +122,8 @@ fun NotesScreen(
     onExport: () -> Unit = {},
     onImport: () -> Unit = {},
     openOnStart: String? = null,
+    /** Счётчик тапов по уведомлению ревью: >0 — показать ревью, не глядя на reviewShownFor. */
+    reviewSignal: Int = 0,
 ) {
     var notes by remember { mutableStateOf<List<NoteRow>>(emptyList()) }
     val badgeContext = LocalContext.current
@@ -234,8 +236,17 @@ fun NotesScreen(
     var reviewOpen by remember { mutableStateOf(false) }
     // Решаем один раз за запуск: иначе ревью всплывает повторно, пока список догружается.
     var reviewChecked by remember { mutableStateOf(false) }
-    LaunchedEffect(notes.size) {
-        if (!reviewChecked && notes.isNotEmpty()) {
+    // Последний уже обработанный сигнал: без этого после любого изменения списка
+    // (сохранил или удалил заметку) эффект перезапускался и ревью всплывало снова.
+    var reviewHandled by remember { mutableStateOf(0) }
+    LaunchedEffect(reviewSignal, notes.size) {
+        if (reviewSignal > reviewHandled) {
+            reviewHandled = reviewSignal
+            // Тап по уведомлению: показываем ревью даже если сегодня уже смотрели
+            // и даже на пустом списке — иначе нажатие на оповещение «ничего не делает».
+            reviewOpen = true
+            Log.i("GlasNotesDev", "утреннее ревью: открыто из уведомления (сигнал $reviewSignal)")
+        } else if (!reviewChecked && notes.isNotEmpty()) {
             reviewChecked = true
             if (AppSettings.reviewDue(store)) {
                 reviewOpen = true
