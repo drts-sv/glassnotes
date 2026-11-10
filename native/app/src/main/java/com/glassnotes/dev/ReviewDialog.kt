@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,11 +13,13 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -92,22 +95,24 @@ fun MorningReviewScreen(
                 decorFitsSystemWindows = false,
             ),
     ) {
-        Box(
+        // Фон приложения — тот же градиент, что за списком заметок: это экран, а не карточка.
+        BoxWithConstraints(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    // Фон приложения — тот же градиент, что за списком заметок: это экран, а не карточка.
                     .background(Design.appBackground()),
         ) {
+            // Высота окна — по содержимому, но не больше экрана минус системные вставки:
+            // раньше вес списка распирал колонку, и «Начать день» уезжала под полосу жестов.
+            val columnLimit = maxHeight
             Column(
                 modifier =
                     Modifier
-                        .fillMaxSize()
-                        // Системные вставки: без них на Pixel с жестовой навигацией заголовок
-                        // уходил под строку состояния, а «Начать день» — под полосу жестов
-                        // (заметка #70: «не влезает в экран, кнопка закрытия за границей»).
-                        .windowInsetsPadding(WindowInsets.systemBars)
-                        .padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 12.dp),
+                        .fillMaxWidth()
+                        .wrapContentHeight()
+                        .heightIn(max = columnLimit)
+                        .padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 12.dp)
+                        .align(Alignment.Center),
             ) {
                 Text(
                     text = "🌅 Утреннее ревью",
@@ -124,7 +129,8 @@ fun MorningReviewScreen(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .weight(1f)
+                            // Длинный список прокручивается внутри, оставляя место кнопке.
+                            .heightIn(max = columnLimit * 0.62f)
                             .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -141,7 +147,7 @@ fun MorningReviewScreen(
                     }
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(12.dp))
 
                 // «Начать день» — как .note-sheet-btn.edit: акцент 10 % и его рамка 35 %.
                 Box(
