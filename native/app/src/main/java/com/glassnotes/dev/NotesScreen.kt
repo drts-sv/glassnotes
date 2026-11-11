@@ -736,6 +736,11 @@ fun NotesScreen(
                     ).padding(start = Design.padSide, end = Design.padSide, bottom = 20.dp),
         )
 
+        // Страховка: лист закрылся любым путём — голос замолкает.
+        LaunchedEffect(sheetNote, speaker.speaking) {
+            if (sheetNote == null && speaker.speaking) speaker.stop()
+        }
+
         // Лист просмотра — карточка поверх списка, как noteSheet боевого приложения.
         sheetNote?.let { note ->
             NoteSheet(
@@ -751,12 +756,19 @@ fun NotesScreen(
                 },
                 holdDeleteSec =
                     AppSettings.int(store, AppSettings.HOLD_DELETE_SEC, AppSettings.DEFAULT_HOLD_DELETE_SEC, 0..10),
-                onClose = { sheetNote = null },
+                // Закрытие листа гасит озвучку: раньше TTS продолжал читать после закрытия,
+                // и остановить его было нечем (жалоба владельца, #82).
+                onClose = {
+                    speaker.stop()
+                    sheetNote = null
+                },
                 onEdit = {
+                    speaker.stop()
                     sheetNote = null
                     openEditor(note)
                 },
                 onDelete = {
+                    speaker.stop()
                     Haptics.triple(screenView)
                     Reminders.cancel(context, note.id)
                     store.remove(note.id)
