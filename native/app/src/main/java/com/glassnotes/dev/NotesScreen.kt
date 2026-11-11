@@ -50,6 +50,7 @@ import androidx.compose.foundation.Image
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.runtime.LaunchedEffect
@@ -143,6 +144,9 @@ fun NotesScreen(
     }
 
     val context = LocalContext.current
+    // Озвучка заметок системным TTS (заметка #82). Один движок на экран, гасим при выходе.
+    val speaker = remember { Speaker(context) }
+    DisposableEffect(Unit) { onDispose { speaker.shutdown() } }
     // Отклик в диалоге: LocalView читаем здесь — внутри clickable его вызывать нельзя.
     val screenView = LocalView.current
 
@@ -737,6 +741,14 @@ fun NotesScreen(
             NoteSheet(
                 note = note,
                 accent = accent,
+                speaking = speaker.speaking,
+                onSpeak = {
+                    if (speaker.speaking) {
+                        speaker.stop()
+                    } else {
+                        speaker.speak(speakableText(note.text, WhenInput.display(note.datetime, note.allDay)))
+                    }
+                },
                 holdDeleteSec =
                     AppSettings.int(store, AppSettings.HOLD_DELETE_SEC, AppSettings.DEFAULT_HOLD_DELETE_SEC, 0..10),
                 onClose = { sheetNote = null },
@@ -1736,6 +1748,8 @@ private fun HoldToDelete(
 private fun NoteSheet(
     note: NoteRow,
     accent: Color,
+    speaking: Boolean,
+    onSpeak: () -> Unit,
     holdDeleteSec: Int,
     onClose: () -> Unit,
     onEdit: () -> Unit,
@@ -1814,6 +1828,26 @@ private fun NoteSheet(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Spacer(Modifier.weight(1f))
+                // Озвучка (заметка #82): 🔊 читает дату и текст, повторный тап — стоп.
+                Box(
+                    modifier =
+                        Modifier
+                            .size(52.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(Design.glassRgb.copy(alpha = 0.55f))
+                            .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(50))
+                            .clickable {
+                                Haptics.tick(view)
+                                onSpeak()
+                            },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = if (speaking) "⏹" else "🔊",
+                        color = Design.textPrimary,
+                        fontSize = 20.sp,
+                    )
+                }
                 // Правка — иконкой карандаша: текстовая кнопка занимала половину листа.
                 Box(
                     modifier =

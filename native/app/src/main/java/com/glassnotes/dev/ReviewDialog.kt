@@ -25,11 +25,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -86,6 +88,16 @@ fun MorningReviewScreen(
         ).filter { it.items.isNotEmpty() }
 
     val view = LocalView.current
+    val context = LocalContext.current
+    // Озвучка ревью (заметка #82): читаем те же группы, что на экране.
+    val speaker = remember { Speaker(context) }
+    DisposableEffect(Unit) { onDispose { speaker.shutdown() } }
+    val reviewSpeech =
+        buildString {
+            if (overdue.isNotEmpty()) append("Просрочено: ").append(overdue.joinToString(". ") { it.text }).append(". ")
+            if (today.isNotEmpty()) append("На сегодня: ").append(today.joinToString(". ") { it.text }).append(". ")
+            if (noDate.isNotEmpty()) append("Без срока: ").append(noDate.joinToString(". ") { it.text })
+        }
 
     Dialog(
         onDismissRequest = onClose,
@@ -114,13 +126,34 @@ fun MorningReviewScreen(
                         .padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 12.dp)
                         .align(Alignment.Center),
             ) {
-                Text(
-                    text = "🌅 Утреннее ревью",
-                    color = Design.textPrimary,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(end = 48.dp),
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(end = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "🌅 Утреннее ревью",
+                        color = Design.textPrimary,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Box(
+                        modifier =
+                            Modifier
+                                .padding(start = 10.dp)
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(accent.copy(alpha = 0.12f))
+                                .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(50))
+                                .clickable {
+                                    Haptics.tick(view)
+                                    if (speaker.speaking) speaker.stop() else speaker.speak(reviewSpeech)
+                                },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(text = if (speaker.speaking) "⏹" else "🔊", fontSize = 16.sp)
+                    }
+                }
                 Spacer(Modifier.height(6.dp))
                 Text(text = dateText, color = Design.textSecondary, fontSize = 14.sp)
                 Spacer(Modifier.height(18.dp))
