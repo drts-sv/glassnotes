@@ -45,6 +45,13 @@ class ReminderReceiver : BroadcastReceiver() {
                 Log.i(TAG, "напоминание #%d отмечено выполненным".format(id))
             }
 
+            NoteBadge.ACTION_DISMISS -> {
+                // Счётчик на иконке смахнули: помним число, иначе уведомление вернётся при следующем действии.
+                val count = intent.getStringExtra(NoteBadge.EXTRA_COUNT) ?: ""
+                NotesStore(context).setKv(NoteBadge.KEY_DISMISSED, count)
+                Log.i(TAG, "счётчик на иконке скрыт пользователем (дел: %s)".format(count))
+            }
+
             Reminders.ACTION_REVIEW -> {
                 postReview(context)
                 // Сразу планируем следующее утро: ревью показывается раз в сутки.

@@ -20,6 +20,11 @@ object NoteBadge {
     private const val CHANNEL = "glass-notes-count"
     private const val ID = 9001
 
+    /** Actions и ключ: смахивание уведомления запоминается, чтобы оно не всплывало снова. */
+    const val ACTION_DISMISS = "com.glassnotes.dev.ACTION_BADGE_DISMISS"
+    const val EXTRA_COUNT = "badgeCount"
+    const val KEY_DISMISSED = "badge_dismissed"
+
     fun update(
         context: Context,
         store: NotesStore,
@@ -39,6 +44,11 @@ object NoteBadge {
                 // Без разрешения уведомление не покажется; молча выходим, ничего не ломаем.
                 return
             }
+        }
+        // Если пользователь смахнул уведомление при этом же числе дел — не возвращаем его.
+        if (store.getKv(KEY_DISMISSED) == active.toString()) {
+            Log.i("GlasNotesDev", "счётчик на иконке: %d скрыт пользователем".format(active))
+            return
         }
         if (manager.getNotificationChannel(CHANNEL) == null) {
             manager.createNotificationChannel(
@@ -65,7 +75,26 @@ object NoteBadge {
                 .setSilent(true)
                 .setOngoing(false)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setDeleteIntent(dismissIntent(context, active))
                 .build()
         manager.notify(ID, notification)
+    }
+
+    /** Срабатывает при смахивании: запоминаем число, при котором уведомление убрали. */
+    private fun dismissIntent(
+        context: Context,
+        count: Int,
+    ): android.app.PendingIntent {
+        val intent =
+            android.content.Intent(context, ReminderReceiver::class.java).apply {
+                action = ACTION_DISMISS
+                putExtra(EXTRA_COUNT, count.toString())
+            }
+        return android.app.PendingIntent.getBroadcast(
+            context,
+            ID,
+            intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 }
