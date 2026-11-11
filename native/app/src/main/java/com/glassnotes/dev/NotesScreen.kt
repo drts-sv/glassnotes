@@ -126,7 +126,6 @@ fun NotesScreen(
     reviewSignal: Int = 0,
 ) {
     var notes by remember { mutableStateOf<List<NoteRow>>(emptyList()) }
-    val badgeContext = LocalContext.current
     var tab by remember { mutableStateOf("active") }
     var query by remember { mutableStateOf("") }
     var searchOpen by remember { mutableStateOf(false) }
@@ -212,9 +211,6 @@ fun NotesScreen(
             ),
         )
     }
-
-    // Число на иконке: обновляем на старте и после каждого действия (revision).
-    LaunchedEffect(revision) { NoteBadge.update(badgeContext, store) }
 
     if (settingsOpen) {
         SettingsScreen(

@@ -1,5 +1,6 @@
 package com.glassnotes.dev
 
+import android.content.Context
 import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
@@ -353,6 +354,14 @@ class MainActivity : ComponentActivity() {
                 "САМОПРОВЕРКА КОПИИ: заметок %d, файл %d байт, импортировано %d, после импорта %d"
                     .format(before, read.length, count, store.count()),
             )
+        }
+
+        // Счётчик на иконке убран (владелец: «цифры не видно — только точка»):
+        // снимаем оставшееся уведомление и удаляем его канал из настроек системы.
+        run {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            nm.cancel(9001)
+            nm.deleteNotificationChannel("glass-notes-count")
         }
 
         setContent {
