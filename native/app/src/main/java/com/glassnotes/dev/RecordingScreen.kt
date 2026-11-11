@@ -9,6 +9,7 @@ import android.os.Build
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -156,6 +157,10 @@ fun RecordingScreen(
     var rawRms by remember { mutableIntStateOf(0) }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
 
+    /** Заметка, для которой категорию не выбрали: после записи спрашиваем окном (заметка #74). */
+    var askCatId by remember { mutableStateOf<Long?>(null) }
+    var askCatLeft by remember { mutableIntStateOf(0) }
+
     /** Распознанные фразы: новые снизу, старые бледнее — тикер под развёрткой. */
     val phrases = remember { mutableStateListOf<String>() }
 
@@ -188,19 +193,21 @@ fun RecordingScreen(
     var startedAt by remember { mutableStateOf(0L) }
 
     /** Сохранить надиктованное одной заметкой и очистить сеанс. Пустой текст не сохраняем. */
-    fun saveSession() {
+    fun saveSession(): Long? {
         val text = session.toString().trim()
         session.setLength(0)
         phrases.clear()
         if (text.isEmpty()) {
             Log.i(TAG, "сеанс записи пустой — заметка не создаётся")
-            return
+            return null
         }
         val parsed = parseDateNlu(text)
         val id =
             store.add(
                 text = parsed.text,
-                categoryId = parsed.categoryId ?: selectedCategory,
+                // Категорию голосом не определяем (владелец: «это не работает») —
+                // только ручной выбор на экране или окно после записи.
+                categoryId = selectedCategory,
                 datetime = parsed.datetime,
                 allDay = parsed.allDay,
             )
@@ -213,10 +220,16 @@ fun RecordingScreen(
                 total,
                 parsed.datetime?.let { CLOCK_TEXT.format(java.util.Date(it)) } ?: "нет",
                 if (parsed.allDay) "да" else "нет",
-                parsed.categoryId ?: selectedCategory ?: "нет",
+                selectedCategory ?: "нет",
                 parsed.text,
             ),
         )
+        // Категорию не назвали и не выбрали — спросим окном после записи, как в боевом.
+        if (selectedCategory == null) {
+            askCatId = id
+            Log.i(TAG, "категория не выбрана — окно выбора для заметки #%d".format(id))
+        }
+        return id
         val due = parsed.datetime
         if (due != null && due > System.currentTimeMillis()) {
             Reminders.schedule(context, id, due, parsed.text, parsed.categoryId ?: selectedCategory, parsed.allDay)
@@ -227,6 +240,12 @@ fun RecordingScreen(
     val trace = remember { ArrayDeque<Float>(TRACE + 2) }
 
     var transcriber by remember { mutableStateOf<LiveTranscriber?>(null) }
+
+    /** Сохранить сеанс и уйти со экрана; если категорию надо спросить — остаёмся на окне. */
+    fun finishSession() {
+        saveSession()
+        if (askCatId == null) onClose()
+    }
 
     /** Остановить запись и сохранить заметку: путь общий для кнопки и авто-остановки. */
     fun stopAndSave() {
@@ -243,8 +262,18 @@ fun RecordingScreen(
             }
             delay(300)
             Log.i(TAG, "распознавание успокоилось через %d мс".format(waited))
-            saveSession()
-            onClose()
+            finishSession()
+        }
+    }
+
+    // Системный жест «назад» (свайп от края экрана) раньше закрывал приложение целиком
+    // (заметка #81). Теперь он останавливает запись и возвращает в список, как кнопка «Назад».
+    BackHandler {
+        if (recording) {
+            Log.i(TAG, "жест назад: останавливаем запись и сохраняем")
+            stopAndSave()
+        } else {
+            finishSession()
         }
     }
 
@@ -437,6 +466,23 @@ fun RecordingScreen(
 
     // Фон окна прозрачный (тема + FLAG_SHOW_WALLPAPER), поэтому за экраном видны обои —
     // как в боевом приложении. Свою подложку здесь НЕ рисуем: она перекрывала обои.
+    // Таймер окна: как в боевом, «сплэш категорий» закрывается сам, если его не трогают.
+    LaunchedEffect(askCatId) {
+        val id = askCatId ?: return@LaunchedEffect
+        val sec = store.getKv(AppSettings.CAT_SHEET_SEC)?.toIntOrNull() ?: 14
+        askCatLeft = sec
+        if (sec <= 0) return@LaunchedEffect
+        while (askCatLeft > 0) {
+            delay(1000)
+            askCatLeft -= 1
+        }
+        if (askCatId == id) {
+            Log.i(TAG, "окно категории закрылось по таймеру (%d с)".format(sec))
+            askCatId = null
+            onClose()
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
 
         Column(
@@ -467,8 +513,7 @@ fun RecordingScreen(
                             .clickable {
                                 Haptics.tick(hapticView)
                                 // Уходим назад — надиктованное сохраняем, чтобы не потерять.
-                                saveSession()
-                                onClose()
+                                finishSession()
                             },
                 )
             }
@@ -788,6 +833,24 @@ fun RecordingScreen(
                 }
             }
         }
+
+            // Окно выбора категории (заметка #74): появляется после записи, если категорию
+            // не назвали и не выбрали. Голосом категорию не определяем — только этим окном.
+            if (askCatId != null) {
+                AskCategoryOverlay(
+                    accent = accent,
+                    secondsLeft = askCatLeft,
+                    onPick = { categoryId ->
+                        val id = askCatId
+                        if (id != null) {
+                            store.setCategory(id, categoryId)
+                            Log.i(TAG, "категория из окна: %s (заметка #%d)".format(categoryId ?: "нет", id))
+                        }
+                        askCatId = null
+                        onClose()
+                    },
+                )
+            }
     }
 }
 
@@ -823,3 +886,78 @@ private fun ParamSlider(
     }
 }
 
+/**
+ * Окно выбора категории после записи — как всплывающее окно боевого приложения: стеклянная
+ * карточка по центру, плитки категорий и «Без категории». Таймер (если задан) закрывает окно
+ * само, тогда заметка остаётся без категории.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AskCategoryOverlay(
+    accent: Color,
+    secondsLeft: Int,
+    onPick: (String?) -> Unit,
+) {
+    Box(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.55f))
+                .clickable { onPick(null) },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth(0.9f)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Design.glassRgb.copy(alpha = 0.96f))
+                    .border(1.dp, Design.border, RoundedCornerShape(24.dp))
+                    .clickable { }
+                    .padding(horizontal = 16.dp, vertical = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(text = "Куда отнести заметку?", color = Design.textPrimary, fontSize = 18.sp)
+            if (secondsLeft > 0) {
+                Text(
+                    text = "закроется через %d с".format(secondsLeft),
+                    color = Design.textSecondary.copy(alpha = 0.8f),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(Design.chipGap, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(Design.chipGap),
+            ) {
+                for (category in CATEGORIES) {
+                    Box(
+                        modifier =
+                            Modifier
+                                .clip(RoundedCornerShape(Design.chipRadius))
+                                .background(category.color.copy(alpha = 0.30f))
+                                .border(1.dp, category.color.copy(alpha = 0.65f), RoundedCornerShape(Design.chipRadius))
+                                .clickable { onPick(category.id) }
+                                .defaultMinSize(minHeight = Design.chipMinHeight)
+                                .padding(horizontal = Design.chipPadH, vertical = Design.chipPadV),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(text = category.name, color = Design.textPrimary, fontSize = Design.chipFont)
+                    }
+                }
+            }
+            Text(
+                text = "Без категории",
+                color = Design.textSecondary,
+                fontSize = 14.sp,
+                modifier =
+                    Modifier
+                        .padding(top = 14.dp)
+                        .clip(RoundedCornerShape(Design.chipRadius))
+                        .clickable { onPick(null) }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+            )
+        }
+    }
+}
