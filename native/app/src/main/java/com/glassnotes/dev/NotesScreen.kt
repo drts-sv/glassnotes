@@ -162,6 +162,13 @@ fun NotesScreen(
     var editDate by remember { mutableStateOf<LocalDate?>(null) }
     var editTime by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var editCats by remember { mutableStateOf(emptySet<String>()) }
+    // #117/#118: «Улучшить текст» через DeepSeek — запрос уходит из редактора, ответ показываем
+    // в отдельной панели, чтобы «Применить» не теряло исходный текст.
+    var aiOpen by remember { mutableStateOf(false) }
+    var aiBusy by remember { mutableStateOf(false) }
+    var aiSource by remember { mutableStateOf("") }
+    var aiReply by remember { mutableStateOf<DeepSeek.Reply?>(null) }
+    var aiError by remember { mutableStateOf<String?>(null) }
 
     /** Заполняет редактор значениями заметки и открывает его. Вызывать и из меню, и из листа. */
     fun openEditor(n: NoteRow) {
@@ -311,6 +318,38 @@ fun NotesScreen(
                         fontSize = 17.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = if (aiBusy) "…" else "✨",
+                        color = if (aiBusy) Design.textSecondary else accent,
+                        fontSize = 18.sp,
+                        modifier =
+                            Modifier
+                                .clickable(enabled = !aiBusy) {
+                                    val key = store.getKv(DeepSeek.KEY).orEmpty().trim()
+                                    if (key.isEmpty()) {
+                                        Ui.toast(context, "Ключ DeepSeek — в настройках")
+                                    } else if (editText.isBlank()) {
+                                        Ui.toast(context, "Пустая заметка — нечего улучшать")
+                                    } else {
+                                        Haptics.tick(screenView)
+                                        aiSource = editText
+                                        aiReply = null
+                                        aiError = null
+                                        aiOpen = true
+                                        aiBusy = true
+                                        editScope.launch {
+                                            // Сеть — не в главном потоке: иначе «замирает» вся панель.
+                                            val outcome =
+                                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                    runCatching { DeepSeek.improve(key, editText) }
+                                                }
+                                            aiBusy = false
+                                            outcome.onSuccess { aiReply = it }
+                                                .onFailure { aiError = it.message ?: "Не получилось" }
+                                        }
+                                    }
+                                }.padding(6.dp),
                     )
                     Text(
                         text = "✕",
@@ -541,6 +580,101 @@ fun NotesScreen(
                         Text(text = "Сохранить", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
+        }
+
+        // #117/#118: результат DeepSeek — рядом с редактором, с «Применить» и списком правок.
+        if (aiOpen) {
+            Dialog(onDismissRequest = { if (!aiBusy) aiOpen = false }) {
+                GlassPanel(accent = accent, onDismiss = { if (!aiBusy) aiOpen = false }, maxHeightFraction = 0.85f) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "✨ Улучшенный текст",
+                            color = Design.textPrimary,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            text = "✕",
+                            color = Design.textSecondary,
+                            fontSize = 18.sp,
+                            modifier = Modifier.clickable(enabled = !aiBusy) { aiOpen = false }.padding(6.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Column(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 400.dp)
+                                .verticalScroll(rememberScrollState()),
+                    ) {
+                        if (aiBusy) {
+                            Text(
+                                text = "Отправляю в DeepSeek…",
+                                color = Design.textSecondary,
+                                fontSize = 15.sp,
+                            )
+                        } else if (aiError != null) {
+                            Text(
+                                text = aiError.orEmpty(),
+                                color = Color(0xFFFF6B6B),
+                                fontSize = 15.sp,
+                            )
+                        } else {
+                            val reply = aiReply
+                            if (reply != null) {
+                                Text("Было", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
+                                Spacer(Modifier.height(4.dp))
+                                Text(text = aiSource, color = Design.textPrimary.copy(alpha = 0.55f), fontSize = 15.sp)
+                                Spacer(Modifier.height(12.dp))
+                                Text("Станет", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
+                                Spacer(Modifier.height(4.dp))
+                                Text(text = reply.text, color = Design.textPrimary, fontSize = 17.sp, lineHeight = 24.sp)
+                                if (reply.changes.isNotBlank()) {
+                                    Spacer(Modifier.height(12.dp))
+                                    Text("Что изменено", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(text = reply.changes, color = Design.textSecondary, fontSize = 14.sp, lineHeight = 20.sp)
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .height(50.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Design.glassRgb.copy(alpha = 0.55f))
+                                    .border(1.dp, Design.border, RoundedCornerShape(16.dp))
+                                    .clickable { aiOpen = false },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(text = "Закрыть", color = Design.textPrimary, fontSize = 15.sp)
+                        }
+                        Box(
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .height(50.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(accent)
+                                    .clickable {
+                                        val reply = aiReply ?: return@clickable
+                                        Haptics.confirm(screenView)
+                                        editText = reply.text
+                                        aiOpen = false
+                                    },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(text = "Применить", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
         }
 
         // Системный календарь. DatePicker живёт в UTC, поэтому туда и обратно переводим явно.
@@ -1244,6 +1378,8 @@ private fun NoteCard(
     holdDoneSec: Float = 2f,
     holdDeleteSec: Float = 3f,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     var menuOpen by remember { mutableStateOf(false) }
     var dragX by remember { mutableFloatStateOf(0f) }
     var dragging by remember { mutableStateOf(false) }
@@ -1490,6 +1626,16 @@ private fun NoteCard(
                     ).padding(horizontal = 14.dp, vertical = 12.dp),
         ) {
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Копировать текст", fontSize = 15.sp) },
+                    onClick = {
+                        Haptics.longPress(view)
+                        clipboard.setText(androidx.compose.ui.text.AnnotatedString(note.text))
+                        Ui.toast(context, "Текст скопирован")
+                        menuOpen = false
+                    },
+                )
+                MenuDivider()
                 Text(
                     text = "Категория",
                     color = Design.textSecondary.copy(alpha = 0.7f),
@@ -1506,6 +1652,7 @@ private fun NoteCard(
                         },
                     )
                 }
+                MenuDivider()
                 DropdownMenuItem(
                     text = { Text(if (note.status == "done") "Вернуть в активные" else "Отметить выполненным", fontSize = 15.sp) },
                     onClick = {
@@ -1522,6 +1669,7 @@ private fun NoteCard(
                         menuOpen = false
                     },
                 )
+                MenuDivider()
                 DropdownMenuItem(
                     text = { Text("Удалить заметку", fontSize = 15.sp) },
                     onClick = {
@@ -1656,51 +1804,6 @@ private val DEFAULT_TIMES =
         Triple("🌙", 21, 0),
     )
 
-/** Плитка редактора (.edit-tile боевого): 14 dp скругление, поля 10×6 dp, 0.8rem ≈ 13 sp. */
-@Composable
-private fun EditTile(
-    text: String,
-    accent: Color,
-    active: Boolean = false,
-    danger: Boolean = false,
-    bg: Color? = null,
-    onClick: () -> Unit,
-) {
-    val background =
-        when {
-            active && bg != null -> bg.copy(alpha = 0.45f)
-            active -> accent.copy(alpha = 0.15f)
-            else -> Design.glassRgb.copy(alpha = 0.45f)
-        }
-    val color =
-        when {
-            danger -> Color(0xFFFF6B6B)
-            active -> Design.chipText
-            else -> Design.textSecondary
-        }
-    // Рамка показывает выбор так же, как фон: без неё светлый чип на светлой теме сливался.
-    val edge =
-        when {
-            danger -> Color(0xFFFF6B6B).copy(alpha = 0.45f)
-            active -> (bg ?: accent).copy(alpha = 0.85f)
-            else -> Design.border
-        }
-    Text(
-        text = text,
-        color = color,
-        fontSize = 13.sp,
-        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-        textAlign = TextAlign.Center,
-        modifier =
-            Modifier
-                .clip(RoundedCornerShape(14.dp))
-                .background(if (active) (bg ?: accent).copy(alpha = 0.55f) else background)
-                .border(1.dp, edge, RoundedCornerShape(14.dp))
-                .clickable { onClick() }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-    )
-}
-
 /** Заголовок сворачиваемого блока: название, текущее значение, стрелка. */
 @Composable
 private fun EditSectionHeader(
@@ -1731,6 +1834,65 @@ private fun EditSectionHeader(
     }
 }
 
+
+/**
+ * Чип редактора (категория, дата, время, «Выбрать», «Очистить»).
+ * Активный всегда плотный, с белым текстом — в светлой теме прежний полупрозрачный фон
+ * и тёмная подпись сливались с панелью (#107).
+ */
+@Composable
+private fun EditTile(
+    text: String,
+    accent: Color,
+    active: Boolean = false,
+    danger: Boolean = false,
+    bg: Color? = null,
+    onClick: () -> Unit,
+) {
+    val activeBg = (bg ?: accent).copy(alpha = 0.92f)
+    val idleBg =
+        if (Design.light) Color.White.copy(alpha = 0.75f) else Design.glassRgb.copy(alpha = 0.45f)
+    val color: Color =
+        when {
+            active -> Color.White
+            danger -> Color(0xFFFF6B6B)
+            else -> Design.textPrimary.copy(alpha = 0.85f)
+        }
+    val edge: Color =
+        when {
+            active -> (bg ?: accent).copy(alpha = 0.95f)
+            danger -> Color(0xFFFF6B6B).copy(alpha = 0.55f)
+            Design.light -> Color(0xFF9AA7BD)
+            else -> Design.border
+        }
+    Text(
+        text = text,
+        color = color,
+        fontSize = 13.sp,
+        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+        textAlign = TextAlign.Center,
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(14.dp))
+                .background(if (active) activeBg else idleBg)
+                .border(1.dp, edge, RoundedCornerShape(14.dp))
+                .clickable { onClick() }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
+}
+
+/** Тонкий разделитель внутри меню карточки (#116). */
+@Composable
+private fun MenuDivider() {
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+                .height(1.dp)
+                .background(Design.border),
+    )
+}
 
 /**
  * Кнопка удаления в ряду панели просмотра. Удаление — только удержанием (случайный тап ничего
@@ -1816,6 +1978,8 @@ private fun NoteSheet(
     onDelete: () -> Unit,
 ) {
     val view = LocalView.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     GlassPanel(accent = accent, onDismiss = onClose, maxHeightFraction = 0.86f) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -1876,15 +2040,23 @@ private fun NoteSheet(
                     .verticalScroll(rememberScrollState()),
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
-                // #116: выделение и «Копировать» — системным контекстным меню.
-                androidx.compose.foundation.text.selection.SelectionContainer {
-                    Text(
-                        text = note.text,
-                        color = Design.textPrimary.copy(alpha = if (note.done) 0.6f else 1f),
-                        fontSize = 20.sp,
-                        lineHeight = 28.sp,
-                    )
-                }
+                // #116: долгое нажатие на текст — сразу копирует в буфер и даёт вибрацию.
+                Text(
+                    text = note.text,
+                    color = Design.textPrimary.copy(alpha = if (note.done) 0.6f else 1f),
+                    fontSize = 20.sp,
+                    lineHeight = 28.sp,
+                    modifier =
+                        Modifier.pointerInput(note.id, note.text) {
+                            detectTapGestures(
+                                onLongPress = {
+                                    Haptics.longPress(view)
+                                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(note.text))
+                                    Ui.toast(context, "Текст скопирован")
+                                },
+                            )
+                        },
+                )
                 if (note.categoryIds.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

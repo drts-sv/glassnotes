@@ -30,6 +30,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableIntStateOf
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -118,6 +121,12 @@ fun SettingsScreen(
 
     var fabPos by remember { mutableStateOf(store.getKv("fabPos") ?: "right") }
 
+    // #117/#118: ключ DeepSeek живёт в kv, в APK его нет.
+    var dsKey by remember { mutableStateOf(store.getKv(DeepSeek.KEY).orEmpty()) }
+    var dsDraft by remember { mutableStateOf(store.getKv(DeepSeek.KEY).orEmpty()) }
+    var dsOpen by remember { mutableStateOf(false) }
+    var dsShow by remember { mutableStateOf(false) }
+
     var reviewOn by remember { mutableStateOf(AppSettings.flag(store, AppSettings.REVIEW_ENABLED, true)) }
     var reviewTime by remember { mutableStateOf(store.getKv(Reminders.REVIEW_TIME_KEY) ?: Reminders.DEFAULT_REVIEW_TIME) }
 
@@ -137,15 +146,24 @@ fun SettingsScreen(
     var openModel by remember { mutableStateOf(false) }
     var openData by remember { mutableStateOf(false) }
 
-    val model =
-        remember {
+    var model by remember {
+        mutableStateOf(
             runCatching {
                 val manager = ModelManager(context)
                 val installed = manager.isInstalled()
                 val sizeMb = if (installed) manager.modelFile.length() / (1024 * 1024) else 0L
                 installed to sizeMb
-            }.getOrElse { false to 0L }
-        }
+            }.getOrElse { false to 0L },
+        )
+    }
+
+    // #110/#111: докачка модели прямо из настроек — процент, отмена, «только по Wi-Fi».
+    val downloadScope = rememberCoroutineScope()
+    var downloadJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var progress by remember { mutableIntStateOf(-1) }
+    var downloadError by remember { mutableStateOf<String?>(null) }
+    var wifiOnly by remember { mutableStateOf(AppSettings.flag(store, "model_wifi_only", true)) }
+    val downloading = downloadJob?.isActive == true
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(
@@ -402,11 +420,154 @@ fun SettingsScreen(
                                 color = Design.textSecondary.copy(alpha = 0.8f),
                                 fontSize = 12.5.sp,
                             )
+                            if (downloading && progress >= 0) {
+                                Spacer(Modifier.size(6.dp))
+                                Text(
+                                    text = "%d%% · %d из 214 МБ".format(progress, 214L * progress / 100),
+                                    color = accent,
+                                    fontSize = 12.5.sp,
+                                )
+                                Spacer(Modifier.size(6.dp))
+                                Box(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .height(4.dp)
+                                            .clip(RoundedCornerShape(2.dp))
+                                            .background(Design.border),
+                                ) {
+                                    Box(
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth(progress / 100f)
+                                                .height(4.dp)
+                                                .background(accent),
+                                    )
+                                }
+                            }
+                        }
+                        downloadError?.let { err ->
+                            Text(text = err, color = Color(0xFFFF6B6B), fontSize = 12.5.sp, lineHeight = 16.sp)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            if (downloading) {
+                                Tile("Отменить загрузку", false, accent, Modifier.weight(1f)) {
+                                    downloadJob?.cancel()
+                                    downloadJob = null
+                                    progress = -1
+                                }
+                            } else {
+                                Tile(
+                                    if (installed) "Перекачать модель" else "⬇ Скачать 214 МБ",
+                                    false,
+                                    accent,
+                                    Modifier.weight(1f),
+                                ) {
+                                    val wifi = SettingsScreenHelpers.isWifi(context)
+                                    if (wifiOnly && !wifi) {
+                                        downloadError = "Нет Wi-Fi. Подключите сеть или выключите «только по Wi-Fi»."
+                                    } else {
+                                        downloadError = null
+                                        progress = 0
+                                        Haptics.tick(view)
+                                        downloadJob =
+                                            downloadScope.launch {
+                                                try {
+                                                    ModelManager(context).download { p -> progress = p }
+                                                    progress = 100
+                                                    model =
+                                                        true to
+                                                            runCatching { ModelManager(context).modelFile.length() / (1024 * 1024) }
+                                                                .getOrDefault(214L)
+                                                    Haptics.confirm(view)
+                                                    Ui.toast(context, "Модель установлена")
+                                                } catch (e: kotlinx.coroutines.CancellationException) {
+                                                    downloadError = "Загрузка отменена"
+                                                    progress = -1
+                                                    model = false to 0L
+                                                    throw e
+                                                } catch (e: Exception) {
+                                                    downloadError = e.message ?: "Не удалось скачать"
+                                                    progress = -1
+                                                    model = false to 0L
+                                                } finally {
+                                                    downloadJob = null
+                                                }
+                                            }
+                                    }
+                                }
+                            }
+                            Tile(if (wifiOnly) "📶 Только Wi-Fi" else "📶 Любая сеть", wifiOnly, accent, Modifier.weight(1f)) {
+                                wifiOnly = !wifiOnly
+                                AppSettings.setFlag(store, "model_wifi_only", wifiOnly)
+                            }
                         }
                         Text(
-                            text = "Докачка модели в нативной сборке пока не перенесена — файл кладётся в dev-пакет отдельно.",
+                            text = "Источники: GitHub-релиз giga-pisar-android, затем Hugging Face. " +
+                                "Файл проверяется по SHA-256, недокачанный не остаётся.",
                             color = Design.textSecondary.copy(alpha = 0.6f),
                             fontSize = 11.5.sp,
+                            lineHeight = 15.sp,
+                        )
+                    }
+
+                    // ---------- ✨ DeepSeek (#117/#118) ----------
+                    SettingsGroup(
+                        "✨ DeepSeek",
+                        if (dsKey.isBlank()) "ключ не задан" else "ключ задан",
+                        dsOpen,
+                        { dsOpen = !dsOpen },
+                    ) {
+                        Text(
+                            text = "Кнопка ✨ в редакторе просит DeepSeek сократить и причесать заметку. " +
+                                "Запрос короткий: одно сообщение туда, до 1200 токенов ответа.",
+                            color = Design.textSecondary.copy(alpha = 0.75f),
+                            fontSize = 12.5.sp,
+                            lineHeight = 16.sp,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            BasicTextField(
+                                value = dsDraft,
+                                onValueChange = { dsDraft = it },
+                                singleLine = true,
+                                textStyle = TextStyle(color = Design.textPrimary, fontSize = 14.sp),
+                                visualTransformation =
+                                    if (dsShow) androidx.compose.ui.text.input.VisualTransformation.None
+                                    else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                modifier =
+                                    Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Design.tint(0.06f))
+                                        .border(1.dp, Design.border, RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                            )
+                            Spacer(Modifier.size(8.dp))
+                            Tile(if (dsShow) "🙈" else "👁", dsShow, accent) { dsShow = !dsShow }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Tile("Сохранить ключ", false, accent, Modifier.weight(1f)) {
+                                dsKey = dsDraft.trim()
+                                store.setKv(DeepSeek.KEY, dsKey)
+                                Haptics.confirm(view)
+                                Ui.toast(context, if (dsKey.isEmpty()) "Ключ очищен" else "Ключ сохранён")
+                            }
+                            Tile("Очистить", false, accent, Modifier.weight(1f)) {
+                                dsDraft = ""
+                                dsKey = ""
+                                store.setKv(DeepSeek.KEY, "")
+                                Haptics.tick(view)
+                            }
+                        }
+                        Text(
+                            text = "Ключ берётся на platform.deepseek.com. Модель " + DeepSeek.MODEL +
+                                ", ответ до 1200 токенов — примерно 0,002 ₽ за заметку.",
+                            color = Design.textSecondary.copy(alpha = 0.55f),
+                            fontSize = 11.5.sp,
+                            lineHeight = 15.sp,
                         )
                     }
 
@@ -797,5 +958,21 @@ private fun Tile(
             fontSize = 13.sp,
             textAlign = TextAlign.Center,
         )
+    }
+}
+
+
+/** Мелкие проверки окружения для настроек: сеть в первую очередь. */
+object SettingsScreenHelpers {
+    /** true, если активная сеть — Wi-Fi (мобильная и отсутствие сети дают false). */
+    fun isWifi(context: android.content.Context): Boolean {
+        return try {
+            val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+                as? android.net.ConnectivityManager ?: return false
+            val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+            caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+        } catch (_: Throwable) {
+            false
+        }
     }
 }

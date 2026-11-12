@@ -159,6 +159,8 @@ fun RecordingScreen(
 
     /** Заметка, для которой категорию не выбрали: после записи спрашиваем окном (заметка #74). */
     var askCatId by remember { mutableStateOf<Long?>(null) }
+    // #115: что подсказал разбор текста — эта категория показывается в окне первой.
+    var askCatHint by remember { mutableStateOf<String?>(null) }
     var askCatLeft by remember { mutableIntStateOf(0) }
 
     /** Распознанные фразы: новые снизу, старые бледнее — тикер под развёрткой. */
@@ -202,12 +204,18 @@ fun RecordingScreen(
             return null
         }
         val parsed = parseDateNlu(text)
+        // #115: категория по голосу — разбор текста подсказывает, что это («баг» → Разработка).
+        // Подсказка ставится, только если человек не выбрал категорию руками.
+        val hint =
+            if (selectedCategory == null && NluOptions.voiceCategory) {
+                CategoryHints.detect(parsed.text)
+            } else {
+                null
+            }
         val id =
             store.add(
                 text = parsed.text,
-                // Категорию голосом не определяем (владелец: «это не работает») —
-                // только ручной выбор на экране или окно после записи.
-                categoryId = selectedCategory,
+                categoryId = selectedCategory ?: hint,
                 datetime = parsed.datetime,
                 allDay = parsed.allDay,
             )
@@ -227,6 +235,7 @@ fun RecordingScreen(
         // Категорию не назвали и не выбрали — спросим окном после записи, как в боевом.
         if (selectedCategory == null) {
             askCatId = id
+            askCatHint = hint
             Log.i(TAG, "категория не выбрана — окно выбора для заметки #%d".format(id))
         }
         return id
@@ -862,6 +871,7 @@ fun RecordingScreen(
                 AskCategoryOverlay(
                     accent = accent,
                     secondsLeft = askCatLeft,
+                    hint = askCatHint,
                     onPick = { categoryId ->
                         val id = askCatId
                         if (id != null) {
@@ -869,6 +879,7 @@ fun RecordingScreen(
                             Log.i(TAG, "категория из окна: %s (заметка #%d)".format(categoryId ?: "нет", id))
                         }
                         askCatId = null
+                        askCatHint = null
                         onClose()
                     },
                 )
@@ -918,8 +929,12 @@ private fun ParamSlider(
 private fun AskCategoryOverlay(
     accent: Color,
     secondsLeft: Int,
+    hint: String? = null,
     onPick: (String?) -> Unit,
 ) {
+    // #115: подсказанную категорию показываем первой и подписываем — так её видно сразу,
+    // а остальные остаются под рукой, если разбор ошибся.
+    val ordered = CATEGORIES.sortedBy { if (it.id == hint) 0 else 1 }
     Box(
         modifier =
             Modifier
@@ -939,7 +954,18 @@ private fun AskCategoryOverlay(
                     .padding(horizontal = 16.dp, vertical = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(text = "Куда отнести заметку?", color = Design.textPrimary, fontSize = 18.sp)
+            Text(
+                text =
+                    if (hint != null) {
+                        val name = CATEGORIES.firstOrNull { it.id == hint }?.name ?: ""
+                        "Похоже на «%s». Куда отнести?".format(name)
+                    } else {
+                        "Куда отнести заметку?"
+                    },
+                color = Design.textPrimary,
+                fontSize = 18.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
             if (secondsLeft > 0) {
                 Text(
                     text = "закроется через %d с".format(secondsLeft),
@@ -953,19 +979,29 @@ private fun AskCategoryOverlay(
                 horizontalArrangement = Arrangement.spacedBy(Design.chipGap, Alignment.CenterHorizontally),
                 verticalArrangement = Arrangement.spacedBy(Design.chipGap),
             ) {
-                for (category in CATEGORIES) {
+                for (category in ordered) {
+                    val suggested = category.id == hint
                     Box(
                         modifier =
                             Modifier
                                 .clip(RoundedCornerShape(Design.chipRadius))
-                                .background(category.color.copy(alpha = 0.30f))
-                                .border(1.dp, category.color.copy(alpha = 0.65f), RoundedCornerShape(Design.chipRadius))
+                                .background(category.color.copy(alpha = if (suggested) 0.55f else 0.30f))
+                                .border(
+                                    if (suggested) 2.dp else 1.dp,
+                                    category.color.copy(alpha = if (suggested) 0.95f else 0.65f),
+                                    RoundedCornerShape(Design.chipRadius),
+                                )
                                 .clickable { onPick(category.id) }
                                 .defaultMinSize(minHeight = Design.chipMinHeight)
                                 .padding(horizontal = Design.chipPadH, vertical = Design.chipPadV),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(text = category.name, color = Design.textPrimary, fontSize = Design.chipFont)
+                        Text(
+                            text = if (suggested) "🎤 ${category.name}" else category.name,
+                            color = Design.textPrimary,
+                            fontSize = Design.chipFont,
+                            fontWeight = if (suggested) FontWeight.SemiBold else FontWeight.Normal,
+                        )
                     }
                 }
             }
