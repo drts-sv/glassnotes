@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -413,9 +414,15 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf(intent?.getBooleanExtra("record", false) == true)
                 }
 
-                if (recordingOpen) {
-                    RecordingScreen(autoStart = true, onClose = { recordingOpen = false })
-                } else {
+                // Подложка под всем содержимым: в тёмной теме — обои с блюром и матированием,
+                // в светлой — светлый градиент. Раньше фон не рисовался вовсе: сквозь прозрачный
+                // корень просвечивали системные обои, и тёмные подписи светлой темы («Важные»,
+                // «Без срока») терялись на фотографии (#107).
+                Box(modifier = Modifier.fillMaxSize()) {
+                    GlassBackdrop()
+                    if (recordingOpen) {
+                        RecordingScreen(autoStart = true, onClose = { recordingOpen = false })
+                    } else {
                     NotesScreen(
                         store = store,
                         accent = accent,
@@ -425,6 +432,7 @@ class MainActivity : ComponentActivity() {
                         openOnStart = intent?.getStringExtra("open"),
                         reviewSignal = reviewSignal.intValue,
                     )
+                    }
                 }
             }
         }
