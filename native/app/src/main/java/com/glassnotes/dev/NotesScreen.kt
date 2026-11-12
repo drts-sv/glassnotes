@@ -403,7 +403,10 @@ fun NotesScreen(
                 ) {
                 Text("🏷 Категории", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
                 Spacer(Modifier.height(4.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     Categories.names.forEach { pair ->
                         val id = pair.first
                         val on = id in editCats
@@ -436,7 +439,10 @@ fun NotesScreen(
                 if (dateOpen) {
                     // Выбранная дата подсвечивается — раньше чипы не показывали выбор.
                     val today = LocalDate.now()
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         EditTile("Сегодня", accent = accent, active = editDate == today) {
                             Haptics.tick(screenView)
                             editDate = today
@@ -481,7 +487,10 @@ fun NotesScreen(
                     },
                 )
                 if (timeOpen) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         DEFAULT_TIMES.forEach { (emoji, hour, minute) ->
                             EditTile(
                                 "$emoji %02d:%02d".format(hour, minute),
@@ -974,7 +983,7 @@ private fun RecordButton(
                         .background(Design.glassRgb.copy(alpha = 0.55f))
                         .border(
                             width = 1.dp,
-                            color = Color.White.copy(alpha = 0.10f),
+                            color = Design.border,
                             shape = androidx.compose.foundation.shape.CircleShape,
                         ).clickable {
                             Haptics.longPress(view)
@@ -1218,7 +1227,7 @@ private fun FilterBadge(
         Text(
             text = label,
             modifier = Modifier.weight(1f, fill = false),
-            color = Color.White.copy(alpha = 0.92f),
+            color = Design.chipText,
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
@@ -1226,7 +1235,7 @@ private fun FilterBadge(
         )
         Text(
             text = "✕",
-            color = Color.White.copy(alpha = 0.75f),
+            color = Design.chipText.copy(alpha = 0.85f),
             fontSize = 9.sp,
         )
     }

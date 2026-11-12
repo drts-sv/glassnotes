@@ -794,7 +794,7 @@ private fun resetAll(store: NotesStore) {
 private fun GroupTitle(text: String) {
     Text(
         text = text.uppercase(),
-        color = Color.White.copy(alpha = 0.3f),
+        color = Design.labelDim,
         fontSize = 11.2.sp,
         fontWeight = FontWeight.SemiBold,
         letterSpacing = 0.5.sp,
@@ -829,7 +829,7 @@ private fun SettingsGroup(
         ) {
             Text(
                 text = title,
-                color = Color.White.copy(alpha = 0.75f),
+                color = Design.labelSoft,
                 fontSize = 12.5.sp,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -941,7 +941,7 @@ private fun Tile(
         modifier =
             modifier
                 .clip(RoundedCornerShape(16.dp))
-                .background(if (active) accent.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.06f))
+                .background(if (active) accent.copy(alpha = 0.12f) else Design.surfaceSoft)
                 .border(
                     1.dp,
                     if (active) accent.copy(alpha = 0.25f) else Design.border,

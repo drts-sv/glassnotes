@@ -101,6 +101,21 @@ object Design {
             )
         }
 
+    /**
+     * Подложка «чуть светлее/темнее фона» для плиток, полей и строк списка.
+     * Белые 6 % в светлой теме невидимы — там это затемнение (аудит светлой темы, 12.11.2026).
+     */
+    val surfaceSoft: Color
+        get() = if (light) Color.Black.copy(alpha = 0.05f) else Color.White.copy(alpha = 0.06f)
+
+    /** Заголовок сворачиваемой группы (было «белый 0.75»): в светлой теме — тёмный. */
+    val labelSoft: Color
+        get() = if (light) Color(0xFF1A1C2C).copy(alpha = 0.78f) else Color.White.copy(alpha = 0.75f)
+
+    /** Мелкая приглушённая подпись-капс (было «белый 0.3»): в светлой теме — тёмный. */
+    val labelDim: Color
+        get() = if (light) Color(0xFF1A1C2C).copy(alpha = 0.55f) else Color.White.copy(alpha = 0.30f)
+
     /** --text-primary / --text-secondary */
     val textPrimary: Color
         get() = if (light) Color(0xFF1A1C2C) else Color.White
