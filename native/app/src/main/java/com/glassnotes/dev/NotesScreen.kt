@@ -298,14 +298,9 @@ fun NotesScreen(
                 }
             } ?: "Не задано"
 
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .background(Design.appBackground())
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-        ) {
+        // Редактор — та же стеклянная панель, что и просмотр: адаптивная высота, блюр подложки,
+        // одинаковый вид у всех трёх окон (просьба владельца 12.11.2026).
+        GlassPanel(accent = accent, onDismiss = { editNote = null }, maxHeightFraction = 0.9f) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = "✏️ Редактирование",
@@ -356,7 +351,8 @@ fun NotesScreen(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .weight(1f)
+                            // Без weight: панель измеряется по содержимому, вес её распирал.
+                            .heightIn(max = 320.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .background(Design.glassRgb.copy(alpha = 0.35f))
                             .border(1.dp, Design.border, RoundedCornerShape(16.dp))
@@ -396,20 +392,28 @@ fun NotesScreen(
                     },
                 )
                 if (dateOpen) {
+                    // Выбранная дата подсвечивается — раньше чипы не показывали выбор.
+                    val today = LocalDate.now()
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        EditTile("Сегодня", accent = accent) {
+                        EditTile("Сегодня", accent = accent, active = editDate == today) {
                             Haptics.tick(screenView)
-                            editDate = LocalDate.now()
+                            editDate = today
                         }
-                        EditTile("Завтра", accent = accent) {
+                        EditTile("Завтра", accent = accent, active = editDate == today.plusDays(1)) {
                             Haptics.tick(screenView)
-                            editDate = LocalDate.now().plusDays(1)
+                            editDate = today.plusDays(1)
                         }
-                        EditTile("Послезавтра", accent = accent) {
+                        EditTile("Послезавтра", accent = accent, active = editDate == today.plusDays(2)) {
                             Haptics.tick(screenView)
-                            editDate = LocalDate.now().plusDays(2)
+                            editDate = today.plusDays(2)
                         }
-                        EditTile("📅 Выбрать", accent = accent) {
+                        // «Выбрать» подсвечен, когда дата пришла из календаря, а не из быстрых чипов.
+                        EditTile(
+                            "📅 Выбрать",
+                            accent = accent,
+                            active = editDate != null && editDate != today &&
+                                editDate != today.plusDays(1) && editDate != today.plusDays(2),
+                        ) {
                             Haptics.tick(screenView)
                             datePickerOpen = true
                         }
@@ -437,13 +441,22 @@ fun NotesScreen(
                 if (timeOpen) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         DEFAULT_TIMES.forEach { (emoji, hour, minute) ->
-                            EditTile("$emoji %02d:%02d".format(hour, minute), accent = accent) {
+                            EditTile(
+                                "$emoji %02d:%02d".format(hour, minute),
+                                accent = accent,
+                                active = editTime == (hour to minute),
+                            ) {
                                 Haptics.tick(screenView)
                                 editTime = hour to minute
                                 if (editDate == null) editDate = LocalDate.now()
                             }
                         }
-                        EditTile("🕐 Выбрать", accent = accent) {
+                        EditTile(
+                            "🕐 Выбрать",
+                            accent = accent,
+                            active = editTime != null &&
+                                DEFAULT_TIMES.none { it.second == editTime?.first && it.third == editTime?.second },
+                        ) {
                             Haptics.tick(screenView)
                             timePickerOpen = true
                         }
@@ -521,7 +534,7 @@ fun NotesScreen(
                         Text(text = "Сохранить", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
-            }
+        }
 
         // Системный календарь. DatePicker живёт в UTC, поэтому туда и обратно переводим явно.
         if (datePickerOpen) {
@@ -606,9 +619,6 @@ fun NotesScreen(
         }
     }
 
-    // Редактор — отдельный экран: без return список рисуется поверх него (позже по порядку),
-    // и были видны только края кнопок.
-    if (editing != null) return
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -672,13 +682,31 @@ fun NotesScreen(
                 contentPadding = PaddingValues(bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                val bySection = shown.groupBy { NoteFilters.bucket(it) }
-                NoteFilters.sectionOrder.forEach { section ->
+                // Раздел «Разработка» — не отдельная вкладка, а последний блок списка «Активные»
+                // (просьба владельца 12.11.2026): все заметки категории dev собраны в нём,
+                // из обычных разделов по датам они исключены, чтобы не дублироваться.
+                val bySection =
+                    if (tab == "active") {
+                        val dev = shown.filter { NoteFilters.DEVELOPMENT in it.categoryIds }
+                        val rest = shown.filter { NoteFilters.DEVELOPMENT !in it.categoryIds }
+                        rest.groupBy { NoteFilters.bucket(it) } +
+                            (if (dev.isEmpty()) emptyMap() else mapOf(NoteFilters.DEVELOPMENT to dev))
+                    } else {
+                        shown.groupBy { NoteFilters.bucket(it) }
+                    }
+                val sectionOrder =
+                    if (tab == "active") NoteFilters.sectionOrder + NoteFilters.DEVELOPMENT else NoteFilters.sectionOrder
+                sectionOrder.forEach { section ->
                     val group = bySection[section] ?: return@forEach
                     if (group.isEmpty()) return@forEach
                     item(key = "section-" + section) {
                         Text(
-                            text = NoteFilters.sectionName(section),
+                            text =
+                                if (section == NoteFilters.DEVELOPMENT) {
+                                    "Разработка · " + group.size
+                                } else {
+                                    NoteFilters.sectionName(section)
+                                },
                             color = Design.textSecondary.copy(alpha = 0.85f),
                             fontSize = 13.sp,
                             modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
@@ -1639,20 +1667,27 @@ private fun EditTile(
     val color =
         when {
             danger -> Color(0xFFFF6B6B)
-            active && bg != null -> Color.White
-            active -> Design.textPrimary
+            active -> Color.White
             else -> Design.textSecondary
+        }
+    // Рамка показывает выбор так же, как фон: без неё светлый чип на светлой теме сливался.
+    val edge =
+        when {
+            danger -> Color(0xFFFF6B6B).copy(alpha = 0.45f)
+            active -> (bg ?: accent).copy(alpha = 0.85f)
+            else -> Design.border
         }
     Text(
         text = text,
         color = color,
         fontSize = 13.sp,
-        fontWeight = FontWeight.Medium,
+        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
         textAlign = TextAlign.Center,
         modifier =
             Modifier
                 .clip(RoundedCornerShape(14.dp))
-                .background(background)
+                .background(if (active) (bg ?: accent).copy(alpha = 0.55f) else background)
+                .border(1.dp, edge, RoundedCornerShape(14.dp))
                 .clickable { onClick() }
                 .padding(horizontal = 12.dp, vertical = 6.dp),
     )
@@ -1751,9 +1786,10 @@ private fun HoldToDelete(
 
 
 /**
- * Лист просмотра заметки — как `#noteSheet` боевого приложения: затемнённый фон, стеклянная
- * карточка по центру, дата в шапке, текст с прокруткой, плашки категорий, внизу «Изменить»
- * и маленькая кнопка удаления с удержанием.
+ * Лист просмотра заметки — стеклянная панель **адаптивной высоты** (просьба владельца 12.11.2026):
+ * растёт по содержимому, но не на весь экран; подложка размыта системным блюром.
+ * Кнопки широкие, в нижней части панели: «🔊 Озвучить», «✏️ Изменить», «Отмена».
+ * Удаление — удержанием маленькой кнопки, чтобы не сработало случайно.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -1768,57 +1804,47 @@ private fun NoteSheet(
     onDelete: () -> Unit,
 ) {
     val view = LocalView.current
-    Box(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(interactionSource = null, indication = null) { onClose() },
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
+    GlassPanel(accent = accent, onDismiss = onClose, maxHeightFraction = 0.86f) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = WhenInput.display(note.datetime, note.allDay).ifEmpty { "Без даты" },
+                color = if (note.datetime == null) Design.textSecondary else Design.textPrimary,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            Box(
+                modifier =
+                    Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Design.tint(0.07f))
+                        .clickable {
+                            Haptics.tick(view)
+                            onClose()
+                        },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(text = "✕", color = Design.textSecondary, fontSize = 15.sp)
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+
+        // Текст прокручивается внутри и имеет потолок: панель растёт по содержимому,
+        // но длинная заметка не распирает её на весь экран.
+        Box(
             modifier =
                 Modifier
-                    .fillMaxWidth(0.94f)
-                    .fillMaxHeight(0.88f)
-                    .clip(RoundedCornerShape(26.dp))
-                    .background(Design.glassRgb.copy(alpha = 0.94f))
-                    .border(1.dp, Design.border, RoundedCornerShape(26.dp))
-                    // Тап внутри карточки не должен закрывать лист: гасим клик.
-                    .clickable(interactionSource = null, indication = null) {}
-                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                    .fillMaxWidth()
+                    .heightIn(max = 350.dp)
+                    .verticalScroll(rememberScrollState()),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = WhenInput.display(note.datetime, note.allDay).ifEmpty { "Без даты" },
-                    color = if (note.datetime == null) Design.textSecondary else Design.textPrimary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-                Box(
-                    modifier =
-                        Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(Design.tint(0.07f))
-                            .clickable {
-                                Haptics.tick(view)
-                                onClose()
-                            },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(text = "✕", color = Design.textSecondary, fontSize = 15.sp)
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            // Текстовая зона тянется на всю карточку: кнопки остаются внизу, а не липнут к тексту.
-            Column(modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = note.text,
                     color = Design.textPrimary.copy(alpha = if (note.done) 0.6f else 1f),
-                    fontSize = 21.sp,
-                    lineHeight = 29.sp,
+                    fontSize = 20.sp,
+                    lineHeight = 28.sp,
                 )
                 if (note.categoryIds.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
@@ -1834,55 +1860,38 @@ private fun NoteSheet(
                     }
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Spacer(Modifier.weight(1f))
-                // Озвучка (заметка #82): 🔊 читает дату и текст, повторный тап — стоп.
-                Box(
-                    modifier =
-                        Modifier
-                            .size(52.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(Design.glassRgb.copy(alpha = 0.55f))
-                            .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(50))
-                            .clickable {
-                                Haptics.tick(view)
-                                onSpeak()
-                            },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = if (speaking) "⏹" else "🔊",
-                        color = Design.textPrimary,
-                        fontSize = 20.sp,
-                    )
-                }
-                // Правка — иконкой карандаша: текстовая кнопка занимала половину листа.
-                Box(
-                    modifier =
-                        Modifier
-                            .size(52.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(accent.copy(alpha = 0.92f))
-                            .border(1.dp, Color.White.copy(alpha = 0.20f), RoundedCornerShape(50))
-                            .clickable {
-                                Haptics.tick(view)
-                                onEdit()
-                            },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_pencil),
-                        contentDescription = "Изменить",
-                        colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.White),
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-                HoldToDelete(sec = holdDeleteSec, onFire = onDelete)
+        }
+
+        Spacer(Modifier.height(14.dp))
+
+        // Нижняя часть панели — широкие кнопки во всю ширину карточки.
+        PanelButton(
+            text = if (speaking) "⏹ Остановить" else "🔊 Озвучить",
+            accent = accent,
+        ) {
+            Haptics.tick(view)
+            onSpeak()
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PanelButton("✏️ Изменить", accent, Modifier.weight(1f)) {
+                Haptics.tick(view)
+                onEdit()
             }
+            PanelButton("Отмена", accent, Modifier.weight(1f)) {
+                Haptics.tick(view)
+                onClose()
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "удалить — удерживать",
+                color = Design.textSecondary.copy(alpha = 0.7f),
+                fontSize = 12.sp,
+            )
+            Spacer(Modifier.weight(1f))
+            HoldToDelete(sec = holdDeleteSec, onFire = onDelete)
         }
     }
 }

@@ -104,4 +104,7 @@ object NoteFilters {
     }
 
     const val IMPORTANT = "important"
+
+    /** Категория «Разработка» — у неё отдельный раздел в списке. */
+    const val DEVELOPMENT = "dev"
 }

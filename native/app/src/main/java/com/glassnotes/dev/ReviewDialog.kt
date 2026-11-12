@@ -98,127 +98,65 @@ fun MorningReviewScreen(
             if (today.isNotEmpty()) append("На сегодня: ").append(today.joinToString(". ") { it.text }).append(". ")
             if (noDate.isNotEmpty()) append("Без срока: ").append(noDate.joinToString(". ") { it.text })
         }
-
-    Dialog(
-        onDismissRequest = onClose,
-        properties =
-            DialogProperties(
-                usePlatformDefaultWidth = false,
-                decorFitsSystemWindows = false,
-            ),
-    ) {
-        // Фон приложения — тот же градиент, что за списком заметок: это экран, а не карточка.
-        BoxWithConstraints(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .background(Design.appBackground()),
-        ) {
-            // Высота окна — по содержимому, но не больше экрана минус системные вставки:
-            // раньше вес списка распирал колонку, и «Начать день» уезжала под полосу жестов.
-            val columnLimit = maxHeight
-            Column(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .wrapContentHeight()
-                        .heightIn(max = columnLimit)
-                        .padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 12.dp)
-                        .align(Alignment.Center),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(end = 48.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "🌅 Утреннее ревью",
-                        color = Design.textPrimary,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    Box(
-                        modifier =
-                            Modifier
-                                .padding(start = 10.dp)
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(50))
-                                .background(accent.copy(alpha = 0.12f))
-                                .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(50))
-                                .clickable {
-                                    Haptics.tick(view)
-                                    if (speaker.speaking) speaker.stop() else speaker.speak(reviewSpeech)
-                                },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(text = if (speaker.speaking) "⏹" else "🔊", fontSize = 16.sp)
-                    }
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(text = dateText, color = Design.textSecondary, fontSize = 14.sp)
-                Spacer(Modifier.height(18.dp))
-
-                Column(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            // Длинный список прокручивается внутри, оставляя место кнопке.
-                            .heightIn(max = columnLimit * 0.62f)
-                            .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    if (sections.isEmpty()) {
-                        Text(
-                            text = "На сегодня дел нет — можно выдохнуть 🙂",
-                            color = Design.textSecondary,
-                            fontSize = 15.sp,
-                        )
-                    }
-                    sections.forEachIndexed { index, section ->
-                        if (index > 0) sectionDivider()
-                        reviewGroup(section.title, section.items, section.mark)
-                    }
-                }
-
-                Spacer(Modifier.height(12.dp))
-
-                // «Начать день» — как .note-sheet-btn.edit: акцент 10 % и его рамка 35 %.
-                Box(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(40.dp))
-                            .background(accent.copy(alpha = 0.10f))
-                            .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(40.dp))
-                            .clickable {
-                                Haptics.confirm(view)
-                                onClose()
-                            }.padding(vertical = 16.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(text = "Начать день", color = accent, fontSize = 16.sp)
-                }
-            }
-
-            // Крестик .note-sheet-x: 38, круг, стекло, в правом верхнем углу — но под строкой
-            // состояния, иначе кнопка оказывалась вне экрана (заметка #70).
+    GlassPanel(accent = accent, onDismiss = onClose, maxHeightFraction = 0.9f) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "🌅 Утреннее ревью",
+                color = Design.textPrimary,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+            )
+            // Озвучка ревью (заметка #82): читает те же группы, что на экране.
             Box(
                 modifier =
                     Modifier
-                        .align(Alignment.TopEnd)
-                        .windowInsetsPadding(WindowInsets.systemBars)
-                        .padding(top = 10.dp, end = 18.dp)
-                        .size(38.dp)
+                        .size(40.dp)
                         .clip(RoundedCornerShape(50))
-                        .background(Design.tint(0.10f))
+                        .background(accent.copy(alpha = 0.12f))
+                        .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(50))
                         .clickable {
                             Haptics.tick(view)
-                            onClose()
+                            if (speaker.speaking) speaker.stop() else speaker.speak(reviewSpeech)
                         },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(text = "✕", color = Design.textPrimary, fontSize = 16.sp)
+                Text(text = if (speaker.speaking) "⏹" else "🔊", fontSize = 16.sp)
             }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(text = dateText, color = Design.textSecondary, fontSize = 14.sp)
+        Spacer(Modifier.height(14.dp))
+
+        // Список прокручивается внутри панели: она растёт по содержимому, но не на весь экран.
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (sections.isEmpty()) {
+                Text(
+                    text = "На сегодня дел нет — можно выдохнуть 🙂",
+                    color = Design.textSecondary,
+                    fontSize = 15.sp,
+                )
+            }
+            sections.forEachIndexed { index, section ->
+                if (index > 0) sectionDivider()
+                reviewGroup(section.title, section.items, section.mark)
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+
+        // «Начать день» — одна широкая кнопка во всю панель: лишняя «Отмена» не нужна,
+        // закрыть можно крестиком или тапом по фону.
+        PanelButton("Начать день", accent, filled = true) {
+            Haptics.confirm(view)
+            onClose()
         }
     }
 }
