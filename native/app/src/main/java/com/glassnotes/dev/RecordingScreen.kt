@@ -498,7 +498,7 @@ fun RecordingScreen(
     // Таймер окна: как в боевом, «сплэш категорий» закрывается сам, если его не трогают.
     LaunchedEffect(askCatId) {
         val id = askCatId ?: return@LaunchedEffect
-        val sec = (store.getKv(AppSettings.CAT_SHEET_SEC)?.toFloatOrNull() ?: AppSettings.DEFAULT_CAT_SHEET_SEC.toFloat()).toInt()
+        val sec = AppSettings.num(store, AppSettings.CAT_SHEET_SEC, AppSettings.DEFAULT_CAT_SHEET_SEC.toFloat(), 0f..15f).toInt()
         askCatLeft = sec
         if (sec <= 0) return@LaunchedEffect
         while (askCatLeft > 0) {

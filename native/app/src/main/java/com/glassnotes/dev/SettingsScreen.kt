@@ -343,13 +343,13 @@ fun SettingsScreen(
                         // чтобы не снести заметку случайным движением.
                         // Шаг полсекунды: range 0..10 и 19 промежуточных точек дают 0.5 с.
                         SliderRow("Удержание свайпа вправо (выполнено)", holdDoneSec, 0f..10f, 19, "%.1f с".format(holdDoneSec), accent, { holdDoneSec = it }) {
-                            store.setKv(AppSettings.HOLD_DONE_SEC, "%.1f".format(holdDoneSec))
+                            store.setKv(AppSettings.HOLD_DONE_SEC, "%.1f".format(java.util.Locale.US, holdDoneSec))
                         }
                         SliderRow("Удержание свайпа влево (удалить)", holdDeleteSec, 0f..10f, 19, "%.1f с".format(holdDeleteSec), accent, { holdDeleteSec = it }) {
-                            store.setKv(AppSettings.HOLD_DELETE_SEC, "%.1f".format(holdDeleteSec))
+                            store.setKv(AppSettings.HOLD_DELETE_SEC, "%.1f".format(java.util.Locale.US, holdDeleteSec))
                         }
                         SliderRow("Таймер сплэша категорий", catSheetSec, 0f..15f, 29, "%.1f с".format(catSheetSec), accent, { catSheetSec = it }) {
-                            store.setKv(AppSettings.CAT_SHEET_SEC, "%.1f".format(catSheetSec))
+                            store.setKv(AppSettings.CAT_SHEET_SEC, "%.1f".format(java.util.Locale.US, catSheetSec))
                         }
                         // Автоудаление выполненных (заметка #68): 0 — хранить всегда.
                         // Чистка идёт при запуске приложения, чтобы не трогать список под пальцем.
