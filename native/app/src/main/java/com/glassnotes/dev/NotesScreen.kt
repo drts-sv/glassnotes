@@ -169,6 +169,9 @@ fun NotesScreen(
     var aiSource by remember { mutableStateOf("") }
     var aiReply by remember { mutableStateOf<DeepSeek.Reply?>(null) }
     var aiError by remember { mutableStateOf<String?>(null) }
+    // Пункты «что изменено» — отдельный платный запрос, поэтому пусто до нажатия.
+    var aiChanges by remember { mutableStateOf("") }
+    var aiChangesBusy by remember { mutableStateOf(false) }
 
     /** Заполняет редактор значениями заметки и открывает его. Вызывать и из меню, и из листа. */
     fun openEditor(n: NoteRow) {
@@ -326,7 +329,11 @@ fun NotesScreen(
                         modifier =
                             Modifier
                                 .clickable(enabled = !aiBusy) {
-                                    val key = store.getKv(DeepSeek.KEY).orEmpty().trim()
+                                    // Ключ живёт в Android Keystore; открытая копия в базе
+                                    // могла остаться от версий до 0.106 — стираем после переноса.
+                                    val (key, keyMoved) =
+                                        ApiKeyStore.takeOver(context, DeepSeek.KEY, store.getKv(DeepSeek.KEY))
+                                    if (keyMoved) store.setKv(DeepSeek.KEY, "")
                                     if (key.isEmpty()) {
                                         Ui.toast(context, "Ключ DeepSeek — в настройках")
                                     } else if (editText.isBlank()) {
@@ -336,13 +343,15 @@ fun NotesScreen(
                                         aiSource = editText
                                         aiReply = null
                                         aiError = null
+                                        aiChanges = ""
+                                        aiChangesBusy = false
                                         aiOpen = true
                                         aiBusy = true
                                         editScope.launch {
                                             // Сеть — не в главном потоке: иначе «замирает» вся панель.
                                             val outcome =
                                                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                                    runCatching { DeepSeek.improve(key, editText) }
+                                                    runCatching { DeepSeek.clean(key, editText) }
                                                 }
                                             aiBusy = false
                                             outcome.onSuccess { aiReply = it }
@@ -640,11 +649,36 @@ fun NotesScreen(
                                 Text("Станет", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
                                 Spacer(Modifier.height(4.dp))
                                 Text(text = reply.text, color = Design.textPrimary, fontSize = 17.sp, lineHeight = 24.sp)
-                                if (reply.changes.isNotBlank()) {
+                                if (aiChanges.isNotBlank()) {
                                     Spacer(Modifier.height(12.dp))
                                     Text("Что изменено", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
                                     Spacer(Modifier.height(4.dp))
-                                    Text(text = reply.changes, color = Design.textSecondary, fontSize = 14.sp, lineHeight = 20.sp)
+                                    Text(text = aiChanges, color = Design.textSecondary, fontSize = 14.sp, lineHeight = 20.sp)
+                                } else if (!aiBusy) {
+                                    // Отдельный платный запрос: показываем только по просьбе.
+                                    Spacer(Modifier.height(10.dp))
+                                    Text(
+                                        text = if (aiChangesBusy) "Спрашиваю…" else "Что изменено?",
+                                        color = if (aiChangesBusy) Design.textSecondary.copy(alpha = 0.6f) else accent,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier =
+                                            Modifier
+                                                .clickable(enabled = !aiChangesBusy) {
+                                                    Haptics.tick(screenView)
+                                                    val askKey = ApiKeyStore.load(context, DeepSeek.KEY).orEmpty()
+                                                    val after = reply.text
+                                                    aiChangesBusy = true
+                                                    editScope.launch {
+                                                        val res =
+                                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                                runCatching { DeepSeek.explain(askKey, aiSource, after) }
+                                                            }
+                                                        aiChangesBusy = false
+                                                        aiChanges = res.getOrElse { it.message ?: "Не получилось" }
+                                                    }
+                                                }.padding(vertical = 4.dp),
+                                    )
                                 }
                             }
                         }

@@ -121,9 +121,12 @@ fun SettingsScreen(
 
     var fabPos by remember { mutableStateOf(store.getKv("fabPos") ?: "right") }
 
-    // #117/#118: ключ DeepSeek живёт в kv, в APK его нет.
-    var dsKey by remember { mutableStateOf(store.getKv(DeepSeek.KEY).orEmpty()) }
-    var dsDraft by remember { mutableStateOf(store.getKv(DeepSeek.KEY).orEmpty()) }
+    // Ключ DeepSeek живёт в Android Keystore (ApiKeyStore), в базе и в APK его нет.
+    // Открытая копия из старых версий переносится и стирается при первом открытии настроек.
+    val (dsStored, dsMoved) = ApiKeyStore.takeOver(context, DeepSeek.KEY, store.getKv(DeepSeek.KEY))
+    if (dsMoved) store.setKv(DeepSeek.KEY, "")
+    var dsKey by remember { mutableStateOf(dsStored) }
+    var dsDraft by remember { mutableStateOf(dsStored) }
     var dsOpen by remember { mutableStateOf(false) }
     var dsShow by remember { mutableStateOf(false) }
 
@@ -551,20 +554,25 @@ fun SettingsScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             Tile("Сохранить ключ", false, accent, Modifier.weight(1f)) {
                                 dsKey = dsDraft.trim()
-                                store.setKv(DeepSeek.KEY, dsKey)
+                                // В хранилище Keystore; в SQLite ключа нет намеренно.
+                                ApiKeyStore.save(context, DeepSeek.KEY, dsKey)
+                                store.setKv(DeepSeek.KEY, "")
                                 Haptics.confirm(view)
                                 Ui.toast(context, if (dsKey.isEmpty()) "Ключ очищен" else "Ключ сохранён")
                             }
                             Tile("Очистить", false, accent, Modifier.weight(1f)) {
                                 dsDraft = ""
                                 dsKey = ""
+                                ApiKeyStore.clear(context, DeepSeek.KEY)
                                 store.setKv(DeepSeek.KEY, "")
                                 Haptics.tick(view)
                             }
                         }
                         Text(
-                            text = "Ключ берётся на platform.deepseek.com. Модель " + DeepSeek.MODEL +
-                                ", ответ до 1200 токенов — около 0,03 ₽ за заметку.",
+                            text = "Ключ берётся на platform.deepseek.com и хранится зашифрованным " +
+                                "в Android Keystore — в базу, бэкап и экспорт он не попадает. " +
+                                "Модель " + DeepSeek.MODEL + " с выключенными размышлениями: " +
+                                "около 0,01 ₽ за заметку, пункты «что изменено» — отдельным запросом.",
                             color = Design.textSecondary.copy(alpha = 0.55f),
                             fontSize = 11.5.sp,
                             lineHeight = 15.sp,

@@ -132,6 +132,19 @@ class MainActivity : ComponentActivity() {
             )
         }
 
+        // Ключ DeepSeek: открытая копия из таблицы kv (версии до 0.106) переезжает
+        // в Android Keystore и стирается из базы — в выгрузке БД секрета больше нет.
+        runCatching {
+            val store = NotesStore(applicationContext)
+            val (_, moved) = ApiKeyStore.takeOver(applicationContext, DeepSeek.KEY, store.getKv(DeepSeek.KEY))
+            if (moved) {
+                store.setKv(DeepSeek.KEY, "")
+                Log.i(TAG, "ключ DeepSeek перенесён в Android Keystore, открытая копия в базе стёрта")
+            }
+            // Диагностика хранилища: расшифровка должна получаться, иначе ключ бесполезен.
+            Log.i(TAG, "ключ DeepSeek в Keystore: " + if (ApiKeyStore.has(applicationContext, DeepSeek.KEY)) "читается" else "нет")
+        }
+
         // Выполненные заметки не копим вечно (заметка #68): при запуске убираем те, что
         // не менялись дольше срока из настроек. 0 в настройке — не удалять вовсе.
         runCatching {
