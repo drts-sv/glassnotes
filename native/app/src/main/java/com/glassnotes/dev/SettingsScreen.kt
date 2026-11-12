@@ -137,8 +137,20 @@ fun SettingsScreen(
     for (row in AppSettings.timeRows) {
         if (!times.containsKey(row.second)) times[row.second] = AppSettings.periodTime(store, row.second)
     }
-    var timeEdit by remember { mutableStateOf<String?>(null) }
-    var timeEditText by remember { mutableStateOf("") }
+    // Время меняется системным диалогом: текстовое поле «ЧЧ:ММ» требовало попасть
+    // пальцем в цифры и молча ничего не сохраняло при опечатке.
+    val setTime: (String, String) -> Unit = { key, text ->
+        if (key == "review") {
+            reviewTime = text
+            store.setKv(Reminders.REVIEW_TIME_KEY, text)
+            Reminders.scheduleReview(context)
+        } else {
+            times[key] = text
+            store.setKv(AppSettings.timeKey(key), text)
+            TimeDefaults.load(store)
+        }
+        Log.i(TAG, "настройки: время %s = %s".format(key, text))
+    }
 
     var openTheme by remember { mutableStateOf(true) }
     var openWave by remember { mutableStateOf(false) }
@@ -352,8 +364,7 @@ fun SettingsScreen(
                                             .fillMaxWidth()
                                             .clickable {
                                                 Haptics.tick(view)
-                                                timeEdit = key
-                                                timeEditText = times[key] ?: ""
+                                                pickTime(context, times[key] ?: "") { picked -> setTime(key, picked) }
                                             }.padding(horizontal = 14.dp, vertical = 10.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically,
@@ -385,8 +396,7 @@ fun SettingsScreen(
                                     .border(1.dp, Design.border, RoundedCornerShape(16.dp))
                                     .clickable {
                                         Haptics.tick(view)
-                                        timeEdit = "review"
-                                        timeEditText = reviewTime
+                                        pickTime(context, reviewTime) { picked -> setTime("review", picked) }
                                     }.padding(horizontal = 14.dp, vertical = 10.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
@@ -572,7 +582,8 @@ fun SettingsScreen(
                             text = "Ключ берётся на platform.deepseek.com и хранится зашифрованным " +
                                 "в Android Keystore — в базу, бэкап и экспорт он не попадает. " +
                                 "Модель " + DeepSeek.MODEL + " с выключенными размышлениями: " +
-                                "около 0,01 ₽ за заметку, пункты «что изменено» — отдельным запросом.",
+                                "около 0,005 ₽ за заметку. Точную цену каждого запроса показывает " +
+                                "панель ✨, пункты «что изменено» — отдельным запросом.",
                             color = Design.textSecondary.copy(alpha = 0.55f),
                             fontSize = 11.5.sp,
                             lineHeight = 15.sp,
@@ -716,64 +727,6 @@ fun SettingsScreen(
         }
     }
 
-    // Правка времени текстом «ЧЧ:ММ».
-    timeEdit?.let { key ->
-        AlertDialog(
-            onDismissRequest = { timeEdit = null },
-            title = { Text("Время", color = Design.textPrimary, fontSize = 16.sp) },
-            text = {
-                Column {
-                    BasicTextField(
-                        value = timeEditText,
-                        onValueChange = { timeEditText = it },
-                        singleLine = true,
-                        textStyle = TextStyle(color = Design.textPrimary, fontSize = 18.sp),
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Design.glassRgb.copy(alpha = 0.5f))
-                                .padding(12.dp),
-                    )
-                    Spacer(Modifier.size(6.dp))
-                    Text("Формат ЧЧ:ММ, например 09:00", color = Design.textSecondary.copy(alpha = 0.7f), fontSize = 12.sp)
-                }
-            },
-            confirmButton = {
-                Text(
-                    text = "Сохранить",
-                    color = accent,
-                    fontSize = 15.sp,
-                    modifier =
-                        Modifier.clickable {
-                            val text = timeEditText.trim()
-                            if (Regex("^\\d{1,2}:\\d{2}$").matches(text)) {
-                                if (key == "review") {
-                                    reviewTime = text
-                                    store.setKv(Reminders.REVIEW_TIME_KEY, text)
-                                    Reminders.scheduleReview(context)
-                                } else {
-                                    times[key] = text
-                                    store.setKv(AppSettings.timeKey(key), text)
-                                    TimeDefaults.load(store)
-                                }
-                                Log.i(TAG, "настройки: время %s = %s".format(key, text))
-                                timeEdit = null
-                            }
-                        }.padding(8.dp),
-                )
-            },
-            dismissButton = {
-                Text(
-                    text = "Отмена",
-                    color = Design.textSecondary,
-                    fontSize = 15.sp,
-                    modifier = Modifier.clickable { timeEdit = null }.padding(8.dp),
-                )
-            },
-            containerColor = Design.glassRgb.copy(alpha = 0.98f),
-        )
-    }
 }
 
 /** Сброс настроек: ключи возвращаются к значениям по умолчанию (заметки не трогаем). */
@@ -983,4 +936,21 @@ object SettingsScreenHelpers {
             false
         }
     }
+}
+
+/** Системный выбор времени вместо текстового поля: результат всегда «ЧЧ:ММ». */
+private fun pickTime(
+    context: android.content.Context,
+    current: String,
+    onPicked: (String) -> Unit,
+) {
+    val hour = current.substringBefore(':').trim().toIntOrNull()?.coerceIn(0, 23) ?: 9
+    val minute = current.substringAfter(':', "").trim().toIntOrNull()?.coerceIn(0, 59) ?: 0
+    android.app.TimePickerDialog(
+        context,
+        { _, h, m -> onPicked("%02d:%02d".format(h, m)) },
+        hour,
+        minute,
+        true,
+    ).show()
 }

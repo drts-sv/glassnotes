@@ -54,12 +54,77 @@ object DeepSeek {
     /** Старое имя промта — оставлено, чтобы не править ссылки в UI. */
     const val SYSTEM = SYSTEM_CLEAN
 
-    /** Результат: готовый текст и (если просили) список правок. */
-    data class Reply(val text: String, val changes: String = "")
+    /** Тариф deepseek-flash, $ за 1M токенов. */
+    private const val PRICE_IN_PEAK = 0.30
+    private const val PRICE_IN_OFF_PEAK = 0.15
+    private const val PRICE_HIT_PEAK = 0.006
+    private const val PRICE_HIT_OFF_PEAK = 0.003
+    private const val PRICE_OUT_PEAK = 1.20
+    private const val PRICE_OUT_OFF_PEAK = 0.60
+
+    /** Курс только для подписи в интерфейсе — не для расчётов. */
+    private const val RUB_PER_USD = 88.0
+
+    /** Цена одного запроса: считается по usage и тарифу flash с учётом пиковых часов. */
+    data class Cost(
+        val promptTokens: Int,
+        val completionTokens: Int,
+        val cachedTokens: Int,
+        val peak: Boolean,
+        val rub: Double,
+    ) {
+        /** «0,005 ₽» — три знака, иначе копейки не разглядеть. */
+        val money: String
+            get() =
+                if (rub < 0.001) {
+                    "<0,001 ₽"
+                } else {
+                    "%.3f ₽".format(java.util.Locale.US, rub).replace('.', ',')
+                }
+
+        /** «0,005 ₽ · 152→56 ток. · пик/вне пика» */
+        override fun toString(): String =
+            "$money · $promptTokens→$completionTokens ток. · " + if (peak) "пик" else "вне пика"
+    }
+
+    /** Результат: готовый текст и цена запроса. */
+    data class Reply(val text: String, val changes: String = "", val cost: Cost? = null)
+
+    /** Пункты «что изменено» и цена второго запроса. */
+    data class Explanation(val text: String, val cost: Cost? = null)
 
     class Failure(
         message: String,
     ) : Exception(message)
+
+    /**
+     * Пик у DeepSeek: 01:00–04:00 и 06:00–10:00 UTC, понедельник–пятница — там всё вдвое дороже.
+     * Китайские праздники не учитываем: подпись в интерфейсе, а не бухгалтерия.
+     */
+    fun isPeak(nowUtcMs: Long = System.currentTimeMillis()): Boolean {
+        val utc = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+        utc.timeInMillis = nowUtcMs
+        val day = utc.get(java.util.Calendar.DAY_OF_WEEK)
+        if (day == java.util.Calendar.SATURDAY || day == java.util.Calendar.SUNDAY) return false
+        return utc.get(java.util.Calendar.HOUR_OF_DAY).let { it in 1..3 || it in 6..9 }
+    }
+
+    /** Цена по фактическому usage: cache hit и miss у flash стоят по-разному. */
+    fun costOf(
+        promptTokens: Int,
+        completionTokens: Int,
+        cachedTokens: Int = 0,
+        peak: Boolean = isPeak(),
+    ): Cost {
+        val miss = (promptTokens - cachedTokens).coerceAtLeast(0)
+        val usd =
+            (
+                miss * (if (peak) PRICE_IN_PEAK else PRICE_IN_OFF_PEAK) +
+                    cachedTokens * (if (peak) PRICE_HIT_PEAK else PRICE_HIT_OFF_PEAK) +
+                    completionTokens * (if (peak) PRICE_OUT_PEAK else PRICE_OUT_OFF_PEAK)
+            ) / 1_000_000.0
+        return Cost(promptTokens, completionTokens, cachedTokens, peak, usd * RUB_PER_USD)
+    }
 
     /**
      * Лимит ответа от длины заметки: кириллица — примерно 2,5 символа на токен,
@@ -77,7 +142,7 @@ object DeepSeek {
     ): Reply {
         val body = prepare(key, text)
         val answer = ask(key, SYSTEM_CLEAN, body, CLEAN_TIMEOUT_MS, maxTokensFor(body))
-        val result = stripWrapper(answer)
+        val result = stripWrapper(answer.text)
         if (result.isBlank()) throw Failure("DeepSeek вернул пустой ответ")
         if (result.length > maxOf(4000, body.length * 4)) {
             throw Failure("DeepSeek ответил слишком длинно — вставлять не стал, попробуйте ещё раз")
@@ -85,7 +150,7 @@ object DeepSeek {
         if (looksLikeRefusal(result, body)) {
             throw Failure("DeepSeek ответил не по делу — текст не изменён, попробуйте ещё раз")
         }
-        return Reply(result)
+        return Reply(result, cost = answer.cost)
     }
 
     /**
@@ -96,11 +161,11 @@ object DeepSeek {
         key: String,
         before: String,
         after: String,
-    ): String {
+    ): Explanation {
         if (key.trim().isEmpty()) throw Failure("Нет ключа DeepSeek — впишите его в настройках")
         val user = "Было:\n" + before.trim() + "\n\nСтало:\n" + after.trim()
         val answer = ask(key, SYSTEM_EXPLAIN, user, EXPLAIN_TIMEOUT_MS, EXPLAIN_TOKENS)
-        return tidyChanges(answer)
+        return Explanation(tidyChanges(answer.text), answer.cost)
     }
 
     /** Совместимость со старым названием: улучшение = дешёвый режим. */
@@ -125,13 +190,16 @@ object DeepSeek {
     private var sendThinkingFlag = true
 
     /** Запрос с однократным повтором без `thinking`, если сервер его не знает. */
+    /** Ответ модели и его цена — считаем по usage из того же ответа. */
+    private data class Answer(val text: String, val cost: Cost?)
+
     private fun ask(
         key: String,
         system: String,
         user: String,
         timeoutMs: Int,
         maxTokens: Int,
-    ): String {
+    ): Answer {
         val withThinking = sendThinkingFlag
         val (code, raw) = post(key, system, user, timeoutMs, maxTokens, withThinking)
         if (withThinking && (code == 400 || code == 422) && raw.contains("thinking", ignoreCase = true)) {
@@ -195,21 +263,18 @@ object DeepSeek {
     private fun readContent(
         code: Int,
         raw: String,
-    ): String {
+    ): Answer {
         if (code !in 200..299) throw Failure(describeFailure(code, raw))
-        // Диагностика расхода: видно в logcat, сколько стоил запрос (prompt/completion).
-        runCatching {
-            val usage = JSONObject(raw).optJSONObject("usage") ?: return@runCatching
-            Log.i(
-                TAG,
-                "DeepSeek %s: вход %d (кэш %d), выход %d токенов".format(
-                    MODEL,
-                    usage.optInt("prompt_tokens"),
-                    usage.optInt("prompt_cache_hit_tokens"),
-                    usage.optInt("completion_tokens"),
-                ),
-            )
-        }
+        // Цена и расход — из usage того же ответа; в лог и в интерфейс.
+        val cost =
+            runCatching {
+                val usage = JSONObject(raw).optJSONObject("usage") ?: return@runCatching null
+                costOf(
+                    promptTokens = usage.optInt("prompt_tokens"),
+                    completionTokens = usage.optInt("completion_tokens"),
+                    cachedTokens = usage.optInt("prompt_cache_hit_tokens"),
+                ).also { Log.i(TAG, "DeepSeek %s: $it".format(MODEL)) }
+            }.getOrNull()
         val content =
             try {
                 JSONObject(raw)
@@ -224,7 +289,7 @@ object DeepSeek {
         val tail = content.indexOf("</think>")
         val answer = (if (tail >= 0) content.substring(tail + "</think>".length) else content).trim()
         if (answer.isEmpty()) throw Failure("DeepSeek вернул пустой ответ")
-        return answer
+        return Answer(answer, cost)
     }
 
     /** Понятная причина вместо кода: формулировки как в giga-pisar-android. */

@@ -128,6 +128,17 @@ fun NotesScreen(
 ) {
     var notes by remember { mutableStateOf<List<NoteRow>>(emptyList()) }
     var tab by remember { mutableStateOf("active") }
+    // При каждом новом открытии приложения — вкладка «Активные», как бы ни закрыли прошлый раз.
+    // Ловим ON_START: это и холодный запуск, и возврат из фона.
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer =
+            androidx.lifecycle.LifecycleEventObserver { _, event ->
+                if (event == androidx.lifecycle.Lifecycle.Event.ON_START) tab = "active"
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     var query by remember { mutableStateOf("") }
     var searchOpen by remember { mutableStateOf(false) }
     var filtersOpen by remember { mutableStateOf(false) }
@@ -172,6 +183,8 @@ fun NotesScreen(
     // Пункты «что изменено» — отдельный платный запрос, поэтому пусто до нажатия.
     var aiChanges by remember { mutableStateOf("") }
     var aiChangesBusy by remember { mutableStateOf(false) }
+    // Цена второго запроса («что изменено») — показываем рядом с пунктами.
+    var aiChangesCost by remember { mutableStateOf<DeepSeek.Cost?>(null) }
 
     /** Заполняет редактор значениями заметки и открывает его. Вызывать и из меню, и из листа. */
     fun openEditor(n: NoteRow) {
@@ -344,6 +357,7 @@ fun NotesScreen(
                                         aiReply = null
                                         aiError = null
                                         aiChanges = ""
+                                        aiChangesCost = null
                                         aiChangesBusy = false
                                         aiOpen = true
                                         aiBusy = true
@@ -649,9 +663,22 @@ fun NotesScreen(
                                 Text("Станет", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
                                 Spacer(Modifier.height(4.dp))
                                 Text(text = reply.text, color = Design.textPrimary, fontSize = 17.sp, lineHeight = 24.sp)
+                                // Стоимость показанного запроса: по usage из ответа, тариф flash.
+                                reply.cost?.let { cost ->
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        text = "Запрос: $cost",
+                                        color = Design.textSecondary.copy(alpha = 0.7f),
+                                        fontSize = 11.5.sp,
+                                    )
+                                }
                                 if (aiChanges.isNotBlank()) {
                                     Spacer(Modifier.height(12.dp))
-                                    Text("Что изменено", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
+                                    Text(
+                                        text = "Что изменено" + (aiChangesCost?.let { " · " + it.money } ?: ""),
+                                        color = Design.textSecondary.copy(alpha = 0.85f),
+                                        fontSize = 12.sp,
+                                    )
                                     Spacer(Modifier.height(4.dp))
                                     Text(text = aiChanges, color = Design.textSecondary, fontSize = 14.sp, lineHeight = 20.sp)
                                 } else if (!aiBusy) {
@@ -675,7 +702,13 @@ fun NotesScreen(
                                                                 runCatching { DeepSeek.explain(askKey, aiSource, after) }
                                                             }
                                                         aiChangesBusy = false
-                                                        aiChanges = res.getOrElse { it.message ?: "Не получилось" }
+                                                        val explained = res.getOrNull()
+                                                        if (explained == null) {
+                                                            aiChanges = res.exceptionOrNull()?.message ?: "Не получилось"
+                                                        } else {
+                                                            aiChanges = explained.text
+                                                            aiChangesCost = explained.cost
+                                                        }
                                                     }
                                                 }.padding(vertical = 4.dp),
                                     )
