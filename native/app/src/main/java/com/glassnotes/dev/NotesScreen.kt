@@ -470,7 +470,11 @@ fun NotesScreen(
 
                 Spacer(Modifier.height(10.dp))
 
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Кнопки редактора — один ряд во всю ширину панели: «Отмена» слева, «Сохранить» справа.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
                     Box(
                         modifier =
                             Modifier
@@ -825,7 +829,7 @@ private fun RecordButton(
     Box(
         modifier =
             modifier
-                .size(54.dp)
+                .size(46.dp)
                 .then(
                     Modifier
                         .androidxShadow()
@@ -846,7 +850,7 @@ private fun RecordButton(
             painter = painterResource(R.drawable.ic_mic),
             contentDescription = "Записать",
             colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.textPrimary),
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(22.dp),
         )
     }
 }
