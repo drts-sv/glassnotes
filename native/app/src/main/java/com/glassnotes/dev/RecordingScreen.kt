@@ -467,11 +467,20 @@ fun RecordingScreen(
         }
     }
 
+    // #102: один кусок записи ограничен (по умолчанию 10 с) — кольцо показывает, сколько осталось.
+    val recordMaxSec = remember {
+        (store.getKv("recordMaxSec")?.toFloatOrNull() ?: 10f).coerceIn(3f, 60f)
+    }
     LaunchedEffect(recording) {
         seconds = 0
         while (recording) {
             delay(1000)
             seconds++
+            if (seconds >= recordMaxSec) {
+                Log.i(TAG, "предел записи %.0f с — сохраняем заметку".format(recordMaxSec))
+                stopAndSave()
+                break
+            }
         }
     }
 
@@ -480,7 +489,7 @@ fun RecordingScreen(
     // Таймер окна: как в боевом, «сплэш категорий» закрывается сам, если его не трогают.
     LaunchedEffect(askCatId) {
         val id = askCatId ?: return@LaunchedEffect
-        val sec = store.getKv(AppSettings.CAT_SHEET_SEC)?.toIntOrNull() ?: 14
+        val sec = (store.getKv(AppSettings.CAT_SHEET_SEC)?.toFloatOrNull() ?: AppSettings.DEFAULT_CAT_SHEET_SEC.toFloat()).toInt()
         askCatLeft = sec
         if (sec <= 0) return@LaunchedEffect
         while (askCatLeft > 0) {
@@ -679,13 +688,15 @@ fun RecordingScreen(
                         radius = glowRadius,
                     )
 
-                    // Кольцо таймера: в боевом приложении смещено на −6px и повёрнуто на −90°.
+                    // Кольцо — обратный отсчёт остатка записи (#102): полное кольцо в начале,
+                    // к нулю — предел сегмента. Цвет гуще по мере приближения к концу.
                     val ringInset = 6.dp.toPx()
                     val ringTopLeft = Offset(ringInset * 0.5f, ringInset * 0.5f)
+                    val leftFrac = (1f - (seconds / recordMaxSec)).coerceIn(0f, 1f)
                     drawArc(
                         color = accent.copy(alpha = 0.85f),
                         startAngle = -90f,
-                        sweepAngle = 360f * ((seconds % 60) / 60f),
+                        sweepAngle = 360f * leftFrac,
                         useCenter = false,
                         topLeft = ringTopLeft,
                         size = Size(size.width - ringInset, size.height - ringInset),

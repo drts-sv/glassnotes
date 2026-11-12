@@ -107,6 +107,13 @@ object Design {
     val textSecondary: Color
         get() = if (light) Color(0xFF2C3E66) else Color(0xE6E6EBFF)
 
+    /**
+     * Текст поверх цветной плашки (бейдж категории, активный чип). В светлой теме белый
+     * на полупрозрачном цвете не читался (#107) — там берём основной цвет текста.
+     */
+    val chipText: Color
+        get() = if (light) Color(0xFF1A1C2C) else Color.White
+
     /** --accent: #007aff (переопределяется палитрой системы) */
     val accentDefault = Color(0xFF007AFF)
 

@@ -82,9 +82,10 @@ fun MorningReviewScreen(
     // Разделитель рисуется только между непустыми блоками: пустых групп в списке нет.
     val sections =
         listOf(
-            ReviewSection("Просрочено", overdue, "⚠️"),
+            // Порядок по просьбе владельца (#96, #103): сначала дела на день, просроченное — в конце.
             ReviewSection("На сегодня", today, "•"),
             ReviewSection("Без срока", noDate, "•"),
+            ReviewSection("Просрочено", overdue, "⚠️"),
         ).filter { it.items.isNotEmpty() }
 
     val view = LocalView.current
@@ -94,9 +95,9 @@ fun MorningReviewScreen(
     DisposableEffect(Unit) { onDispose { speaker.shutdown() } }
     val reviewSpeech =
         buildString {
-            if (overdue.isNotEmpty()) append("Просрочено: ").append(overdue.joinToString(". ") { it.text }).append(". ")
             if (today.isNotEmpty()) append("На сегодня: ").append(today.joinToString(". ") { it.text }).append(". ")
-            if (noDate.isNotEmpty()) append("Без срока: ").append(noDate.joinToString(". ") { it.text })
+            if (noDate.isNotEmpty()) append("Без срока: ").append(noDate.joinToString(". ") { it.text }).append(". ")
+            if (overdue.isNotEmpty()) append("Просрочено: ").append(overdue.joinToString(". ") { it.text })
         }
     GlassPanel(accent = accent, onDismiss = onClose, maxHeightFraction = 0.9f) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

@@ -92,16 +92,16 @@ fun SettingsScreen(
     var silenceSec by remember { mutableFloatStateOf(store.getKv("silenceSec")?.toFloatOrNull() ?: 3f) }
 
     var catSheetSec by remember {
-        mutableFloatStateOf(AppSettings.int(store, AppSettings.CAT_SHEET_SEC, AppSettings.DEFAULT_CAT_SHEET_SEC, 0..15).toFloat())
+        mutableFloatStateOf(AppSettings.num(store, AppSettings.CAT_SHEET_SEC, AppSettings.DEFAULT_CAT_SHEET_SEC.toFloat(), 0f..15f))
     }
 
     // Удержание свайпа: сколько держать карточку за порогом, чтобы сработало действие.
     var holdDoneSec by remember {
-        mutableFloatStateOf(AppSettings.int(store, AppSettings.HOLD_DONE_SEC, AppSettings.DEFAULT_HOLD_DONE_SEC, 0..10).toFloat())
+        mutableFloatStateOf(AppSettings.num(store, AppSettings.HOLD_DONE_SEC, AppSettings.DEFAULT_HOLD_DONE_SEC.toFloat(), 0f..10f))
     }
     var holdDeleteSec by remember {
         mutableFloatStateOf(
-            AppSettings.int(store, AppSettings.HOLD_DELETE_SEC, AppSettings.DEFAULT_HOLD_DELETE_SEC, 0..10).toFloat(),
+            AppSettings.num(store, AppSettings.HOLD_DELETE_SEC, AppSettings.DEFAULT_HOLD_DELETE_SEC.toFloat(), 0f..10f),
         )
     }
 
@@ -261,20 +261,21 @@ fun SettingsScreen(
                     // ---------- ⏱ Таймеры ----------
                     SettingsGroup(
                         "⏱ Таймеры",
-                        "держ. %d с вправо · %d с влево".format(holdDoneSec.roundToInt(), holdDeleteSec.roundToInt()),
+                        "держ. %.1f с вправо · %.1f с влево".format(holdDoneSec, holdDeleteSec),
                         openTimers,
                         { openTimers = !openTimers },
                     ) {
                         // Удержание свайпа: вправо — «выполнено», влево — «удалить». Удаление дольше,
                         // чтобы не снести заметку случайным движением.
-                        SliderRow("Удержание свайпа вправо (выполнено)", holdDoneSec, 0f..10f, 19, "%d с".format(holdDoneSec.roundToInt()), accent, { holdDoneSec = it }) {
-                            store.setKv(AppSettings.HOLD_DONE_SEC, holdDoneSec.roundToInt().toString())
+                        // Шаг полсекунды: range 0..10 и 19 промежуточных точек дают 0.5 с.
+                        SliderRow("Удержание свайпа вправо (выполнено)", holdDoneSec, 0f..10f, 19, "%.1f с".format(holdDoneSec), accent, { holdDoneSec = it }) {
+                            store.setKv(AppSettings.HOLD_DONE_SEC, "%.1f".format(holdDoneSec))
                         }
-                        SliderRow("Удержание свайпа влево (удалить)", holdDeleteSec, 0f..10f, 19, "%d с".format(holdDeleteSec.roundToInt()), accent, { holdDeleteSec = it }) {
-                            store.setKv(AppSettings.HOLD_DELETE_SEC, holdDeleteSec.roundToInt().toString())
+                        SliderRow("Удержание свайпа влево (удалить)", holdDeleteSec, 0f..10f, 19, "%.1f с".format(holdDeleteSec), accent, { holdDeleteSec = it }) {
+                            store.setKv(AppSettings.HOLD_DELETE_SEC, "%.1f".format(holdDeleteSec))
                         }
-                        SliderRow("Таймер сплэша категорий", catSheetSec, 0f..15f, 14, "%d с".format(catSheetSec.roundToInt()), accent, { catSheetSec = it }) {
-                            store.setKv(AppSettings.CAT_SHEET_SEC, catSheetSec.roundToInt().toString())
+                        SliderRow("Таймер сплэша категорий", catSheetSec, 0f..15f, 29, "%.1f с".format(catSheetSec), accent, { catSheetSec = it }) {
+                            store.setKv(AppSettings.CAT_SHEET_SEC, "%.1f".format(catSheetSec))
                         }
                         // Автоудаление выполненных (заметка #68): 0 — хранить всегда.
                         // Чистка идёт при запуске приложения, чтобы не трогать список под пальцем.

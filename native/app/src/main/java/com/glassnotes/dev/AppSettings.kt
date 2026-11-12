@@ -62,7 +62,15 @@ object AppSettings {
         key: String,
         fallback: Int,
         range: IntRange,
-    ): Int = (store.getKv(key)?.trim()?.toIntOrNull() ?: fallback).coerceIn(range.first, range.last)
+    ): Int = (store.getKv(key)?.trim()?.toFloatOrNull()?.toInt() ?: fallback).coerceIn(range.first, range.last)
+
+    /** То же, но с шагом 0.5: таймеры удержания задаются дробными секундами. */
+    fun num(
+        store: NotesStore,
+        key: String,
+        fallback: Float,
+        range: ClosedFloatingPointRange<Float>,
+    ): Float = (store.getKv(key)?.trim()?.toFloatOrNull() ?: fallback).coerceIn(range.start, range.endInclusive)
 
     /** Прочитать переключатель: в боевом это «1»/«0» в localStorage, в базе — тем же текстом. */
     fun flag(

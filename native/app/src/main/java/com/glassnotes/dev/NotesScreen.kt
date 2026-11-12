@@ -250,6 +250,9 @@ fun NotesScreen(
             reviewChecked = true
             if (AppSettings.reviewDue(store)) {
                 reviewOpen = true
+                // Отметку ставим сразу при показе: раньше она писалась только по «Начать день»,
+                // и закрытое крестиком ревью всплывало после каждой записи (#97).
+                store.setKv(AppSettings.REVIEW_SHOWN_FOR, AppSettings.todayKey())
                 Log.i("GlasNotesDev", "утреннее ревью: показываем список дел")
             }
         }
@@ -733,9 +736,9 @@ fun NotesScreen(
                         onOpen = { sheetNote = note },
                         onEdit = { openEditor(note) },
                         holdDoneSec =
-                            AppSettings.int(store, AppSettings.HOLD_DONE_SEC, AppSettings.DEFAULT_HOLD_DONE_SEC, 0..10),
+                            AppSettings.num(store, AppSettings.HOLD_DONE_SEC, AppSettings.DEFAULT_HOLD_DONE_SEC.toFloat(), 0f..10f),
                         holdDeleteSec =
-                            AppSettings.int(store, AppSettings.HOLD_DELETE_SEC, AppSettings.DEFAULT_HOLD_DELETE_SEC, 0..10),
+                            AppSettings.num(store, AppSettings.HOLD_DELETE_SEC, AppSettings.DEFAULT_HOLD_DELETE_SEC.toFloat(), 0f..10f),
                         onDelete = {
                             // Предохранитель — удержание пальца на карточке (holdDeleteSec),
                             // отдельного таймера отмены после удаления нет.
@@ -787,7 +790,7 @@ fun NotesScreen(
                     }
                 },
                 holdDeleteSec =
-                    AppSettings.int(store, AppSettings.HOLD_DELETE_SEC, AppSettings.DEFAULT_HOLD_DELETE_SEC, 0..10),
+                    AppSettings.num(store, AppSettings.HOLD_DELETE_SEC, AppSettings.DEFAULT_HOLD_DELETE_SEC.toFloat(), 0f..10f),
                 // Закрытие листа гасит озвучку: раньше TTS продолжал читать после закрытия,
                 // и остановить его было нечем (жалоба владельца, #82).
                 onClose = {
@@ -934,7 +937,7 @@ private fun HeaderCard(
                 ) {
                     Text(
                         text = active.toString(),
-                        color = Color.White.copy(alpha = 0.82f),
+                        color = Design.chipText.copy(alpha = 0.82f),
                         fontSize = 9.6.sp,
                         fontWeight = FontWeight.Medium,
                     )
@@ -1139,7 +1142,8 @@ private fun TabButton(
                     when {
                         !selected -> Color.Transparent
                         doneTab -> Color(0xFF1F8F4D)
-                        else -> accent
+                        // «Активные» — всегда синим (#108), «Выполнено» — зелёным, независимо от акцента темы.
+                        else -> Color(0xFF2E7CF6)
                     },
                 )
                 .clickable {
@@ -1237,8 +1241,8 @@ private fun NoteCard(
     onEdit: () -> Unit,
     onOpen: () -> Unit,
     onDelete: () -> Unit,
-    holdDoneSec: Int = 2,
-    holdDeleteSec: Int = 3,
+    holdDoneSec: Float = 2f,
+    holdDeleteSec: Float = 3f,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var dragX by remember { mutableFloatStateOf(0f) }
@@ -1274,11 +1278,11 @@ private fun NoteCard(
             return@LaunchedEffect
         }
         val need = if (dir > 0) holdDoneSec else holdDeleteSec
-        if (need <= 0) {
+        if (need <= 0f) {
             holdRing.snapTo(1f)
         } else {
             holdRing.snapTo(0f)
-            holdRing.animateTo(1f, tween(durationMillis = need * 1000, easing = LinearEasing))
+            holdRing.animateTo(1f, tween(durationMillis = (need * 1000).toInt(), easing = LinearEasing))
         }
         if (holdDir == dir) {
             holdDir = 0
@@ -1552,7 +1556,7 @@ private fun NoteCard(
                 note.categoryIds.forEach { id ->
                     Badge(
                         text = Categories.title(id) ?: id,
-                        fg = Color.White.copy(alpha = if (note.done) 0.75f else 0.95f),
+                        fg = Design.chipText.copy(alpha = if (note.done) 0.75f else 0.95f),
                         bg = (Categories.colors[id] ?: Design.textSecondary).copy(alpha = 0.38f),
                         bold = true,
                     )
@@ -1671,7 +1675,7 @@ private fun EditTile(
     val color =
         when {
             danger -> Color(0xFFFF6B6B)
-            active -> Color.White
+            active -> Design.chipText
             else -> Design.textSecondary
         }
     // Рамка показывает выбор так же, как фон: без неё светлый чип на светлой теме сливался.
@@ -1729,13 +1733,13 @@ private fun EditSectionHeader(
 
 
 /**
- * Маленькая кнопка удаления с удержанием: кольцо заполняется за [sec] секунд, срабатывание —
- * тройная вибрация и удаление. Отпустили раньше — ничего не происходит. Тот же предохранитель,
- * что на свайпе карточки, только для кнопки в листе просмотра.
+ * Кнопка удаления в ряду панели просмотра. Удаление — только удержанием (случайный тап ничего
+ * не делает), и пока палец на кнопке, идёт обратный отсчёт «3.0 … 0.0» и полоска прогресса (#104, #114).
  */
 @Composable
-private fun HoldToDelete(
-    sec: Int,
+private fun HoldDeleteButton(
+    sec: Float,
+    modifier: Modifier = Modifier,
     onFire: () -> Unit,
 ) {
     var pressed by remember { mutableStateOf(false) }
@@ -1745,16 +1749,22 @@ private fun HoldToDelete(
             progress.snapTo(0f)
             return@LaunchedEffect
         }
-        val result = progress.animateTo(1f, tween(sec.coerceAtLeast(1) * 1000, easing = LinearEasing))
+        val result =
+            progress.animateTo(
+                1f,
+                tween((sec.coerceAtLeast(0.5f) * 1000).toInt(), easing = LinearEasing),
+            )
         if (result.endReason == AnimationEndReason.Finished) onFire()
     }
+    val left = ((1f - progress.value) * sec).coerceAtLeast(0f)
     Box(
         contentAlignment = Alignment.Center,
         modifier =
-            Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(Design.stopRed.copy(alpha = 0.10f))
+            modifier
+                .heightIn(min = 52.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(Design.stopRed.copy(alpha = 0.12f))
+                .border(1.dp, Design.stopRed.copy(alpha = 0.40f), RoundedCornerShape(18.dp))
                 .pointerInput(sec) {
                     detectTapGestures(
                         onPress = {
@@ -1765,23 +1775,21 @@ private fun HoldToDelete(
                     )
                 },
     ) {
-        Image(
-            painter = painterResource(R.drawable.ic_trash),
-            contentDescription = "Удалить (удерживать)",
-            colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.stopRed.copy(alpha = 0.85f)),
-            modifier = Modifier.size(18.dp),
+        Text(
+            text = if (pressed) "%.1f".format(left) else "Удалить",
+            color = Design.stopRed.copy(alpha = 0.95f),
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
         )
         if (progress.value > 0f) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val stroke = 3.dp.toPx()
-                drawArc(
-                    color = Design.stopRed,
-                    startAngle = -90f,
-                    sweepAngle = 360f * progress.value,
-                    useCenter = false,
-                    topLeft = Offset(stroke / 2f, stroke / 2f),
-                    size = Size(size.width - stroke, size.height - stroke),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke, cap = StrokeCap.Round),
+                drawLine(
+                    color = Design.stopRed.copy(alpha = 0.75f),
+                    start = Offset(0f, size.height - stroke / 2f),
+                    end = Offset(size.width * progress.value, size.height - stroke / 2f),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round,
                 )
             }
         }
@@ -1802,7 +1810,7 @@ private fun NoteSheet(
     accent: Color,
     speaking: Boolean,
     onSpeak: () -> Unit,
-    holdDeleteSec: Int,
+    holdDeleteSec: Float,
     onClose: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -1817,6 +1825,30 @@ private fun NoteSheet(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
+            // #101: озвучка — компактной иконкой в заголовке, без текста и широкой кнопки.
+            Box(
+                modifier =
+                    Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(accent.copy(alpha = if (speaking) 0.28f else 0.12f))
+                        .clickable {
+                            Haptics.tick(view)
+                            onSpeak()
+                        },
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    painter = painterResource(if (speaking) R.drawable.ic_stop else R.drawable.ic_volume),
+                    contentDescription = if (speaking) "Остановить озвучку" else "Озвучить",
+                    colorFilter =
+                        androidx.compose.ui.graphics.ColorFilter.tint(
+                            if (speaking) accent else Design.textPrimary,
+                        ),
+                    modifier = Modifier.size(17.dp),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
             Box(
                 modifier =
                     Modifier
@@ -1844,19 +1876,22 @@ private fun NoteSheet(
                     .verticalScroll(rememberScrollState()),
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = note.text,
-                    color = Design.textPrimary.copy(alpha = if (note.done) 0.6f else 1f),
-                    fontSize = 20.sp,
-                    lineHeight = 28.sp,
-                )
+                // #116: выделение и «Копировать» — системным контекстным меню.
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(
+                        text = note.text,
+                        color = Design.textPrimary.copy(alpha = if (note.done) 0.6f else 1f),
+                        fontSize = 20.sp,
+                        lineHeight = 28.sp,
+                    )
+                }
                 if (note.categoryIds.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         note.categoryIds.forEach { id ->
                             Badge(
                                 text = Categories.title(id) ?: id,
-                                fg = Color.White.copy(alpha = 0.95f),
+                                fg = Design.chipText.copy(alpha = 0.95f),
                                 bg = (Categories.colors[id] ?: Design.textSecondary).copy(alpha = 0.38f),
                                 bold = true,
                             )
@@ -1868,34 +1903,18 @@ private fun NoteSheet(
 
         Spacer(Modifier.height(14.dp))
 
-        // Нижняя часть панели — широкие кнопки во всю ширину карточки.
-        PanelButton(
-            text = if (speaking) "⏹ Остановить" else "🔊 Озвучить",
-            accent = accent,
-        ) {
-            Haptics.tick(view)
-            onSpeak()
-        }
-        Spacer(Modifier.height(8.dp))
+        // #104: «Изменить», «Удалить» и «Отмена» — в одном ряду, одной высоты.
+        // #114: пока держишь «Удалить», на кнопке идёт обратный отсчёт — видно, когда сработает.
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PanelButton("✏️ Изменить", accent, Modifier.weight(1f)) {
                 Haptics.tick(view)
                 onEdit()
             }
+            HoldDeleteButton(sec = holdDeleteSec, modifier = Modifier.weight(1f), onFire = onDelete)
             PanelButton("Отмена", accent, Modifier.weight(1f)) {
                 Haptics.tick(view)
                 onClose()
             }
-        }
-        Spacer(Modifier.height(10.dp))
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "удалить — удерживать",
-                color = Design.textSecondary.copy(alpha = 0.7f),
-                fontSize = 12.sp,
-            )
-            Spacer(Modifier.weight(1f))
-            HoldToDelete(sec = holdDeleteSec, onFire = onDelete)
         }
     }
 }
