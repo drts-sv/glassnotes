@@ -564,7 +564,7 @@ fun SettingsScreen(
                         }
                         Text(
                             text = "Ключ берётся на platform.deepseek.com. Модель " + DeepSeek.MODEL +
-                                ", ответ до 1200 токенов — примерно 0,002 ₽ за заметку.",
+                                ", ответ до 1200 токенов — около 0,03 ₽ за заметку.",
                             color = Design.textSecondary.copy(alpha = 0.55f),
                             fontSize = 11.5.sp,
                             lineHeight = 15.sp,
