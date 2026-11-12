@@ -10,3 +10,12 @@ android/assets/icon-192.png
 android/assets/icon-512.png
 android/assets/icon-512-maskable.png
 android/assets/apple-touch-icon.png
+
+# не публикуем: подпись, дневник разработки, артефакты
+android/debug.keystore
+*.jks
+*.keystore
+PLAN.md
+native/PLAN.md
+*.idsig
+.apk
