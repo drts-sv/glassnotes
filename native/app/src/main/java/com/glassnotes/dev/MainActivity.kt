@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import ru.gigapisar.model.ModelManager
 import ru.gigapisar.speech.GigaAmOnnxRecognizer
 import java.io.File
@@ -77,10 +78,25 @@ class MainActivity : ComponentActivity() {
         Log.i(TAG, "уведомление ревью: открываем экран по тапу")
     }
 
+    /**
+     * Диагностика докачки модели без UI: только через adb
+     * `am start -n com.glassnotes.dev/.MainActivity --ez model_test true`.
+     * Нужна, чтобы проверить Range-докачку и подмену, когда телефон заблокирован.
+     */
+    private fun handleModelTestIntent() {
+        if (intent?.getBooleanExtra("model_test", false) != true) return
+        Log.i(
+            "GlasNotesDev",
+            "тест загрузки модели: старт сервиса, в .part уже %d б".format(ModelManager(applicationContext).partialBytes()),
+        )
+        ModelDownloadService.start(applicationContext)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         handleReviewIntent(intent)
+        handleModelTestIntent()
 
         // Полноэкранно, но строка состояния остаётся: прячем только панель навигации,
         // вернуть её можно свайпом от края.

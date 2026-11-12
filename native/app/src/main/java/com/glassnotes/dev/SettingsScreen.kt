@@ -26,12 +26,14 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableIntStateOf
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -172,13 +174,52 @@ fun SettingsScreen(
         )
     }
 
-    // #110/#111: докачка модели прямо из настроек — процент, отмена, «только по Wi-Fi».
-    val downloadScope = rememberCoroutineScope()
-    var downloadJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-    var progress by remember { mutableIntStateOf(-1) }
-    var downloadError by remember { mutableStateOf<String?>(null) }
+    // #110/#111: докачка модели из настроек, но качает foreground-сервис: экран можно гасить.
+    var downloadState by remember { mutableStateOf(ModelDownloadService.state(context)) }
+    var progress by remember { mutableIntStateOf(ModelDownloadService.progress(context)) }
+    var downloadError by remember { mutableStateOf(ModelDownloadService.message(context)) }
     var wifiOnly by remember { mutableStateOf(AppSettings.flag(store, "model_wifi_only", true)) }
-    val downloading = downloadJob?.isActive == true
+    // Сколько уже скачано в .part: при обрыве следующая попытка продолжит с этого места.
+    var partial by remember { mutableStateOf(runCatching { ModelManager(context).partialBytes() }.getOrDefault(0L)) }
+    val downloading = downloadState == ModelDownloadService.STATE_RUNNING
+    var batteryExempt by remember { mutableStateOf(SettingsScreenHelpers.ignoringBattery(context)) }
+
+    // Прогресс живёт в SharedPreferences сервиса — опрашиваем, пока экран открыт.
+    LaunchedEffect(Unit) {
+        while (true) {
+            val state = ModelDownloadService.state(context)
+            val percent = ModelDownloadService.progress(context)
+            val message = ModelDownloadService.message(context)
+            if (state != downloadState) {
+                if (state == ModelDownloadService.STATE_OK && downloadState == ModelDownloadService.STATE_RUNNING) {
+                    Haptics.confirm(view)
+                    Ui.toast(context, "Модель установлена")
+                }
+                if (state == ModelDownloadService.STATE_ERROR) {
+                    val have = runCatching { ModelManager(context).partialBytes() }.getOrDefault(0L)
+                    downloadError =
+                        (message ?: "Не удалось скачать") +
+                            if (have > 0) ". Скачано %d МБ — продолжим с этого места.".format(have / (1024 * 1024)) else ""
+                }
+                if (state == ModelDownloadService.STATE_OK) {
+                    downloadError = null
+                }
+                downloadState = state
+            }
+            if (percent != progress) progress = percent
+            if (state == ModelDownloadService.STATE_OK) {
+                model = true to runCatching { ModelManager(context).modelFile.length() / (1024 * 1024) }.getOrDefault(214L)
+                partial = 0L
+                ModelDownloadService.clearResult(context)
+                downloadState = ModelDownloadService.STATE_IDLE
+                progress = -1
+            }
+            if (state == ModelDownloadService.STATE_ERROR) {
+                partial = runCatching { ModelManager(context).partialBytes() }.getOrDefault(0L)
+            }
+            delay(600)
+        }
+    }
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(
@@ -433,6 +474,14 @@ fun SettingsScreen(
                                 color = Design.textSecondary.copy(alpha = 0.8f),
                                 fontSize = 12.5.sp,
                             )
+                            if (!downloading && !installed && partial > 0) {
+                                Spacer(Modifier.size(4.dp))
+                                Text(
+                                    text = "есть %d МБ из 214 — докачаем с этого места".format(partial / (1024 * 1024)),
+                                    color = accent.copy(alpha = 0.9f),
+                                    fontSize = 12.5.sp,
+                                )
+                            }
                             if (downloading && progress >= 0) {
                                 Spacer(Modifier.size(6.dp))
                                 Text(
@@ -465,13 +514,18 @@ fun SettingsScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             if (downloading) {
                                 Tile("Отменить загрузку", false, accent, Modifier.weight(1f)) {
-                                    downloadJob?.cancel()
-                                    downloadJob = null
+                                    ModelDownloadService.stop(context)
                                     progress = -1
+                                    partial = runCatching { ModelManager(context).partialBytes() }.getOrDefault(0L)
+                                    downloadError = "Остановлено. Продолжим с %d МБ.".format(partial / (1024 * 1024))
                                 }
                             } else {
                                 Tile(
-                                    if (installed) "Перекачать модель" else "⬇ Скачать 214 МБ",
+                                    when {
+                                        installed -> "Перекачать модель"
+                                        partial > 0 -> "⬇ Продолжить (%d МБ)".format(partial / (1024 * 1024))
+                                        else -> "⬇ Скачать 214 МБ"
+                                    },
                                     false,
                                     accent,
                                     Modifier.weight(1f),
@@ -483,30 +537,10 @@ fun SettingsScreen(
                                         downloadError = null
                                         progress = 0
                                         Haptics.tick(view)
-                                        downloadJob =
-                                            downloadScope.launch {
-                                                try {
-                                                    ModelManager(context).download { p -> progress = p }
-                                                    progress = 100
-                                                    model =
-                                                        true to
-                                                            runCatching { ModelManager(context).modelFile.length() / (1024 * 1024) }
-                                                                .getOrDefault(214L)
-                                                    Haptics.confirm(view)
-                                                    Ui.toast(context, "Модель установлена")
-                                                } catch (e: kotlinx.coroutines.CancellationException) {
-                                                    downloadError = "Загрузка отменена"
-                                                    progress = -1
-                                                    model = false to 0L
-                                                    throw e
-                                                } catch (e: Exception) {
-                                                    downloadError = e.message ?: "Не удалось скачать"
-                                                    progress = -1
-                                                    model = false to 0L
-                                                } finally {
-                                                    downloadJob = null
-                                                }
-                                            }
+                                        // Качает сервис: экран можно гасить, Doze не обрывает сеть.
+                                        ModelDownloadService.clearResult(context)
+                                        ModelDownloadService.start(context)
+                                        downloadState = ModelDownloadService.STATE_RUNNING
                                     }
                                 }
                             }
@@ -515,9 +549,15 @@ fun SettingsScreen(
                                 AppSettings.setFlag(store, "model_wifi_only", wifiOnly)
                             }
                         }
+                        if (!batteryExempt) {
+                            Tile("⏻ Не выключать при сне", false, accent, Modifier.fillMaxWidth()) {
+                                SettingsScreenHelpers.requestIgnoreBattery(context) { batteryExempt = it }
+                            }
+                        }
                         Text(
                             text = "Источники: GitHub-релиз giga-pisar-android, затем Hugging Face. " +
-                                "Файл проверяется по SHA-256, недокачанный не остаётся.",
+                                "Качается во временный файл, проверяется по SHA-256 и только потом подменяет рабочую модель. " +
+                                "При обрыве скачанное сохраняется — экран можно гасить, загрузка не прервётся.",
                             color = Design.textSecondary.copy(alpha = 0.6f),
                             fontSize = 11.5.sp,
                             lineHeight = 15.sp,
@@ -925,6 +965,34 @@ private fun Tile(
 
 /** Мелкие проверки окружения для настроек: сеть в первую очередь. */
 object SettingsScreenHelpers {
+    /** Пользуется ли система исключением для нас из оптимизации батареи. */
+    fun ignoringBattery(context: android.content.Context): Boolean {
+        return try {
+            val power = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            power.isIgnoringBatteryOptimizations(context.packageName)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Системный диалог «Не оптимизировать батарею». Без него Doze (mState=IDLE) отрезает
+     * сеть даже foreground-сервису, и загрузка модели встаёт.
+     */
+    fun requestIgnoreBattery(context: android.content.Context, onResult: (Boolean) -> Unit) {
+        try {
+            val intent =
+                android.content.Intent(
+                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    android.net.Uri.parse("package:" + context.packageName),
+                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            onResult(ignoringBattery(context))
+        } catch (e: Throwable) {
+            onResult(false)
+        }
+    }
+
     /** true, если активная сеть — Wi-Fi (мобильная и отсутствие сети дают false). */
     fun isWifi(context: android.content.Context): Boolean {
         return try {

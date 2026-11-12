@@ -12,6 +12,13 @@
          Без INTERNET запрос в ModelManager падал — нашёл аудит #105. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- На время скачивания модели: без wake lock экран гаснет и загрузка рвётся. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Скачивание модели в foreground-сервисе: Doze отрезает сеть обычному приложению. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Просим исключить приложение из оптимизации батареи на время загрузки модели. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Напоминания: уведомления, точные будильники, восстановление после перезагрузки. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -42,6 +49,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Докачка модели в фоне: живёт, пока идёт загрузка, с уведомлением и прогрессом. -->
+        <service
+            android:name=".ModelDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- Показ напоминания и кнопки на нём; наружу не отдаём. -->
         <receiver
