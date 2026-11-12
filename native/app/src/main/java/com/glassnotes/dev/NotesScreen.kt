@@ -1173,6 +1173,9 @@ private fun HeaderCard(
                     FilterChip(name, id == dateFilter, accent) { onDateFilter(id) }
                 }
                 for ((id, name) in Categories.names) {
+                    // «Важное» — это отдельный отбор «🔥 Важные»; второй чип с тем же смыслом
+                    // сбивал с толку (владелец: «зачем в важных два чипа Важные?»).
+                    if (id == "important") continue
                     FilterChip("🏷 $name", id == categoryFilter, accent) { onCategoryFilter(id) }
                 }
             }
