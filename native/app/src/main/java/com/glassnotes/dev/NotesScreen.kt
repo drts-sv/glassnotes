@@ -1781,6 +1781,9 @@ private fun NoteCard(
                     )
                 }
                 note.categoryIds.forEach { id ->
+                    // «🔥 важное» рисуется отдельной плотной плашкой ниже — иначе на карточке
+                    // висели две плашки про важное («Важное» + «🔥 важное»).
+                    if (id == "important" && !note.done) return@forEach
                     Badge(
                         text = Categories.title(id) ?: id,
                         fg = Design.chipText.copy(alpha = if (note.done) 0.75f else 0.95f),

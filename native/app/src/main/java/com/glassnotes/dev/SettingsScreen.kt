@@ -1,5 +1,7 @@
 package com.glassnotes.dev
 
+import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -162,6 +164,8 @@ fun SettingsScreen(
     var openReview by remember { mutableStateOf(false) }
     var openModel by remember { mutableStateOf(false) }
     var openData by remember { mutableStateOf(false) }
+    var openAbout by remember { mutableStateOf(false) }
+    var openLicenses by remember { mutableStateOf(false) }
 
     var model by remember {
         mutableStateOf(
@@ -697,6 +701,72 @@ fun SettingsScreen(
                         }
                     }
 
+                    // ---------- ℹ️ О приложении ----------
+                    SettingsGroup(
+                        "ℹ️ О приложении",
+                        "GlasNote %s".format(BuildConfig.VERSION_NAME),
+                        openAbout,
+                        { openAbout = !openAbout },
+                    ) {
+                        Text(
+                            text = "GlasNote — голосовые заметки",
+                            color = Design.textPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Запись превращается в текст прямо на телефоне — модель GigaAM v3 e2e " +
+                                "(ONNX int8) работает без интернета. Дата, время и категория разбираются " +
+                                "из самой фразы. Интернет нужен только для загрузки модели и для " +
+                                "DeepSeek, если он включён.",
+                            color = Design.textSecondary.copy(alpha = 0.75f),
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        InfoRow("Версия", "%s · код %d".format(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE))
+                        InfoRow("Пакет", context.packageName)
+                        InfoRow("Сборка", BuildConfig.BUILD_TYPE)
+                        Spacer(Modifier.height(8.dp))
+                        LinkRow("Проект на GitHub", "https://github.com/drts-sv/glassnotes")
+                        LinkRow("Релизы и APK", "https://github.com/drts-sv/glassnotes/releases")
+                        LinkRow("Модель распознавания", "https://github.com/drts-sv/GigaAM/releases/tag/model-v3")
+                    }
+
+                    // ---------- 📄 Лицензии ----------
+                    SettingsGroup(
+                        "📄 Лицензии",
+                        "открытый код",
+                        openLicenses,
+                        { openLicenses = !openLicenses },
+                    ) {
+                        Text(
+                            text = "Приложение открытое, внутри — чужие библиотеки и модель. " +
+                                "Всё под свободными лицензиями:",
+                            color = Design.textSecondary.copy(alpha = 0.75f),
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        LicenseRow("GlasNote", "MIT", "https://github.com/drts-sv/glassnotes/blob/main/LICENSE")
+                        LicenseRow("GigaAM v3 — модель и словарь", "MIT", "https://github.com/salute-developers/GigaAM")
+                        LicenseRow("ONNX-веса int8 (istupakov)", "MIT", "https://huggingface.co/istupakov/gigaam-v3-onnx")
+                        LicenseRow("Silero VAD", "MIT", "https://github.com/snakers4/silero-vad")
+                        LicenseRow("ONNX Runtime", "MIT", "https://github.com/microsoft/onnxruntime")
+                        LicenseRow("Jetpack Compose, AndroidX", "Apache 2.0", "https://developer.android.com/jetpack/androidx")
+                        LicenseRow("Kotlin, kotlinx.coroutines", "Apache 2.0", "https://kotlinlang.org")
+                        LicenseRow("DeepSeek API — по желанию", "сервис", "https://platform.deepseek.com")
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "Текст лицензий MIT и Apache 2.0 — по ссылкам выше. " +
+                                "Сторонние товарные знаки принадлежат их владельцам.",
+                            color = Design.textSecondary.copy(alpha = 0.5f),
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                        )
+                    }
+
                     // ---------- ↺ Сброс ----------
                     Column {
                         GroupTitle("↺ Сброс")
@@ -1021,4 +1091,91 @@ private fun pickTime(
         minute,
         true,
     ).show()
+}
+
+/** Строка «подпись — значение» в окне «О приложении». */
+@Composable
+private fun InfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = Design.textSecondary.copy(alpha = 0.6f),
+            fontSize = 12.sp,
+            modifier = Modifier.weight(1f),
+        )
+        Text(text = value, color = Design.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+/** Кликабельная ссылка: открывает браузер. */
+@Composable
+private fun LinkRow(label: String, url: String) {
+    val context = LocalContext.current
+    val view = LocalView.current
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .clickable {
+                    Haptics.tick(view)
+                    openUrl(context, url)
+                }.padding(vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(text = label, color = Design.textPrimary, fontSize = 12.8.sp)
+            Text(
+                text = url.removePrefix("https://"),
+                color = Design.textSecondary.copy(alpha = 0.45f),
+                fontSize = 10.5.sp,
+            )
+        }
+        Text(text = "↗", color = Design.textSecondary.copy(alpha = 0.7f), fontSize = 14.sp)
+    }
+}
+
+/** Строка лицензии: что за компонент, под какой лицензией, ссылка на исходники. */
+@Composable
+private fun LicenseRow(name: String, license: String, url: String) {
+    val context = LocalContext.current
+    val view = LocalView.current
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .clickable {
+                    Haptics.tick(view)
+                    openUrl(context, url)
+                }.padding(vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(text = name, color = Design.textPrimary, fontSize = 12.8.sp)
+            Text(
+                text = url.removePrefix("https://"),
+                color = Design.textSecondary.copy(alpha = 0.4f),
+                fontSize = 10.5.sp,
+            )
+        }
+        Text(
+            text = license,
+            color = Design.textSecondary.copy(alpha = 0.85f),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+/** Браузер по умолчанию; если его нет — молча ничего (настройки не должны падать). */
+private fun openUrl(context: android.content.Context, url: String) {
+    runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }.onFailure { Log.w(TAG, "open $url: ${it.message}") }
 }
