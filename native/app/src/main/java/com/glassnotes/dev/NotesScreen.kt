@@ -324,6 +324,43 @@ fun NotesScreen(
                 }
             } ?: "Не задано"
 
+        // #141: сохранение вынесено в лямбду — кнопка стоит в заголовке редактора, где до неё
+        // не надо докручивать панель, если текст длинный.
+        val saveEdit: () -> Unit = {
+            val value = editText.trim()
+            if (value.isNotEmpty()) {
+                val date = editDate
+                val time = editTime
+                // Дата без времени = «весь день» (09:00, как при диктовке).
+                val at: Long? =
+                    date?.let { d ->
+                        val h = time?.first ?: WhenInput.ALL_DAY_HOUR
+                        val m = time?.second ?: 0
+                        d.atTime(h, m).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    }
+                val allDay = time == null
+                store.setText(note.id, value)
+                store.setCategories(note.id, editCats.toList())
+                store.setDatetime(note.id, at, allDay)
+                Reminders.cancel(context, note.id)
+                if (at != null && at > System.currentTimeMillis()) {
+                    Reminders.schedule(context, note.id, at, value, editCats.firstOrNull(), allDay)
+                }
+                revision++
+                Ui.toast(context, "Заметка сохранена")
+                Log.i(
+                    "GlasNotesDev",
+                    "заметка #%d изменена: текст %d симв., дата %s, категорий %d".format(
+                        note.id,
+                        value.length,
+                        WhenInput.display(at, allDay).ifEmpty { "нет" },
+                        editCats.size,
+                    ),
+                )
+            }
+            editNote = null
+        }
+
         // Редактор — та же стеклянная панель, что и просмотр: адаптивная высота, блюр подложки,
         // одинаковый вид у всех трёх окон (просьба владельца 12.11.2026).
         GlassPanel(accent = accent, onDismiss = { editNote = null }, maxHeightFraction = 0.9f) {
@@ -373,6 +410,19 @@ fun NotesScreen(
                                         }
                                     }
                                 }.padding(6.dp),
+                    )
+                    Text(
+                        text = "Сохранить",
+                        color = accent,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier =
+                            Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    Haptics.tick(screenView)
+                                    saveEdit()
+                                }.padding(horizontal = 10.dp, vertical = 6.dp),
                     )
                     Text(
                         text = "✕",
@@ -462,6 +512,16 @@ fun NotesScreen(
                 if (dateOpen) {
                     // Выбранная дата подсвечивается — раньше чипы не показывали выбор.
                     val today = LocalDate.now()
+                    // Быстрые даты (сегодня/завтра/послезавтра/Пн/Пт): «Выбрать» подсвечивается,
+                    // только когда дата пришла из календаря.
+                    val quickDates =
+                        listOf(
+                            today,
+                            today.plusDays(1),
+                            today.plusDays(2),
+                            today.plusDays(((java.time.DayOfWeek.MONDAY.value - today.dayOfWeek.value + 7) % 7).toLong()),
+                            today.plusDays(((java.time.DayOfWeek.FRIDAY.value - today.dayOfWeek.value + 7) % 7).toLong()),
+                        )
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -478,12 +538,23 @@ fun NotesScreen(
                             Haptics.tick(screenView)
                             editDate = today.plusDays(2)
                         }
+                        // #139: ближайшие понедельник и пятница — дела обычно ставят на эти дни,
+                        // и считать «через сколько это» в календаре каждый раз неудобно.
+                        listOf(
+                            "Пн" to java.time.DayOfWeek.MONDAY,
+                            "Пт" to java.time.DayOfWeek.FRIDAY,
+                        ).forEach { (label, dow) ->
+                            val target = today.plusDays(((dow.value - today.dayOfWeek.value + 7) % 7).toLong())
+                            EditTile(label, accent = accent, active = editDate == target) {
+                                Haptics.tick(screenView)
+                                editDate = target
+                            }
+                        }
                         // «Выбрать» подсвечен, когда дата пришла из календаря, а не из быстрых чипов.
                         EditTile(
                             "📅 Выбрать",
                             accent = accent,
-                            active = editDate != null && editDate != today &&
-                                editDate != today.plusDays(1) && editDate != today.plusDays(2),
+                            active = editDate != null && editDate !in quickDates,
                         ) {
                             Haptics.tick(screenView)
                             datePickerOpen = true
@@ -544,7 +615,7 @@ fun NotesScreen(
 
                 Spacer(Modifier.height(10.dp))
 
-                // Кнопки редактора — один ряд во всю ширину панели: «Отмена» слева, «Сохранить» справа.
+                // #141: «Сохранить» переехала в заголовок редактора, здесь осталась одна «Отмена» на всю ширину.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -564,52 +635,6 @@ fun NotesScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(text = "Отмена", color = Design.textPrimary, fontSize = 15.sp)
-                    }
-                    Box(
-                        modifier =
-                            Modifier
-                                .weight(1f)
-                                .height(50.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(accent.copy(alpha = 0.92f))
-                                .clickable {
-                                    Haptics.tick(screenView)
-                                    val value = editText.trim()
-                                    if (value.isNotEmpty()) {
-                                        val date = editDate
-                                        val time = editTime
-                                        // Дата без времени = «весь день» (09:00, как при диктовке).
-                                        val at: Long? =
-                                            date?.let { d ->
-                                                val h = time?.first ?: WhenInput.ALL_DAY_HOUR
-                                                val m = time?.second ?: 0
-                                                d.atTime(h, m).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                                            }
-                                        val allDay = time == null
-                                        store.setText(note.id, value)
-                                        store.setCategories(note.id, editCats.toList())
-                                        store.setDatetime(note.id, at, allDay)
-                                        Reminders.cancel(context, note.id)
-                                        if (at != null && at > System.currentTimeMillis()) {
-                                            Reminders.schedule(context, note.id, at, value, editCats.firstOrNull(), allDay)
-                                        }
-                                        revision++
-                                        Ui.toast(context, "Заметка сохранена")
-                                        Log.i(
-                                            "GlasNotesDev",
-                                            "заметка #%d изменена: текст %d симв., дата %s, категорий %d".format(
-                                                note.id,
-                                                value.length,
-                                                WhenInput.display(at, allDay).ifEmpty { "нет" },
-                                                editCats.size,
-                                            ),
-                                        )
-                                    }
-                                    editNote = null
-                                },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(text = "Сохранить", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
         }

@@ -153,6 +153,12 @@ fun RecordingScreen(
     var raw by remember { mutableFloatStateOf(0f) }
     var version by remember { mutableIntStateOf(0) }
     var seconds by remember { mutableIntStateOf(0) }
+
+    /**
+     * Запись остановлена, но распознавание и сохранение ещё идут. В этом состоянии кнопку с
+     * микрофоном показывать нельзя: выглядит так, будто запись не закончилась.
+     */
+    var stopping by remember { mutableStateOf(false) }
     var fps by remember { mutableIntStateOf(0) }
     var rawRms by remember { mutableIntStateOf(0) }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
@@ -261,6 +267,8 @@ fun RecordingScreen(
         recorder.stop()
         transcriber?.finish()
         recording = false
+        // Пока идёт распознавание и сохранение, в кнопке не должно быть микрофона.
+        stopping = true
         Log.i(TAG, "запись остановлена на %d с".format(seconds))
         scope.launch {
             val engine = transcriber
@@ -476,16 +484,33 @@ fun RecordingScreen(
         }
     }
 
-    // #102: один кусок записи ограничен (по умолчанию 10 с) — кольцо показывает, сколько осталось.
-    val recordMaxSec = remember {
-        (store.getKv("recordMaxSec")?.toFloatOrNull() ?: 10f).coerceIn(3f, 60f)
+    // #102/#140: сегмент записи — 30 с (было 10), и он продлевается, пока человек говорит.
+    // Владелец: «десяти секунд типовой заметке не хватает — давай хотя бы 30 и автопродление».
+    val baseMaxSec = remember {
+        (store.getKv("recordMaxSec")?.toFloatOrNull() ?: 30f).coerceIn(3f, 60f)
     }
+    var recordMaxSec by remember { mutableFloatStateOf(baseMaxSec) }
+    var extensions by remember { mutableIntStateOf(0) }
+
     LaunchedEffect(recording) {
+        if (!recording) return@LaunchedEffect
         seconds = 0
+        extensions = 0
+        recordMaxSec = baseMaxSec
+        stopping = false
         while (recording) {
             delay(1000)
             seconds++
             if (seconds >= recordMaxSec) {
+                // Автопродление: пока в последние 3 с была речь или микрофон слышит голос,
+                // сегмент растягивается ещё на baseMaxSec (всего не больше 6 продлений).
+                val speaking = System.currentTimeMillis() - lastPhraseAt < 3000L || level > 0.45f
+                if (speaking && extensions < 6) {
+                    extensions++
+                    recordMaxSec += baseMaxSec
+                    Log.i(TAG, "речь продолжается — запись продлена до %.0f с".format(recordMaxSec))
+                    continue
+                }
                 Log.i(TAG, "предел записи %.0f с — сохраняем заметку".format(recordMaxSec))
                 stopAndSave()
                 break
@@ -666,7 +691,12 @@ fun RecordingScreen(
             // Текст всё равно уходит в заметку при остановке записи.
 
             Text(
-                text = if (recording) "Слушаю…" else "Готов записывать",
+                text =
+                    when {
+                        recording -> "Слушаю…"
+                        stopping -> "Распознаю…"
+                        else -> "Готов записывать"
+                    },
                 color = Design.textPrimary,
                 fontSize = 16.sp,
                 modifier = Modifier.padding(top = 10.dp),
@@ -721,8 +751,26 @@ fun RecordingScreen(
                             size = Size(side, side),
                             cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx()),
                         )
+                    } else if (stopping) {
+                        // Запись уже остановлена, идёт распознавание: микрофон здесь сбивал бы
+                        // с толку («почему опять можно говорить?») — рисуем галочку.
+                        val cx = size.width / 2f
+                        val cy = size.height / 2f
+                        drawLine(
+                            color = glyphColor,
+                            start = Offset(cx - 13.dp.toPx(), cy),
+                            end = Offset(cx - 4.dp.toPx(), cy + 9.dp.toPx()),
+                            strokeWidth = 3.2.dp.toPx(),
+                            cap = StrokeCap.Round,
+                        )
+                        drawLine(
+                            color = glyphColor,
+                            start = Offset(cx - 4.dp.toPx(), cy + 9.dp.toPx()),
+                            end = Offset(cx + 13.dp.toPx(), cy - 10.dp.toPx()),
+                            strokeWidth = 3.2.dp.toPx(),
+                            cap = StrokeCap.Round,
+                        )
                     } else {
-                        // Микрофон: капсула, дужка и стойка.
                         val capW = 18.dp.toPx()
                         val capH = 32.dp.toPx()
                         val lift = 9.dp.toPx()   // микрофон поднят внутри кнопки (просьба владельца)
@@ -763,6 +811,9 @@ fun RecordingScreen(
                                 Haptics.tick(hapticView)
                                 if (recording) {
                                     stopAndSave()
+                                } else if (stopping) {
+                                    // Распознавание ещё идёт — новую запись не начинаем.
+                                    Log.i(TAG, "нажатие во время распознавания — игнорируем")
                                 } else if (granted) {
                                     startedAt = System.currentTimeMillis()
                                     lastPhraseAt = startedAt
