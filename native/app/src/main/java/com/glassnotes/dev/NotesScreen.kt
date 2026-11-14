@@ -69,6 +69,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -87,6 +88,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -411,19 +413,47 @@ fun NotesScreen(
                                     }
                                 }.padding(6.dp),
                     )
-                    Text(
-                        text = "Сохранить",
-                        color = accent,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
+                    // #141: сохранение — иконка дискеты в шапке редактора (просьба владельца 14.11).
+                    Canvas(
                         modifier =
                             Modifier
+                                .size(32.dp)
                                 .clip(RoundedCornerShape(10.dp))
                                 .clickable {
                                     Haptics.tick(screenView)
                                     saveEdit()
-                                }.padding(horizontal = 10.dp, vertical = 6.dp),
-                    )
+                                }.padding(6.dp),
+                    ) {
+                        val w = size.width
+                        val h = size.height
+                        val stroke = (w * 0.09f).coerceAtLeast(1.4.dp.toPx())
+                        // Корпус дискеты со срезанным правым верхним углом.
+                        val cut = w * 0.28f
+                        val body =
+                            Path().apply {
+                                moveTo(0f, 0f)
+                                lineTo(w - cut, 0f)
+                                lineTo(w, cut)
+                                lineTo(w, h)
+                                lineTo(0f, h)
+                                close()
+                            }
+                        drawPath(body, accent, style = Stroke(stroke, join = StrokeJoin.Round))
+                        // Металлическая шторка сверху.
+                        drawRect(
+                            color = accent,
+                            topLeft = Offset(w * 0.30f, h * 0.08f),
+                            size = Size(w * 0.40f, h * 0.30f),
+                            style = Stroke(stroke * 0.8f),
+                        )
+                        // Наклейка с подписью снизу.
+                        drawRect(
+                            color = accent,
+                            topLeft = Offset(w * 0.18f, h * 0.52f),
+                            size = Size(w * 0.64f, h * 0.40f),
+                            style = Stroke(stroke * 0.8f),
+                        )
+                    }
                     Text(
                         text = "✕",
                         color = Design.textSecondary,
