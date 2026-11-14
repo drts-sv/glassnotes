@@ -417,16 +417,16 @@ fun NotesScreen(
                     Canvas(
                         modifier =
                             Modifier
-                                .size(32.dp)
-                                .clip(RoundedCornerShape(10.dp))
+                                .size(42.dp)
+                                .clip(RoundedCornerShape(12.dp))
                                 .clickable {
                                     Haptics.tick(screenView)
                                     saveEdit()
-                                }.padding(6.dp),
+                                }.padding(9.dp),
                     ) {
                         val w = size.width
                         val h = size.height
-                        val stroke = (w * 0.09f).coerceAtLeast(1.4.dp.toPx())
+                        val stroke = (w * 0.10f).coerceAtLeast(1.6.dp.toPx())
                         // Корпус дискеты со срезанным правым верхним углом.
                         val cut = w * 0.28f
                         val body =
