@@ -177,11 +177,15 @@ object Contacts {
     }
 
     /**
-     * Ближайшее слово из книги. Правила узкие — проверены на прототипе 15.11.2026:
-     *  - длина та же, первая буква и последние две совпадают (значит ошибка не в окончании);
+     * Ближайшее слово из книги. Правила проверены на прототипе 15.11.2026:
+     *  - ASR может приклеить лишний слог слева («пляшаденко»), поэтому пробуем отрезать
+     *    от 0 до 3 первых букв;
+     *  - длины сравниваемого остатка и слова из книги должны совпасть, первая буква остатка
+     *    и последние две совпадают (ошибка не в окончании);
      *  - отличается ровно одна буква, и обе — гласные.
-     * Тогда «шеденко» → «Шиденко», «пляшаденко» → «Пляшеденко», а падежные формы
-     * («иванову», «кузнецову») и обычные слова («молоко», «поликлиника») остаются как есть.
+     * Тогда: «шеденко» → «Шиденко», «пляшаденко» → «Шиденко», «зашеденко» → «Шиденко»,
+     * а падежные формы («иванову», «кузнецову») и обычные слова («молоко», «поликлиника»,
+     * «согласовать», «техакт») остаются как есть.
      */
     private fun matchWord(
         word: String,
@@ -190,22 +194,29 @@ object Contacts {
         val lower = normalize(word)
         if (lower.length < 5) return null
         if (vocab.containsKey(lower)) return null // написано верно — не трогаем
-        for ((key, written) in vocab) {
-            if (key.length != lower.length) continue
-            if (key[0] != lower[0] || key.takeLast(2) != lower.takeLast(2)) continue
-            var diffs = 0
-            var ok = true
-            for (idx in lower.indices) {
-                val a = lower[idx]
-                val b = key[idx]
-                if (a == b) continue
-                diffs++
-                if (diffs > 1 || a !in VOWELS || b !in VOWELS) {
-                    ok = false
-                    break
+        for (shift in 0..3) {
+            val core = lower.substring(shift)
+            if (core.length < 5) continue
+            for ((key, written) in vocab) {
+                if (key.length != core.length) continue
+                if (key[0] != core[0] || key.takeLast(2) != core.takeLast(2)) continue
+                var diffs = 0
+                var ok = true
+                for (idx in core.indices) {
+                    val a = core[idx]
+                    val b = key[idx]
+                    if (a == b) continue
+                    diffs++
+                    if (diffs > 1 || a !in VOWELS || b !in VOWELS) {
+                        ok = false
+                        break
+                    }
                 }
+                if (!ok) continue
+                // Остаток уже совпал точно: заменяем только если это отрезанный лишний слог.
+                if (diffs == 0) return if (shift > 0) written else null
+                return written
             }
-            if (ok && diffs == 1) return written
         }
         return null
     }
