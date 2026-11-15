@@ -83,6 +83,9 @@ import java.util.Locale
 private const val TAG = "GlasNotesDev"
 
 /** Ограничение 60 кадров в секунду (просьба владельца). */
+/** Нормализованный уровень (0…1), выше которого считаем, что человек говорит. */
+private const val VOICE_LEVEL = 0.45f
+
 private const val FRAME_NS = 16_666_667L
 
 /** Длина развёртки: 44 отсчёта ≈ 0,73 с — «график побыстрее». */
@@ -198,6 +201,14 @@ fun RecordingScreen(
 
     /** Когда пришла последняя распознанная фраза и когда началась запись — для авто-остановки. */
     var lastPhraseAt by remember { mutableStateOf(0L) }
+
+    /**
+     * #146: момент последнего звука голоса (сырой уровень выше порога).
+     * Тишину отсчитываем от него, а не от распознанной фразы: ASR отдаёт финальный текст
+     * с лагом ~1,5–2 с после конца речи, из-за чего авто-стоп срабатывал через ~5 с
+     * вместо настроенных 3 с.
+     */
+    val lastVoice = remember { java.util.concurrent.atomic.AtomicLong(0L) }
     var startedAt by remember { mutableStateOf(0L) }
 
     /** Сохранить надиктованное одной заметкой и очистить сеанс. Пустой текст не сохраняем. */
@@ -313,7 +324,7 @@ fun RecordingScreen(
         if (silenceMs <= 0L) return@LaunchedEffect
         while (true) {
             delay(250)
-            val since = System.currentTimeMillis() - maxOf(lastPhraseAt, startedAt)
+            val since = System.currentTimeMillis() - maxOf(lastPhraseAt, lastVoice.get(), startedAt)
             if (session.isNotEmpty() && since > silenceMs) {
                 Log.i(TAG, "тишина %.1f с — авто-остановка".format(since / 1000f))
                 stopAndSave()
@@ -469,6 +480,8 @@ fun RecordingScreen(
 
             rawRms = recorder.rms
             raw = wave.rawFromRms(rawRms)
+            // Голос слышно прямо сейчас — запоминаем момент: от него считается тишина.
+            if (raw >= VOICE_LEVEL) lastVoice.set(System.currentTimeMillis())
             val shown = wave.value(raw, now)
             trace.addLast(shown)
             while (trace.size > TRACE) trace.removeFirst()
@@ -817,6 +830,7 @@ fun RecordingScreen(
                                 } else if (granted) {
                                     startedAt = System.currentTimeMillis()
                                     lastPhraseAt = startedAt
+                                    lastVoice.set(startedAt)
                                     session.setLength(0)
                                     phrases.clear()
                                     recording = recorder.start()

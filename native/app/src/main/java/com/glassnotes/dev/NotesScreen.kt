@@ -297,8 +297,9 @@ fun NotesScreen(
         BackHandler(enabled = true) { editNote = null }
         // Окно редактирования — как в боевом приложении (index.html #editOverlay):
         // «📝 Текст», «🏷 Категории», сворачиваемые «📅 Дата» и «⏰ Время» с плитками
-        // (Сегодня / Завтра / Послезавтра / 🕐 Выбрать / 🗑 Очистить) и системными пикерами.
-        var dateOpen by remember { mutableStateOf(false) }
+        // (неделя Пн…Вс / Сегодня / Завтра / Послезавтра / 🕐 Выбрать / ✕) и системными пикерами.
+        // #143: блок даты развёрнут сразу — до него больше не надо докручивать.
+        var dateOpen by remember { mutableStateOf(true) }
         var timeOpen by remember { mutableStateOf(false) }
         var datePickerOpen by remember { mutableStateOf(false) }
         var timePickerOpen by remember { mutableStateOf(false) }
@@ -507,8 +508,8 @@ fun NotesScreen(
                 Text("🏷 Категории", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
                 Spacer(Modifier.height(4.dp))
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     Categories.names.forEach { pair ->
                         val id = pair.first
@@ -542,19 +543,12 @@ fun NotesScreen(
                 if (dateOpen) {
                     // Выбранная дата подсвечивается — раньше чипы не показывали выбор.
                     val today = LocalDate.now()
-                    // Быстрые даты (сегодня/завтра/послезавтра/Пн/Пт): «Выбрать» подсвечивается,
-                    // только когда дата пришла из календаря.
-                    val quickDates =
-                        listOf(
-                            today,
-                            today.plusDays(1),
-                            today.plusDays(2),
-                            today.plusDays(((java.time.DayOfWeek.MONDAY.value - today.dayOfWeek.value + 7) % 7).toLong()),
-                            today.plusDays(((java.time.DayOfWeek.FRIDAY.value - today.dayOfWeek.value + 7) % 7).toLong()),
-                        )
+                    // Быстрые даты: сегодня/завтра/послезавтра и вся неделя вперёд.
+                    // «Выбрать» подсвечивается, только когда дата пришла из календаря.
+                    val quickDates = (0..6).map { today.plusDays(it.toLong()) }
                     FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
                         EditTile("Сегодня", accent = accent, active = editDate == today) {
                             Haptics.tick(screenView)
@@ -568,18 +562,17 @@ fun NotesScreen(
                             Haptics.tick(screenView)
                             editDate = today.plusDays(2)
                         }
-                        // #139: ближайшие понедельник и пятница — дела обычно ставят на эти дни,
-                        // и считать «через сколько это» в календаре каждый раз неудобно.
-                        listOf(
-                            "Пн" to java.time.DayOfWeek.MONDAY,
-                            "Пт" to java.time.DayOfWeek.FRIDAY,
-                        ).forEach { (label, dow) ->
-                            val target = today.plusDays(((dow.value - today.dayOfWeek.value + 7) % 7).toLong())
-                            EditTile(label, accent = accent, active = editDate == target) {
+                        // #139/#143: вся неделя одним сегментным переключателем Пн…Вс —
+                        // тап ставит ближайший такой день, число под днём считает приложение.
+                        WeekdayStrip(
+                            accent = accent,
+                            today = today,
+                            selected = editDate,
+                            onPick = {
                                 Haptics.tick(screenView)
-                                editDate = target
-                            }
-                        }
+                                editDate = it
+                            },
+                        )
                         // «Выбрать» подсвечен, когда дата пришла из календаря, а не из быстрых чипов.
                         EditTile(
                             "📅 Выбрать",
@@ -589,7 +582,7 @@ fun NotesScreen(
                             Haptics.tick(screenView)
                             datePickerOpen = true
                         }
-                        EditTile("🗑 Очистить", danger = true, accent = accent) {
+                        ClearIconTile {
                             Haptics.tick(screenView)
                             editDate = null
                             editTime = null
@@ -612,8 +605,8 @@ fun NotesScreen(
                 )
                 if (timeOpen) {
                     FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
                         DEFAULT_TIMES.forEach { (emoji, hour, minute) ->
                             EditTile(
@@ -635,7 +628,7 @@ fun NotesScreen(
                             Haptics.tick(screenView)
                             timePickerOpen = true
                         }
-                        EditTile("🗑 Очистить", danger = true, accent = accent) {
+                        ClearIconTile {
                             Haptics.tick(screenView)
                             editTime = null
                         }
@@ -1973,7 +1966,103 @@ private fun EditSectionHeader(
 
 
 /**
- * Чип редактора (категория, дата, время, «Выбрать», «Очистить»).
+ * #145: «Очистить» — иконка-крестик вместо текста с эмодзи.
+ * Крестик, а не корзинка: корзина в интерфейсах означает удаление самого объекта,
+ * здесь же сбрасывается только значение поля (дата/время).
+ */
+@Composable
+private fun ClearIconTile(onClick: () -> Unit) {
+    val danger = Color(0xFFFF6B6B)
+    val idleBg =
+        if (Design.light) Color.White.copy(alpha = 0.75f) else Design.glassRgb.copy(alpha = 0.45f)
+    Box(
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(idleBg)
+                .border(1.dp, danger.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
+                .clickable { onClick() }
+                .padding(horizontal = 9.dp, vertical = 3.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(14.dp)) {
+            val stroke = (size.width * 0.13f).coerceAtLeast(1.4.dp.toPx())
+            drawLine(danger, Offset(0f, 0f), Offset(size.width, size.height), stroke, StrokeCap.Round)
+            drawLine(danger, Offset(size.width, 0f), Offset(0f, size.height), stroke, StrokeCap.Round)
+        }
+    }
+}
+
+/**
+ * #143: неделя одним сегментным переключателем Пн…Вс — общая рамка, семь ячеек,
+ * под днём стоит число. Владелец: «записал во вторник, понял, что надо в среду,
+ * а какое это число — считать на ходу не хочу».
+ */
+@Composable
+private fun WeekdayStrip(
+    accent: Color,
+    today: LocalDate,
+    selected: LocalDate?,
+    onPick: (LocalDate) -> Unit,
+) {
+    val shape = RoundedCornerShape(10.dp)
+    val bg = if (Design.light) Color.White.copy(alpha = 0.75f) else Design.glassRgb.copy(alpha = 0.45f)
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(34.dp)
+                .clip(shape)
+                .background(bg)
+                .border(1.dp, Design.border, shape),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс").forEachIndexed { index, label ->
+            val dow = index + 1 // DayOfWeek.MONDAY.value == 1
+            val target = today.plusDays(((dow - today.dayOfWeek.value + 7) % 7).toLong())
+            val on = selected == target
+            Box(
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .background(if (on) accent.copy(alpha = 0.92f) else Color.Transparent)
+                        .clickable { onPick(target) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = label,
+                        color = if (on) Color.White else Design.textPrimary.copy(alpha = 0.9f),
+                        fontSize = 11.sp,
+                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
+                    )
+                    Text(
+                        text = target.dayOfMonth.toString(),
+                        color =
+                            if (on) {
+                                Color.White.copy(alpha = 0.85f)
+                            } else {
+                                Design.textSecondary.copy(alpha = 0.75f)
+                            },
+                        fontSize = 9.sp,
+                    )
+                }
+            }
+            if (index < 6) {
+                Box(
+                    Modifier
+                        .width(1.dp)
+                        .fillMaxHeight(0.55f)
+                        .background(Design.border),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Чип редактора (категория, дата, время, «Выбрать»).
  * Активный всегда плотный, с белым текстом — в светлой теме прежний полупрозрачный фон
  * и тёмная подпись сливались с панелью (#107).
  */
@@ -2005,16 +2094,17 @@ private fun EditTile(
     Text(
         text = text,
         color = color,
-        fontSize = 13.sp,
+        fontSize = 12.sp,
         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
         textAlign = TextAlign.Center,
+        // #144: чипы максимально компактные — в окно редактирования должно влезать больше строк.
         modifier =
             Modifier
-                .clip(RoundedCornerShape(14.dp))
+                .clip(RoundedCornerShape(10.dp))
                 .background(if (active) activeBg else idleBg)
-                .border(1.dp, edge, RoundedCornerShape(14.dp))
+                .border(1.dp, edge, RoundedCornerShape(10.dp))
                 .clickable { onClick() }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .padding(horizontal = 9.dp, vertical = 3.dp),
     )
 }
 
