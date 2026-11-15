@@ -124,6 +124,8 @@ fun SettingsScreen(
     var filler by remember { mutableStateOf(AppSettings.flag(store, AppSettings.FILLER, true)) }
 
     var fabPos by remember { mutableStateOf(store.getKv("fabPos") ?: "right") }
+    // Размер кнопки записи: 40…130 dp, по умолчанию 83 (было 46, просили крупнее).
+    var fabSize by remember { mutableStateOf(store.getKv("fabSize")?.toFloatOrNull() ?: 83f) }
 
     // Ключ DeepSeek живёт в Android Keystore (ApiKeyStore), в базе и в APK его нет.
     // Открытая копия из старых версий переносится и стирается при первом открытии настроек.
@@ -687,6 +689,18 @@ fun SettingsScreen(
                                 store.setKv("fabPos", "right")
                             }
                         }
+                        Spacer(Modifier.size(8.dp))
+                        SliderRow(
+                            "Размер кнопки",
+                            fabSize,
+                            40f..130f,
+                            17,
+                            "%d dp".format(fabSize.roundToInt()),
+                            accent,
+                            { fabSize = it },
+                        ) {
+                            store.setKv("fabSize", fabSize.roundToInt().toString())
+                        }
                     }
 
                     // ---------- 💾 Данные ----------
@@ -832,6 +846,7 @@ fun SettingsScreen(
                                         voiceCategory = true
                                         filler = true
                                         fabPos = "right"
+                                        fabSize = 83f
                                         reviewOn = true
                                         reviewTime = Reminders.DEFAULT_REVIEW_TIME
                                         NluOptions.voiceCategory = true

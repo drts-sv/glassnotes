@@ -1097,9 +1097,11 @@ fun NotesScreen(
 
         // Кнопка записи: по ней открывается окно записи. Положение — из настроек.
         val fabPos = store.getKv("fabPos") ?: "right"
+        val fabSize = store.getKv("fabSize")?.toFloatOrNull() ?: 83f
         RecordButton(
             accent = accent,
             onClick = onRecord,
+            sizeDp = fabSize,
             modifier =
                 Modifier
                     .align(
@@ -1306,14 +1308,15 @@ private fun ContactPickOverlay(
 private fun RecordButton(
     accent: Color,
     onClick: () -> Unit,
+    sizeDp: Float = 83f,
     modifier: Modifier = Modifier,
 ) {
     val view = LocalView.current
     Box(
         modifier =
             modifier
-                // Владелец просил кнопку записи крупнее — ровно в 2 раза (46 → 92 dp).
-                .size(92.dp)
+                // Размер — из настроек (40…130 dp), по умолчанию 83.
+                .size(sizeDp.dp)
                 .then(
                     Modifier
                         .androidxShadow()
@@ -1334,7 +1337,7 @@ private fun RecordButton(
             painter = painterResource(R.drawable.ic_mic),
             contentDescription = "Записать",
             colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.textPrimary),
-            modifier = Modifier.size(44.dp),
+            modifier = Modifier.size((sizeDp * 0.48f).dp),
         )
     }
 }
