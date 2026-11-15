@@ -595,6 +595,9 @@ class MainActivity : ComponentActivity() {
                 var recordingOpen by remember {
                     mutableStateOf(intent?.getBooleanExtra("record", false) == true)
                 }
+                // Первый запуск: экран настройки (разрешения + модель). Флаг в kv, показывается
+                // один раз. На уже настроенном телефоне шаги сразу помечены «разрешено».
+                var onboarding by remember { mutableStateOf(store.getKv("onboarded") != "yes") }
 
                 // Подложка под всем содержимым: в тёмной теме — обои с блюром и матированием,
                 // в светлой — светлый градиент. Раньше фон не рисовался вовсе: сквозь прозрачный
@@ -602,7 +605,13 @@ class MainActivity : ComponentActivity() {
                 // «Без срока») терялись на фотографии (#107).
                 Box(modifier = Modifier.fillMaxSize()) {
                     GlassBackdrop()
-                    if (recordingOpen) {
+                    if (onboarding) {
+                        OnboardingScreen(
+                            store = store,
+                            accent = accent,
+                            onDone = { onboarding = false },
+                        )
+                    } else if (recordingOpen) {
                         RecordingScreen(autoStart = true, onClose = { recordingOpen = false })
                     } else {
                     NotesScreen(
