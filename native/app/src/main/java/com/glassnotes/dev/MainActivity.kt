@@ -281,6 +281,60 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra("fix_test", false) == true) {
             // #148: автоподстановка фамилий — проверяем на реальной книге: берём настоящую
             // фамилию, портим одну букву (как слышит ASR) и смотрим, вернётся ли написание.
+            // Сводка на всей книге: порча одной буквы (гласная/согласная) и лишний слог слева.
+            val vocabPeople = Contacts.people(this)
+            val surnames =
+                vocabPeople.flatMap { p -> p.name.split(' ', '.', '-') }
+                    .filter { it.length >= 5 && it.first().isUpperCase() && it.all { ch -> ch.isLetter() } }
+                    .distinct()
+            val rnd = java.util.Random(11)
+            var tot = 0
+            var ok = 0
+            var falsePositive = 0
+            for (surname in surnames) {
+                val kind = tot % 3
+                val broken =
+                    when (kind) {
+                        0 -> {
+                            val idx = (1 until surname.length - 1).filter { surname[it].lowercaseChar() in "аеёиоуыэюя" }
+                            if (idx.isEmpty()) continue
+                            val i = idx[rnd.nextInt(idx.size)]
+                            val repl = mapOf('а' to 'о', 'о' to 'а', 'е' to 'и', 'и' to 'е', 'у' to 'ы', 'ы' to 'у', 'я' to 'е')
+                            val c = repl[surname[i].lowercaseChar()] ?: continue
+                            surname.substring(0, i) + c + surname.substring(i + 1)
+                        }
+                        1 -> {
+                            val pairs = mapOf('б' to 'п', 'в' to 'ф', 'г' to 'к', 'д' to 'т', 'ж' to 'ш', 'з' to 'с')
+                            val idx = (0 until surname.length - 2).filter { pairs.containsKey(surname[it].lowercaseChar()) }
+                            if (idx.isEmpty()) continue
+                            val i = idx[rnd.nextInt(idx.size)]
+                            surname.substring(0, i) + pairs.getValue(surname[i].lowercaseChar()) + surname.substring(i + 1)
+                        }
+                        else -> "за" + surname
+                    }
+                tot++
+                val got = Contacts.correct(this, broken.lowercase()).text.trim()
+                if (got.equals(surname, ignoreCase = true)) ok++ else if (tot <= 400) {
+                    Log.i(TAG, "fix_test-мимо: «${broken.lowercase()}» -> «$got», ждали «$surname»")
+                }
+            }
+            Log.i(TAG, "fix_test-сводка: исправлено %d из %d = %d%%".format(ok, tot, if (tot > 0) 100 * ok / tot else 0))
+            // Ложные: частые слова не из книги не должны меняться.
+            listOf(
+                "поликлиника", "молоко", "согласовать", "встреча", "завтра", "магазин", "проект",
+                "отчёт", "техакт", "объект", "подрядчик", "снабжение", "закупка", "поверка",
+                "позвонить", "набрать", "стенд", "испытание", "замер", "формуляр", "изделие",
+                "сборка", "коммит", "интерфейс", "почта", "клиент", "созвон", "масло", "машина",
+                "пропуск", "телефон", "документ", "письмо", "договор", "ремонт", "провод", "кабель",
+            ).forEach { w ->
+                val out = Contacts.correct(this, w).text
+                if (!out.equals(w, ignoreCase = true)) {
+                    falsePositive++
+                    Log.i(TAG, "fix_test-ЛОЖНОЕ: «$w» -> «$out»")
+                }
+            }
+            Log.i(TAG, "fix_test-ложных: $falsePositive")
+
             val people = Contacts.people(this).filter { it.name.any { ch -> ch.isUpperCase() } }
             Log.i(TAG, "fix_test: доступ %s, контактов %d".format(Contacts.hasAccess(this), people.size))
             people.take(4).forEach { p ->
