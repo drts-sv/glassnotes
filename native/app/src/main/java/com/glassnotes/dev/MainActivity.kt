@@ -278,6 +278,32 @@ class MainActivity : ComponentActivity() {
             dateSelfTest().lines().forEach { line -> Log.i(TAG, "date_test: $line") }
         }
 
+        if (intent?.getBooleanExtra("fix_test", false) == true) {
+            // #148: автоподстановка фамилий — проверяем на реальной книге: берём настоящую
+            // фамилию, портим одну букву (как слышит ASR) и смотрим, вернётся ли написание.
+            val people = Contacts.people(this).filter { it.name.any { ch -> ch.isUpperCase() } }
+            Log.i(TAG, "fix_test: доступ %s, контактов %d".format(Contacts.hasAccess(this), people.size))
+            people.take(4).forEach { p ->
+                val surname = Contacts.surname(p)
+                if (surname.length < 5) return@forEach
+                val broken =
+                    surname.mapIndexed { i, ch ->
+                        if (i == 2) if (ch.lowercaseChar() == 'е') 'и' else 'е' else ch
+                    }.joinToString("")
+                val got = Contacts.correct(this, "позвонить ${broken.lowercase()} завтра").text
+                Log.i(TAG, "fix_test: «${broken.lowercase()}» -> «$got» (в книге «$surname»)")
+            }
+            listOf(
+                "позвонить шеденко",
+                "встретиться с шеденко во вторник",
+                "позвонить в поликлинику",
+                "купить молоко и хлеб",
+            ).forEach { line ->
+                val fixed = Contacts.correct(this, line)
+                Log.i(TAG, "fix_test: «$line» -> «${fixed.text}» замены=${fixed.fixes}")
+            }
+        }
+
         if (intent?.getBooleanExtra("contacts_test", false) == true) {
             // #84: проверка доступа к телефонной книге и поиска фамилии в тексте.
             val people = Contacts.people(this)

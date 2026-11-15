@@ -229,7 +229,14 @@ fun RecordingScreen(
             Log.i(TAG, "сеанс записи пустой — заметка не создаётся")
             return null
         }
-        val parsed = parseDateNlu(text)
+        // #148: автоподстановка фамилии из телефонной книги — ASR слышит «шеденко»,
+        // в книге «Шиденко». Правим текст ДО разбора даты и поиска контакта.
+        val fixed = Contacts.correct(context, text)
+        if (fixed.fixes.isNotEmpty()) {
+            Log.i(TAG, "автоподстановка фамилий: %s".format(fixed.fixes.joinToString(", ")))
+            Ui.toast(context, "Исправлено: " + fixed.fixes.joinToString(", "))
+        }
+        val parsed = parseDateNlu(fixed.text)
         // #115: категория по голосу — разбор текста подсказывает, что это («баг» → Разработка).
         // Подсказка ставится, только если человек не выбрал категорию руками.
         val hint =

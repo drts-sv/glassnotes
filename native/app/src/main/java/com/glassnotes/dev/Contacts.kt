@@ -32,6 +32,8 @@ object Contacts {
     private val CALL_WORDS =
         listOf("позвонить", "позвони", "перезвонить", "набрать", "дозвониться", "звонок", "звонить")
 
+    private val VOWELS = "аеёиоуыэюяй".toSet()
+
     private var cache: List<Person>? = null
     private var cachedAt = 0L
     private const val CACHE_MS = 5 * 60 * 1000L
@@ -114,6 +116,98 @@ object Contacts {
             }
         }
         return best
+    }
+
+    /** Итог автоподстановки: исправленный текст и список замен для тоста/лога. */
+    data class Correction(
+        val text: String,
+        val fixes: List<String>,
+    )
+
+    /** Фамилия (последнее слово имени): «Таня Иванова» → «Иванова», «Сидоров А. С.» → «Сидоров». */
+    fun surname(person: Person): String =
+        person.name.split(' ', '-').lastOrNull { it.length > 3 } ?: person.name
+
+    /**
+     * Автоподстановка фамилий (#148): ASR слышит «шеденко», а в книге «Шиденко».
+     *
+     * Правила нарочно узкие, чтобы не портить обычные слова: слово не короче 5 букв,
+     * первые две буквы совпадают, разница не больше 1 буквы до 7 букв и 2 — от 8.
+     * Совпавшие точно слова не трогаем. Возвращает текст и журнал «было → стало».
+     */
+    fun correct(
+        context: Context,
+        text: String,
+    ): Correction {
+        if (text.isBlank() || !hasAccess(context)) return Correction(text, emptyList())
+        // Словарь телефонной книги: нормализованное слово → как оно записано в контакте.
+        val vocab = LinkedHashMap<String, String>()
+        for (person in people(context)) {
+            for (part in person.name.split(' ', '.', '-')) {
+                if (part.length < 5) continue
+                val key = normalize(part)
+                if (!vocab.containsKey(key)) vocab[key] = part
+            }
+        }
+        if (vocab.isEmpty()) return Correction(text, emptyList())
+
+        val out = StringBuilder(text.length)
+        val fixes = ArrayList<String>()
+        var i = 0
+        while (i < text.length) {
+            val ch = text[i]
+            if (!ch.isLetter()) {
+                out.append(ch)
+                i++
+                continue
+            }
+            var j = i
+            while (j < text.length && text[j].isLetter()) j++
+            val word = text.substring(i, j)
+            val fixed = matchWord(word, vocab)
+            if (fixed != null && fixed != word) {
+                out.append(fixed)
+                fixes.add("$word → $fixed")
+            } else {
+                out.append(word)
+            }
+            i = j
+        }
+        return Correction(out.toString(), fixes)
+    }
+
+    /**
+     * Ближайшее слово из книги. Правила узкие — проверены на прототипе 15.11.2026:
+     *  - длина та же, первая буква и последние две совпадают (значит ошибка не в окончании);
+     *  - отличается ровно одна буква, и обе — гласные.
+     * Тогда «шеденко» → «Шиденко», «пляшаденко» → «Пляшеденко», а падежные формы
+     * («иванову», «кузнецову») и обычные слова («молоко», «поликлиника») остаются как есть.
+     */
+    private fun matchWord(
+        word: String,
+        vocab: Map<String, String>,
+    ): String? {
+        val lower = normalize(word)
+        if (lower.length < 5) return null
+        if (vocab.containsKey(lower)) return null // написано верно — не трогаем
+        for ((key, written) in vocab) {
+            if (key.length != lower.length) continue
+            if (key[0] != lower[0] || key.takeLast(2) != lower.takeLast(2)) continue
+            var diffs = 0
+            var ok = true
+            for (idx in lower.indices) {
+                val a = lower[idx]
+                val b = key[idx]
+                if (a == b) continue
+                diffs++
+                if (diffs > 1 || a !in VOWELS || b !in VOWELS) {
+                    ok = false
+                    break
+                }
+            }
+            if (ok && diffs == 1) return written
+        }
+        return null
     }
 
     /** Открыть клавиатуру набора с номером — звонок человек подтверждает сам. */

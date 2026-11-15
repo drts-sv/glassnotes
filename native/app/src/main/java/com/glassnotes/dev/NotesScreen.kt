@@ -175,6 +175,9 @@ fun NotesScreen(
     var editDate by remember { mutableStateOf<LocalDate?>(null) }
     var editTime by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var editCats by remember { mutableStateOf(emptySet<String>()) }
+    // #84/#148: контакт в редакторе. Сняли крестиком — больше не ищем автоматически.
+    var editContact by remember { mutableStateOf<NoteContact?>(null) }
+    var editContactDropped by remember { mutableStateOf(false) }
     // #117/#118: «Улучшить текст» через DeepSeek — запрос уходит из редактора, ответ показываем
     // в отдельной панели, чтобы «Применить» не теряло исходный текст.
     var aiOpen by remember { mutableStateOf(false) }
@@ -201,6 +204,12 @@ fun NotesScreen(
             editDate = null
             editTime = null
         }
+        // Контакт показываем сразу: сохранённый, а если его нет — ищем фамилию в тексте.
+        editContactDropped = false
+        editContact =
+            n.contact ?: Contacts.findMention(context, n.text)?.let { p ->
+                NoteContact(p.id, p.name, p.number)
+            }
         editNote = n
     }
     /** «Сегодня»/«Завтра» — дата без часа: показывает так же, как «весь день» в поле. */
@@ -345,6 +354,8 @@ fun NotesScreen(
                 store.setText(note.id, value)
                 store.setCategories(note.id, editCats.toList())
                 store.setDatetime(note.id, at, allDay)
+                // Контакт пишем вместе с текстом: иначе после правки в редакторе кружок пропадал.
+                store.setContact(note.id, editContact)
                 Reminders.cancel(context, note.id)
                 if (at != null && at > System.currentTimeMillis()) {
                     Reminders.schedule(context, note.id, at, value, editCats.firstOrNull(), allDay)
@@ -489,6 +500,47 @@ fun NotesScreen(
                                 .verticalScroll(rememberScrollState())
                                 .padding(12.dp),
                     )
+                }
+                editContact?.let { c ->
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Design.glassRgb.copy(alpha = 0.45f))
+                                .border(1.dp, Design.border, RoundedCornerShape(14.dp))
+                                .clickable {
+                                    Haptics.tick(screenView)
+                                    Contacts.dial(context, c.number)
+                                }.padding(horizontal = 8.dp, vertical = 6.dp),
+                    ) {
+                        ContactAvatar(c, 30.dp, accent)
+                        Spacer(Modifier.width(9.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = c.name,
+                                color = Design.textPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                            )
+                            Text(text = c.number, color = Design.textSecondary, fontSize = 11.5.sp, maxLines = 1)
+                        }
+                        Text(
+                            text = "✕",
+                            color = Design.textSecondary,
+                            fontSize = 14.sp,
+                            modifier =
+                                Modifier.clickable {
+                                    Haptics.tick(screenView)
+                                    editContact = null
+                                    editContactDropped = true
+                                    Log.i("GlasNotesDev", "контакт снят в редакторе заметки #%d".format(note.id))
+                                }.padding(8.dp),
+                        )
+                    }
                 }
                 Spacer(Modifier.height(10.dp))
 
@@ -2303,6 +2355,36 @@ private fun NoteSheet(
                             )
                         },
                 )
+                // #84: в листе просмотра контакт тоже виден — кружок, имя, номер, тап = набор.
+                note.contact?.let { c ->
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(accent.copy(alpha = 0.10f))
+                                .clickable {
+                                    Haptics.tick(view)
+                                    Contacts.dial(context, c.number)
+                                }.padding(horizontal = 10.dp, vertical = 7.dp),
+                    ) {
+                        ContactAvatar(c, 34.dp, accent)
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = c.name,
+                                color = Design.textPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                            )
+                            Text(text = c.number, color = Design.textSecondary, fontSize = 12.sp, maxLines = 1)
+                        }
+                        Text(text = "📞", fontSize = 16.sp)
+                    }
+                }
                 if (note.categoryIds.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
