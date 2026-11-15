@@ -30,6 +30,40 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
         db.execSQL("CREATE TABLE kv (k TEXT PRIMARY KEY, v TEXT)")
     }
 
+    /**
+     * Старые боевые базы держат id заметки только в колонке, а в JSON поля `id` нет.
+     * Разбор такой заметки давал id = 0 — и список падал на «Key "0" was already used»
+     * (дубли ключей в LazyColumn). Дописываем id в JSON один раз при открытии базы.
+     */
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        val fixes = ArrayList<Pair<Long, String>>()
+        db.rawQuery("SELECT id, json FROM notes", null).use { c ->
+            while (c.moveToNext()) {
+                val id = c.getLong(0)
+                val raw = c.getString(1)
+                if (!raw.contains("\"id\"")) fixes.add(id to withId(id, raw))
+            }
+        }
+        if (fixes.isEmpty()) return
+        for ((id, raw) in fixes) {
+            val values = ContentValues().apply { put("json", raw) }
+            db.update("notes", values, "id = ?", arrayOf(id.toString()))
+        }
+        android.util.Log.i("GlasNotesDev", "база: дописан id у " + fixes.size + " заметок")
+    }
+
+    /** JSON заметки с гарантированным полем `id` (id из колонки важнее). */
+    private fun withId(
+        id: Long,
+        raw: String,
+    ): String =
+        runCatching {
+            val o = JSONObject(raw)
+            if (o.optLong("id", -1L) == id) return raw
+            o.put("id", id).toString()
+        }.getOrDefault(raw)
+
     override fun onUpgrade(
         db: SQLiteDatabase,
         oldVersion: Int,
@@ -185,7 +219,7 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
         readableDatabase
             .rawQuery("SELECT json, ts FROM notes WHERE id = ?", arrayOf(id.toString()))
             .use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(0) to cursor.getLong(1) else null
+                if (cursor.moveToFirst()) withId(id, cursor.getString(0)) to cursor.getLong(1) else null
             }
 
     /** Вернуть удалённую заметку на место: тот же id, тот же JSON, тот же ts. */
@@ -324,10 +358,10 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
     /** Последние заметки — для проверок и списка. */
     fun recent(limit: Int = 5): List<String> =
         readableDatabase
-            .rawQuery("SELECT json FROM notes ORDER BY id DESC LIMIT ?", arrayOf(limit.toString()))
+            .rawQuery("SELECT id, json FROM notes ORDER BY id DESC LIMIT ?", arrayOf(limit.toString()))
             .use { cursor ->
                 val result = ArrayList<String>()
-                while (cursor.moveToNext()) result.add(cursor.getString(0))
+                while (cursor.moveToNext()) result.add(withId(cursor.getLong(0), cursor.getString(1)))
                 result
             }
 

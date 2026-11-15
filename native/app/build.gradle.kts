@@ -12,8 +12,12 @@ android {
         // Временно свой пакет: dev-сборка живёт рядом с боевым GlasNote (com.glassnotes.app)
         // и ничего в нём не трогает. На этапе 5 пакет станет боевым, а оболочка WebView уйдёт.
         // Пакет задаётся сборкой: dev для теста, боевой — -PappId=com.glassnotes.app
-        val targetAppId = (project.findProperty("appId") as String?) ?: "com.glassnotes.dev"
+        val targetAppId = (project.findProperty("appId") as String?) ?: "com.glassnotes.app"
         applicationId = targetAppId
+        // Имя на иконке: боевой пакет — «GlasNote», тестовый — с пометкой.
+        // Классы при этом остаются в пакете com.glassnotes.dev (он прописан в манифесте),
+        // поэтому один и тот же APK работает и как боевой, и как dev.
+        resValue("string", "app_name", if (targetAppId == "com.glassnotes.app") "GlasNote" else "GlasNote (dev)")
         minSdk = 26
         targetSdk = 35
         // Версии держим честные: прошлые правки версии молча не применились (файл стоял на 0.42-dev),
