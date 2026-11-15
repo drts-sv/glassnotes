@@ -11,13 +11,15 @@ android {
     defaultConfig {
         // Временно свой пакет: dev-сборка живёт рядом с боевым GlasNote (com.glassnotes.app)
         // и ничего в нём не трогает. На этапе 5 пакет станет боевым, а оболочка WebView уйдёт.
-        applicationId = "com.glassnotes.dev"
+        // Пакет задаётся сборкой: dev для теста, боевой — -PappId=com.glassnotes.app
+        val targetAppId = (project.findProperty("appId") as String?) ?: "com.glassnotes.dev"
+        applicationId = targetAppId
         minSdk = 26
         targetSdk = 35
         // Версии держим честные: прошлые правки версии молча не применились (файл стоял на 0.42-dev),
         // поэтому все отчёты «0.4x-dev» были неверны — сборка на телефоне была одной и той же.
-        versionCode = 137
-        versionName = "0.137-dev"
+        versionCode = 1000
+        versionName = "1.0.0"
 
         // Телефону нужна одна архитектура: библиотека распознавания тянет четыре (arm64, arm32, x86,
         // x86_64) и это ~50 МБ лишнего веса в APK. arm64-v8a хватает для нашего телефона.
@@ -43,6 +45,9 @@ android {
             // R8: без сжатия APK почти в полтора раза больше нужного — в нём остаются
             // неиспользуемые классы библиотек (dex был 17 МБ против 4-6 МБ после R8).
             isMinifyEnabled = true
+            // -Pdbg=true — только для служебной установки: без debuggable нельзя залить
+            // базу через run-as. Данные при обратной установке обычного release сохраняются.
+            isDebuggable = project.hasProperty("dbg")
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
