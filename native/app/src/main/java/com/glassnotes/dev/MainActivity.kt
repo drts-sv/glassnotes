@@ -334,6 +334,24 @@ class MainActivity : ComponentActivity() {
                 }
             }.start()
         }
+        if (intent?.getBooleanExtra("update_test", false) == true) {
+            // Проверка обновления без тапа по экрану: тот же код, что и в настройках.
+            Thread {
+                Log.i(TAG, "update_test: установлена %s, установка APK разрешена=%s".format(
+                    Updater.currentVersion(), Updater.canInstall(this)))
+                runCatching { Updater.check() }
+                    .onSuccess { release ->
+                        Log.i(TAG, "update_test: последний релиз %s, новее=%s, apk=%s".format(
+                            release.version,
+                            Updater.isNewer(release.version, Updater.currentVersion()),
+                            release.apkUrl ?: "нет"))
+                    }
+                    .onFailure { error ->
+                        Log.e(TAG, "update_test: проверка не удалась — " + error.toString())
+                        Log.e(TAG, "update_test: стек " + error.stackTraceToString().take(700))
+                    }
+            }.start()
+        }
         if (intent?.getBooleanExtra("fix_test", false) == true) {
             // #148: автоподстановка фамилий — проверяем на реальной книге: берём настоящую
             // фамилию, портим одну букву (как слышит ASR) и смотрим, вернётся ли написание.

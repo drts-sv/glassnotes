@@ -30,6 +30,8 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Обновление из настроек: скачанный с GitHub APK ставит системный установщик. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-feature
         android:name="android.hardware.microphone"
         android:required="true" />
@@ -62,6 +64,17 @@
         <receiver
             android:name="com.glassnotes.dev.ReminderReceiver"
             android:exported="false" />
+
+        <!-- Отдать системному установщику скачанный APK обновления (cacheDir/updates). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- Восстановление будильников после перезагрузки телефона. -->
         <receiver

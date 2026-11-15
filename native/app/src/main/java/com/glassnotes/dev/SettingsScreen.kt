@@ -49,6 +49,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import ru.gigapisar.model.ModelManager
@@ -784,6 +786,9 @@ fun SettingsScreen(
                         LinkRow("Модель распознавания", "https://github.com/drts-sv/GigaAM/releases/tag/model-v3")
                     }
 
+                    // ---------- 🔄 Обновление ----------
+                    UpdateGroup(accent = accent)
+
                     // ---------- 📄 Лицензии ----------
                     SettingsGroup(
                         "📄 Лицензии",
@@ -1230,4 +1235,189 @@ private fun openUrl(context: android.content.Context, url: String) {
             Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
     }.onFailure { Log.w(TAG, "open $url: ${it.message}") }
+}
+
+/**
+ * Обновление приложения: проверка последнего релиза на GitHub и установка скачанного APK
+ * системным установщиком. Ничего не ставится без подтверждения — это обычный диалог Android.
+ */
+@Composable
+private fun UpdateGroup(accent: Color) {
+    val context = LocalContext.current
+    val view = LocalView.current
+    val scope = rememberCoroutineScope()
+
+    var busy by remember { mutableStateOf(false) }
+    var release by remember { mutableStateOf<Updater.Release?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var progress by remember { mutableIntStateOf(-1) }
+    var canInstall by remember { mutableStateOf(Updater.canInstall(context)) }
+    val current = Updater.currentVersion()
+
+    fun check() {
+        busy = true
+        message = null
+        release = null
+        progress = -1
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { Updater.check() } }
+            busy = false
+            result
+                .onSuccess { found ->
+                    if (Updater.isNewer(found.version, current)) {
+                        release = found
+                        message = "Доступна версия %s".format(found.version)
+                    } else {
+                        message = "Установлена последняя версия"
+                    }
+                    Log.i(
+                        TAG,
+                        "обновление: последняя %s, установленная %s, новее=%s".format(
+                            found.version, current, Updater.isNewer(found.version, current),
+                        ),
+                    )
+                }.onFailure { error ->
+                    message = "Не удалось проверить: %s".format(error.message ?: "нет сети")
+                    Log.i(TAG, "обновление: проверка не удалась — %s".format(error.message ?: error.toString()))
+                }
+        }
+    }
+
+    fun downloadAndInstall(found: Updater.Release) {
+        canInstall = Updater.canInstall(context)
+        if (!canInstall) {
+            // Android требует отдельного согласия на установку APK из этого приложения.
+            Updater.openInstallPermission(context)
+            message = "Разрешите установку из GlasNote и нажмите ещё раз"
+            return
+        }
+        busy = true
+        progress = 0
+        message = "Скачиваем %s…".format(found.version)
+        scope.launch {
+            val result =
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        Updater.download(context, found) { percent -> progress = percent }
+                    }
+                }
+            busy = false
+            result
+                .onSuccess { file ->
+                    progress = 100
+                    message = "Скачано, открываем установщик"
+                    Log.i(TAG, "обновление: скачано %d б (%s)".format(file.length(), file.name))
+                    runCatching { Updater.install(context, file) }
+                        .onFailure { error ->
+                            message = "Не удалось открыть установщик: %s".format(error.message)
+                            Log.i(TAG, "обновление: установщик не открылся — %s".format(error.toString()))
+                        }
+                }.onFailure { error ->
+                    progress = -1
+                    message = "Скачать не вышло: %s".format(error.message ?: "нет сети")
+                    Log.i(TAG, "обновление: скачивание не удалось — %s".format(error.message ?: error.toString()))
+                }
+        }
+    }
+
+    Column {
+        GroupTitle("🔄 Обновление")
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Design.tint(0.06f))
+                    .border(1.dp, Design.border, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+        ) {
+            Text(
+                text = "Установлена версия %s".format(current),
+                color = Design.textPrimary.copy(alpha = 0.9f),
+                fontSize = 13.6.sp,
+            )
+            Spacer(Modifier.size(4.dp))
+            Text(
+                text = "Проверка идёт по последнему релизу на GitHub. Приложение не обновляется само: " +
+                    "сначала оно предлагает версию, установку подтверждаешь ты.",
+                color = Design.textSecondary.copy(alpha = 0.75f),
+                fontSize = 12.5.sp,
+                lineHeight = 17.sp,
+            )
+            message?.let { text ->
+                Spacer(Modifier.size(6.dp))
+                Text(
+                    text = text,
+                    color = if (release != null) accent else Design.textSecondary,
+                    fontSize = 12.5.sp,
+                    lineHeight = 17.sp,
+                )
+            }
+            if (busy && progress >= 0) {
+                Spacer(Modifier.size(8.dp))
+                Text(text = "скачано %d%%".format(progress), color = accent, fontSize = 12.5.sp)
+                Spacer(Modifier.size(5.dp))
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Design.border),
+                ) {
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth(progress.coerceIn(0, 100) / 100f)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(accent),
+                    )
+                }
+            }
+
+            Spacer(Modifier.size(10.dp))
+            val found = release
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 46.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(accent.copy(alpha = if (busy) 0.35f else 0.9f))
+                        .clickable(enabled = !busy) {
+                            Haptics.tick(view)
+                            if (found == null) check() else downloadAndInstall(found)
+                        },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text =
+                        when {
+                            busy && progress >= 0 -> "Скачиваем…"
+                            busy -> "Проверяем…"
+                            found != null -> "Скачать и установить %s".format(found.version)
+                            else -> "Проверить обновление"
+                        },
+                    color = Color.White,
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Spacer(Modifier.size(6.dp))
+            Text(
+                text = "Все релизы на GitHub",
+                color = Design.textSecondary.copy(alpha = 0.8f),
+                fontSize = 12.5.sp,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable {
+                            Haptics.tick(view)
+                            Updater.openReleases(context)
+                        }.padding(vertical = 6.dp),
+            )
+        }
+    }
 }
