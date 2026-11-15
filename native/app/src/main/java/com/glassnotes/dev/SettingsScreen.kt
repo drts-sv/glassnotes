@@ -282,43 +282,9 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
-                    // ---------- 🎨 Тема и стекло ----------
-                    SettingsGroup("🎨 Тема и стекло", null, openTheme, { openTheme = !openTheme }) {
-                        SliderRow("Плотность стекла", glass, 15f..95f, 15, "%d%%".format(glass.roundToInt()), accent, { glass = it }) {
-                            store.setKv(AppSettings.GLASS_ALPHA, glass.roundToInt().toString())
-                            Design.cardAlpha = glass / 100f
-                        }
-                        SliderRow("Затемнение фона", veil, 0f..90f, 17, "%d%%".format(veil.roundToInt()), accent, { veil = it }) {
-                            store.setKv(AppSettings.APP_VEIL, veil.roundToInt().toString())
-                            Design.veil = veil / 100f
-                        }
-                        SliderRow("Размытие фона (стекло)", blur, 0f..40f, 19, "%dpx".format(blur.roundToInt()), accent, { blur = it }) {
-                            store.setKv(AppSettings.BG_BLUR, blur.roundToInt().toString())
-                            Design.backdropBlur = blur.roundToInt().dp
-                        }
-                        // Светлая/тёмная тема — как в боевом приложении: выбор из трёх плиток,
-                        // «как в системе» идёт за настройкой Android.
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            listOf(
-                                "dark" to "🌙 Тёмная",
-                                "light" to "☀️ Светлая",
-                                "auto" to "🔄 Системная",
-                            ).forEach { (mode, label) ->
-                                Tile(label, themeMode == mode, accent, Modifier.weight(1f)) {
-                                    themeMode = mode
-                                    store.setKv(AppSettings.THEME, mode)
-                                    Design.setTheme(mode, systemDark)
-                                }
-                            }
-                        }
-                    }
-
-                    // ---------- 🎛 График записи (перенесено с экрана записи) ----------
+                    // ---------- 🎙 Звук и распознавание (звук записи и распознавание) ----------
                     SettingsGroup(
-                        "🎛 График записи",
+                        "🎙 Звук и распознавание",
                         "%.0f дБ · %.2f".format(dbWindow, noiseGate),
                         openWave,
                         { openWave = !openWave },
@@ -347,128 +313,6 @@ fun SettingsScreen(
                             store.setKv("threads", threads.roundToInt().toString())
                             GigaAmOnnxRecognizer.intraOpThreads = threads.roundToInt()
                         }
-                    }
-
-                    // ---------- ⏱ Таймеры ----------
-                    SettingsGroup(
-                        "⏱ Таймеры",
-                        "держ. %.1f с вправо · %.1f с влево".format(holdDoneSec, holdDeleteSec),
-                        openTimers,
-                        { openTimers = !openTimers },
-                    ) {
-                        // Удержание свайпа: вправо — «выполнено», влево — «удалить». Удаление дольше,
-                        // чтобы не снести заметку случайным движением.
-                        // Шаг полсекунды: range 0..10 и 19 промежуточных точек дают 0.5 с.
-                        SliderRow("Удержание свайпа вправо (выполнено)", holdDoneSec, 0f..10f, 19, "%.1f с".format(holdDoneSec), accent, { holdDoneSec = it }) {
-                            store.setKv(AppSettings.HOLD_DONE_SEC, "%.1f".format(java.util.Locale.US, holdDoneSec))
-                        }
-                        SliderRow("Удержание свайпа влево (удалить)", holdDeleteSec, 0f..10f, 19, "%.1f с".format(holdDeleteSec), accent, { holdDeleteSec = it }) {
-                            store.setKv(AppSettings.HOLD_DELETE_SEC, "%.1f".format(java.util.Locale.US, holdDeleteSec))
-                        }
-                        SliderRow("Таймер сплэша категорий", catSheetSec, 0f..15f, 29, "%.1f с".format(catSheetSec), accent, { catSheetSec = it }) {
-                            store.setKv(AppSettings.CAT_SHEET_SEC, "%.1f".format(java.util.Locale.US, catSheetSec))
-                        }
-                        // Автоудаление выполненных (заметка #68): 0 — хранить всегда.
-                        // Чистка идёт при запуске приложения, чтобы не трогать список под пальцем.
-                        SliderRow(
-                            "Хранить выполненные",
-                            doneRetention,
-                            0f..90f,
-                            89,
-                            if (doneRetention < 1f) "всегда" else "%d дн".format(doneRetention.roundToInt()),
-                            accent,
-                            { doneRetention = it },
-                        ) {
-                            store.setKv(AppSettings.DONE_RETENTION_DAYS, doneRetention.roundToInt().toString())
-                            Log.i(TAG, "настройки: хранить выполненные %d дн".format(doneRetention.roundToInt()))
-                        }
-                    }
-
-                    // ---------- 🏷 Категории ----------
-                    SettingsGroup("🏷 Категории", if (voiceCategory) "голосом" else "вручную", openCats, { openCats = !openCats }) {
-                        ToggleRow("Спрашивать категорию после записи", askCategory) {
-                            askCategory = it
-                            AppSettings.setFlag(store, AppSettings.ASK_CATEGORY, it)
-                        }
-                        ToggleRow("Распознавать категории голосом", voiceCategory) {
-                            voiceCategory = it
-                            AppSettings.setFlag(store, AppSettings.VOICE_CATEGORY, it)
-                            NluOptions.voiceCategory = it
-                            Log.i(TAG, "настройки: категория голосом %s".format(if (it) "вкл" else "выкл"))
-                        }
-                        ToggleRow("Чистить слова-паразиты", filler) {
-                            filler = it
-                            AppSettings.setFlag(store, AppSettings.FILLER, it)
-                            NluOptions.fillerCleanup = it
-                        }
-                    }
-
-                    // ---------- ⏰ Время по умолчанию ----------
-                    SettingsGroup("⏰ Время по умолчанию", null, openTimes, { openTimes = !openTimes }) {
-                        Column(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(Design.tint(0.06f))
-                                    .border(1.dp, Design.border, RoundedCornerShape(16.dp)),
-                        ) {
-                            AppSettings.timeRows.forEachIndexed { index, row ->
-                                val label = row.first
-                                val key = row.second
-                                Row(
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                Haptics.tick(view)
-                                                pickTime(context, times[key] ?: "") { picked -> setTime(key, picked) }
-                                            }.padding(horizontal = 14.dp, vertical = 10.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(text = label, color = Design.textPrimary.copy(alpha = 0.85f), fontSize = 13.6.sp)
-                                    Text(text = times[key] ?: "", color = accent, fontSize = 13.6.sp, fontWeight = FontWeight.Medium)
-                                }
-                                if (index < AppSettings.timeRows.size - 1) {
-                                    Box(Modifier.fillMaxWidth().size(1.dp).background(Design.tint(0.03f)))
-                                }
-                            }
-                        }
-                    }
-
-                    // ---------- 🌅 Утреннее ревью ----------
-                    SettingsGroup("🌅 Утреннее ревью", if (reviewOn) reviewTime else "выключено", openReview, { openReview = !openReview }) {
-                        ToggleRow("Показывать дела на день", reviewOn) { on ->
-                            reviewOn = on
-                            AppSettings.setFlag(store, AppSettings.REVIEW_ENABLED, on)
-                            if (on) Reminders.scheduleReview(context) else Reminders.cancelReview(context)
-                            Log.i(TAG, "настройки: утреннее ревью %s".format(if (on) "включено" else "выключено"))
-                        }
-                        Row(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(Design.tint(0.06f))
-                                    .border(1.dp, Design.border, RoundedCornerShape(16.dp))
-                                    .clickable {
-                                        Haptics.tick(view)
-                                        pickTime(context, reviewTime) { picked -> setTime("review", picked) }
-                                    }.padding(horizontal = 14.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text("⏰ Во сколько", color = Design.textPrimary.copy(alpha = 0.85f), fontSize = 13.6.sp)
-                            Text(text = reviewTime, color = accent, fontSize = 13.6.sp, fontWeight = FontWeight.Medium)
-                        }
-                        Text(
-                            text = "Утром приходит напоминание, а при первом открытии после этого времени " +
-                                "показывается список дел: просроченные, на сегодня и без срока.",
-                            color = Design.textSecondary.copy(alpha = 0.7f),
-                            fontSize = 12.5.sp,
-                            lineHeight = 16.sp,
-                        )
                     }
 
                     // ---------- 🧠 Модель распознавания ----------
@@ -647,22 +491,125 @@ fun SettingsScreen(
                         )
                     }
 
-                    // ---------- 🧩 Кнопка записи ----------
-                    Column {
-                        GroupTitle("🧩 Кнопка записи")
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                            Tile("⇤ Слева", fabPos == "left", accent, Modifier.weight(1f)) {
-                                fabPos = "left"
-                                store.setKv("fabPos", "left")
+                    // ---------- 🏷 Категории ----------
+                    SettingsGroup("🏷 Категории", if (voiceCategory) "голосом" else "вручную", openCats, { openCats = !openCats }) {
+                        ToggleRow("Спрашивать категорию после записи", askCategory) {
+                            askCategory = it
+                            AppSettings.setFlag(store, AppSettings.ASK_CATEGORY, it)
+                        }
+                        ToggleRow("Распознавать категории голосом", voiceCategory) {
+                            voiceCategory = it
+                            AppSettings.setFlag(store, AppSettings.VOICE_CATEGORY, it)
+                            NluOptions.voiceCategory = it
+                            Log.i(TAG, "настройки: категория голосом %s".format(if (it) "вкл" else "выкл"))
+                        }
+                        ToggleRow("Чистить слова-паразиты", filler) {
+                            filler = it
+                            AppSettings.setFlag(store, AppSettings.FILLER, it)
+                            NluOptions.fillerCleanup = it
+                        }
+                    }
+
+                    // ---------- ⏰ Время по умолчанию ----------
+                    SettingsGroup("⏰ Время по умолчанию", null, openTimes, { openTimes = !openTimes }) {
+                        Column(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Design.tint(0.06f))
+                                    .border(1.dp, Design.border, RoundedCornerShape(16.dp)),
+                        ) {
+                            AppSettings.timeRows.forEachIndexed { index, row ->
+                                val label = row.first
+                                val key = row.second
+                                Row(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                Haptics.tick(view)
+                                                pickTime(context, times[key] ?: "") { picked -> setTime(key, picked) }
+                                            }.padding(horizontal = 14.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(text = label, color = Design.textPrimary.copy(alpha = 0.85f), fontSize = 13.6.sp)
+                                    Text(text = times[key] ?: "", color = accent, fontSize = 13.6.sp, fontWeight = FontWeight.Medium)
+                                }
+                                if (index < AppSettings.timeRows.size - 1) {
+                                    Box(Modifier.fillMaxWidth().size(1.dp).background(Design.tint(0.03f)))
+                                }
                             }
-                            Tile("⇔ Центр", fabPos == "center", accent, Modifier.weight(1f)) {
-                                fabPos = "center"
-                                store.setKv("fabPos", "center")
-                            }
-                            Tile("Справа ⇥", fabPos == "right", accent, Modifier.weight(1f)) {
-                                fabPos = "right"
-                                store.setKv("fabPos", "right")
-                            }
+                        }
+                    }
+
+                    // ---------- 🌅 Утреннее ревью ----------
+                    SettingsGroup("🌅 Утреннее ревью", if (reviewOn) reviewTime else "выключено", openReview, { openReview = !openReview }) {
+                        ToggleRow("Показывать дела на день", reviewOn) { on ->
+                            reviewOn = on
+                            AppSettings.setFlag(store, AppSettings.REVIEW_ENABLED, on)
+                            if (on) Reminders.scheduleReview(context) else Reminders.cancelReview(context)
+                            Log.i(TAG, "настройки: утреннее ревью %s".format(if (on) "включено" else "выключено"))
+                        }
+                        Row(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Design.tint(0.06f))
+                                    .border(1.dp, Design.border, RoundedCornerShape(16.dp))
+                                    .clickable {
+                                        Haptics.tick(view)
+                                        pickTime(context, reviewTime) { picked -> setTime("review", picked) }
+                                    }.padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("⏰ Во сколько", color = Design.textPrimary.copy(alpha = 0.85f), fontSize = 13.6.sp)
+                            Text(text = reviewTime, color = accent, fontSize = 13.6.sp, fontWeight = FontWeight.Medium)
+                        }
+                        Text(
+                            text = "Утром приходит напоминание, а при первом открытии после этого времени " +
+                                "показывается список дел: просроченные, на сегодня и без срока.",
+                            color = Design.textSecondary.copy(alpha = 0.7f),
+                            fontSize = 12.5.sp,
+                            lineHeight = 16.sp,
+                        )
+                    }
+
+                    // ---------- ⏱ Таймеры ----------
+                    SettingsGroup(
+                        "⏱ Таймеры",
+                        "держ. %.1f с вправо · %.1f с влево".format(holdDoneSec, holdDeleteSec),
+                        openTimers,
+                        { openTimers = !openTimers },
+                    ) {
+                        // Удержание свайпа: вправо — «выполнено», влево — «удалить». Удаление дольше,
+                        // чтобы не снести заметку случайным движением.
+                        // Шаг полсекунды: range 0..10 и 19 промежуточных точек дают 0.5 с.
+                        SliderRow("Удержание свайпа вправо (выполнено)", holdDoneSec, 0f..10f, 19, "%.1f с".format(holdDoneSec), accent, { holdDoneSec = it }) {
+                            store.setKv(AppSettings.HOLD_DONE_SEC, "%.1f".format(java.util.Locale.US, holdDoneSec))
+                        }
+                        SliderRow("Удержание свайпа влево (удалить)", holdDeleteSec, 0f..10f, 19, "%.1f с".format(holdDeleteSec), accent, { holdDeleteSec = it }) {
+                            store.setKv(AppSettings.HOLD_DELETE_SEC, "%.1f".format(java.util.Locale.US, holdDeleteSec))
+                        }
+                        SliderRow("Таймер сплэша категорий", catSheetSec, 0f..15f, 29, "%.1f с".format(catSheetSec), accent, { catSheetSec = it }) {
+                            store.setKv(AppSettings.CAT_SHEET_SEC, "%.1f".format(java.util.Locale.US, catSheetSec))
+                        }
+                        // Автоудаление выполненных (заметка #68): 0 — хранить всегда.
+                        // Чистка идёт при запуске приложения, чтобы не трогать список под пальцем.
+                        SliderRow(
+                            "Хранить выполненные",
+                            doneRetention,
+                            0f..90f,
+                            89,
+                            if (doneRetention < 1f) "всегда" else "%d дн".format(doneRetention.roundToInt()),
+                            accent,
+                            { doneRetention = it },
+                        ) {
+                            store.setKv(AppSettings.DONE_RETENTION_DAYS, doneRetention.roundToInt().toString())
+                            Log.i(TAG, "настройки: хранить выполненные %d дн".format(doneRetention.roundToInt()))
                         }
                     }
 
@@ -685,6 +632,59 @@ fun SettingsScreen(
                         if (!contactsGranted) {
                             Tile("👤 Разрешить доступ", false, accent, Modifier.fillMaxWidth()) {
                                 contactsLauncher.launch(android.Manifest.permission.READ_CONTACTS)
+                            }
+                        }
+                    }
+
+                    // ---------- 🎨 Тема и стекло ----------
+                    SettingsGroup("🎨 Тема и стекло", null, openTheme, { openTheme = !openTheme }) {
+                        SliderRow("Плотность стекла", glass, 15f..95f, 15, "%d%%".format(glass.roundToInt()), accent, { glass = it }) {
+                            store.setKv(AppSettings.GLASS_ALPHA, glass.roundToInt().toString())
+                            Design.cardAlpha = glass / 100f
+                        }
+                        SliderRow("Затемнение фона", veil, 0f..90f, 17, "%d%%".format(veil.roundToInt()), accent, { veil = it }) {
+                            store.setKv(AppSettings.APP_VEIL, veil.roundToInt().toString())
+                            Design.veil = veil / 100f
+                        }
+                        SliderRow("Размытие фона (стекло)", blur, 0f..40f, 19, "%dpx".format(blur.roundToInt()), accent, { blur = it }) {
+                            store.setKv(AppSettings.BG_BLUR, blur.roundToInt().toString())
+                            Design.backdropBlur = blur.roundToInt().dp
+                        }
+                        // Светлая/тёмная тема — как в боевом приложении: выбор из трёх плиток,
+                        // «как в системе» идёт за настройкой Android.
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            listOf(
+                                "dark" to "🌙 Тёмная",
+                                "light" to "☀️ Светлая",
+                                "auto" to "🔄 Системная",
+                            ).forEach { (mode, label) ->
+                                Tile(label, themeMode == mode, accent, Modifier.weight(1f)) {
+                                    themeMode = mode
+                                    store.setKv(AppSettings.THEME, mode)
+                                    Design.setTheme(mode, systemDark)
+                                }
+                            }
+                        }
+                    }
+
+                    // ---------- 🧩 Кнопка записи ----------
+                    Column {
+                        GroupTitle("🧩 Кнопка записи")
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                            Tile("⇤ Слева", fabPos == "left", accent, Modifier.weight(1f)) {
+                                fabPos = "left"
+                                store.setKv("fabPos", "left")
+                            }
+                            Tile("⇔ Центр", fabPos == "center", accent, Modifier.weight(1f)) {
+                                fabPos = "center"
+                                store.setKv("fabPos", "center")
+                            }
+                            Tile("Справа ⇥", fabPos == "right", accent, Modifier.weight(1f)) {
+                                fabPos = "right"
+                                store.setKv("fabPos", "right")
                             }
                         }
                     }
@@ -845,6 +845,7 @@ fun SettingsScreen(
                             Text(text = "Сбросить все настройки", color = Color(0xFFFF6B6B), fontSize = 14.4.sp)
                         }
                     }
+
 
                     // .apply-btn: 14 по вертикали, радиус 60, стекло.
                     Box(

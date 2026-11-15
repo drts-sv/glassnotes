@@ -1312,7 +1312,8 @@ private fun RecordButton(
     Box(
         modifier =
             modifier
-                .size(46.dp)
+                // Владелец просил кнопку записи крупнее — ровно в 2 раза (46 → 92 dp).
+                .size(92.dp)
                 .then(
                     Modifier
                         .androidxShadow()
@@ -1333,7 +1334,7 @@ private fun RecordButton(
             painter = painterResource(R.drawable.ic_mic),
             contentDescription = "Записать",
             colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Design.textPrimary),
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(44.dp),
         )
     }
 }
