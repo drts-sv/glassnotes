@@ -27,9 +27,11 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -171,8 +173,11 @@ fun RecordingScreen(
     // #115: что подсказал разбор текста — эта категория показывается в окне первой.
     var askCatHint by remember { mutableStateOf<String?>(null) }
 
-    /** #84: контакт, найденный в тексте, — предлагаем прикрепить к заметке. */
-    var askContact by remember { mutableStateOf<NoteContact?>(null) }
+    /** #84: контакты, найденные в тексте. Один — предлагаем прикрепить, несколько — выбор. */
+    var askContacts by remember { mutableStateOf<List<NoteContact>>(emptyList()) }
+
+    /** По какому слову совпали тёзки — ключ памяти выбора. */
+    var askContactWord by remember { mutableStateOf<String?>(null) }
 
     /** Заметка, к которой предлагается контакт. */
     var askContactFor by remember { mutableStateOf<Long?>(null) }
@@ -245,15 +250,37 @@ fun RecordingScreen(
             } else {
                 null
             }
-        // #84: ищем в тексте фамилию из телефонной книги. Если в заметке есть «позвонить» —
-        // контакт крепится сразу, иначе предлагаем кнопкой (окно появляется после записи).
-        val person = Contacts.findMention(context, parsed.text)
-        val contact = person?.let { NoteContact(it.id, it.name, it.number) }
-        val attachNow = contact != null && Contacts.wantsCall(parsed.text)
-        if (contact != null) {
+        // #84: ищем в тексте фамилию из телефонной книги. Одна фамилия — один контакт,
+        // несколько тёзок — список на выбор (суженный по имени/отчеству). Слово «позвонить»
+        // крепит контакт молча, но только когда он один: при тёзках надо спросить, кому звонить.
+        val found = Contacts.findMentions(context, parsed.text)
+        val contacts = found.map { NoteContact(it.person.id, it.person.name, it.person.number) }
+        // Если для этой фамилии уже выбирали человека — он идёт первым и при «позвонить»
+        // крепится молча: второй раз одно и то же спрашивать незачем.
+        val rememberedId = found.firstOrNull()?.let { Contacts.remembered(context, it.word) }
+        val remembered =
+            found.firstOrNull { it.person.id == rememberedId }?.let {
+                NoteContact(it.person.id, it.person.name, it.person.number)
+            }
+        val attachNow =
+            when {
+                contacts.isEmpty() -> false
+                contacts.size == 1 -> Contacts.wantsCall(parsed.text)
+                else -> remembered != null && Contacts.wantsCall(parsed.text)
+            }
+        val contact = remembered ?: contacts.firstOrNull()
+        if (contacts.isNotEmpty()) {
             Log.i(
                 TAG,
-                "контакт в тексте: %s, прикрепляем %s".format(contact.name, if (attachNow) "сразу" else "по вопросу"),
+                "контактов в тексте: %d (%s), прикрепляем %s".format(
+                    contacts.size,
+                    contacts.joinToString(", ") { it.name },
+                    when {
+                        attachNow -> "сразу"
+                        contacts.size > 1 -> "по выбору"
+                        else -> "по вопросу"
+                    },
+                ),
             )
         }
         val id =
@@ -264,10 +291,11 @@ fun RecordingScreen(
                 allDay = parsed.allDay,
                 contact = if (attachNow) contact else null,
             )
-        if (contact != null && !attachNow) {
-            askContact = contact
+        if (contacts.isNotEmpty() && !attachNow) {
+            askContacts = contacts
+            askContactWord = found.firstOrNull()?.word
             askContactFor = id
-            askContactLeft = 4
+            askContactLeft = if (contacts.size > 1) 8 else 4
         }
         // Счётчик берём напрямую: notesCount объявлен ниже по коду, из локальной функции он не виден.
         val total = store.count()
@@ -307,7 +335,7 @@ fun RecordingScreen(
     /** Сохранить сеанс и уйти со экрана; если категорию надо спросить — остаёмся на окне. */
     fun finishSession() {
         saveSession()
-        if (askCatId == null && askContact == null) onClose()
+        if (askCatId == null && askContacts.isEmpty()) onClose()
     }
 
     /** Остановить запись и сохранить заметку: путь общий для кнопки и авто-остановки. */
@@ -588,15 +616,17 @@ fun RecordingScreen(
     }
 
     // Окно «прикрепить контакт?» живёт недолго: не мешаем закрыть запись.
-    LaunchedEffect(askContact) {
-        val person = askContact ?: return@LaunchedEffect
+    // На выбор из тёзок даём вдвое больше времени.
+    LaunchedEffect(askContacts) {
+        val list = askContacts
+        if (list.isEmpty()) return@LaunchedEffect
         while (askContactLeft > 0) {
             delay(1000)
             askContactLeft -= 1
         }
-        if (askContact == person) {
-            Log.i(TAG, "контакт %s не прикреплён — окно закрылось".format(person.name))
-            askContact = null
+        if (askContacts == list) {
+            Log.i(TAG, "контакт не прикреплён — окно закрылось (%d вариантов)".format(list.size))
+            askContacts = emptyList()
             askContactFor = null
             onClose()
         }
@@ -984,19 +1014,25 @@ fun RecordingScreen(
 
             // Окно выбора категории (заметка #74): появляется после записи, если категорию
             // не назвали и не выбрали. Голосом категорию не определяем — только этим окном.
-            if (askCatId == null && askContact != null) {
+            if (askCatId == null && askContacts.isNotEmpty()) {
                 AskContactOverlay(
-                    contact = askContact!!,
+                    contacts = askContacts,
                     secondsLeft = askContactLeft,
                     accent = accent,
-                    onAttach = { attach ->
+                    onAttach = { person ->
                         val target = askContactFor
-                        val person = askContact
-                        if (target != null && person != null && attach) {
+                        if (target != null && person != null) {
                             store.setContact(target, person)
+                            // Запоминаем выбор: в следующий раз этот человек будет первым,
+                            // а при слове «позвонить» — прикрепится без вопроса.
+                            if (askContacts.size > 1) {
+                                askContactWord?.let { word ->
+                                    Contacts.rememberPick(context, word, person.id, person.name)
+                                }
+                            }
                             Log.i(TAG, "контакт %s прикреплён к заметке #%d".format(person.name, target))
                         }
-                        askContact = null
+                        askContacts = emptyList()
                         askContactFor = null
                         onClose()
                     },
@@ -1016,7 +1052,7 @@ fun RecordingScreen(
                         }
                         askCatId = null
                         askCatHint = null
-                        if (askContact == null) onClose()
+                        if (askContacts.isEmpty()) onClose()
                     },
                 )
             }
@@ -1064,19 +1100,22 @@ private fun ParamSlider(
 /**
  * #84: «Прикрепить контакт?» — короткое окно после записи, если фамилия из телефонной книги
  * нашлась в тексте, а слова «позвонить» не было (тогда контакт крепится молча).
+ * Если тёзок несколько, вместо одного контакта — список: человек выбирает, кому звонить.
  */
 @Composable
 private fun AskContactOverlay(
-    contact: NoteContact,
+    contacts: List<NoteContact>,
     secondsLeft: Int,
     accent: Color,
-    onAttach: (Boolean) -> Unit,
+    onAttach: (NoteContact?) -> Unit,
 ) {
+    val single = contacts.size == 1
     Box(
         modifier =
             Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f)),
+                .background(Color.Black.copy(alpha = 0.45f))
+                .clickable { onAttach(null) },
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -1086,28 +1125,81 @@ private fun AskContactOverlay(
                     .clip(RoundedCornerShape(24.dp))
                     .background(Design.glassRgb.copy(alpha = 0.96f))
                     .border(1.dp, Design.border, RoundedCornerShape(24.dp))
+                    .clickable { }
                     .padding(horizontal = 16.dp, vertical = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ContactAvatar(contact = contact, size = 58.dp, accent = accent)
+            if (single) {
+                ContactAvatar(contact = contacts.first(), size = 58.dp, accent = accent)
+            }
             Text(
-                text = "Прикрепить контакт?",
+                text = if (single) "Прикрепить контакт?" else "Кого прикрепить?",
                 color = Design.textPrimary,
                 fontSize = 17.sp,
                 modifier = Modifier.padding(top = 10.dp),
             )
-            Text(
-                text = "%s · %s".format(contact.name, contact.number),
-                color = Design.textSecondary,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(top = 2.dp),
-            )
+            if (single) {
+                Text(
+                    text = "%s · %s".format(contacts.first().name, contacts.first().number),
+                    color = Design.textSecondary,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            } else {
+                Text(
+                    text = "В книге несколько человек с этой фамилией",
+                    color = Design.textSecondary.copy(alpha = 0.8f),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+                Spacer(Modifier.height(10.dp))
+                // Строки-варианты: тап по строке сразу крепит этот контакт.
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 260.dp)
+                            .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    contacts.forEach { c ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Design.glassRgb.copy(alpha = 0.45f))
+                                    .border(1.dp, Design.border, RoundedCornerShape(14.dp))
+                                    .clickable { onAttach(c) }
+                                    .padding(horizontal = 9.dp, vertical = 7.dp),
+                        ) {
+                            ContactAvatar(contact = c, size = 32.dp, accent = accent)
+                            Spacer(Modifier.width(9.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = c.name,
+                                    color = Design.textPrimary,
+                                    fontSize = 14.sp,
+                                    maxLines = 1,
+                                )
+                                Text(
+                                    text = c.number,
+                                    color = Design.textSecondary,
+                                    fontSize = 11.5.sp,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             if (secondsLeft > 0) {
                 Text(
                     text = "закроется через %d с".format(secondsLeft),
                     color = Design.textSecondary.copy(alpha = 0.7f),
                     fontSize = 11.sp,
-                    modifier = Modifier.padding(top = 2.dp),
+                    modifier = Modifier.padding(top = 6.dp),
                 )
             }
             Row(
@@ -1122,7 +1214,7 @@ private fun AskContactOverlay(
                             .clip(RoundedCornerShape(14.dp))
                             .background(Design.glassRgb.copy(alpha = 0.55f))
                             .border(1.dp, Design.border, RoundedCornerShape(14.dp))
-                            .clickable { onAttach(false) },
+                            .clickable { onAttach(null) },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text("Не надо", color = Design.textPrimary, fontSize = 14.sp)
@@ -1134,10 +1226,15 @@ private fun AskContactOverlay(
                             .height(44.dp)
                             .clip(RoundedCornerShape(14.dp))
                             .background(accent.copy(alpha = 0.92f))
-                            .clickable { onAttach(true) },
+                            .clickable { onAttach(contacts.firstOrNull()) },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("Прикрепить", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = if (single) "Прикрепить" else "Первый",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
             }
         }

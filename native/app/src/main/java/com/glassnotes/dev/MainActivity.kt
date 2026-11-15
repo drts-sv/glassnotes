@@ -309,6 +309,31 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "contact_demo_clean: убрано %d".format(removed))
         }
 
+        // Проверка выбора из тёзок: как сужается список по имени/отчеству и по памяти выбора.
+        if (intent?.getBooleanExtra("pick_test", false) == true) {
+            Thread {
+                val phrases =
+                    listOf(
+                        "позвонить Шиденко",
+                        "позвонить Павлу Шиденко",
+                        "позвонить Шиденко Павлу Викторовичу",
+                        "перезвонить Ольге Шиденко",
+                        "набрать Ивановой",
+                    )
+                phrases.forEach { phrase ->
+                    Log.i(TAG, "pick_test-очки «$phrase»:" + Contacts.debugScores(this, phrase))
+                    val found = Contacts.findMentions(this, phrase)
+                    Log.i(
+                        TAG,
+                        "pick_test «%s» → %d: %s".format(
+                            phrase,
+                            found.size,
+                            found.joinToString(" | ") { it.person.name + " · " + it.person.number },
+                        ),
+                    )
+                }
+            }.start()
+        }
         if (intent?.getBooleanExtra("fix_test", false) == true) {
             // #148: автоподстановка фамилий — проверяем на реальной книге: берём настоящую
             // фамилию, портим одну букву (как слышит ASR) и смотрим, вернётся ли написание.

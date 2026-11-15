@@ -2,6 +2,8 @@ package com.glassnotes.dev
 
 import androidx.compose.ui.draw.shadow
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
 
 import androidx.compose.foundation.layout.heightIn
@@ -178,6 +180,10 @@ fun NotesScreen(
     // #84/#148: контакт в редакторе. Сняли крестиком — больше не ищем автоматически.
     var editContact by remember { mutableStateOf<NoteContact?>(null) }
     var editContactDropped by remember { mutableStateOf(false) }
+
+    // #84: в редакторе тап по контакту открывает свой выбор из книги. Системный ACTION_PICK
+    // каждый раз спрашивает «чем открыть» — своя книга этого диалога не даёт вообще.
+    var contactPickOpen by remember { mutableStateOf(false) }
     // #117/#118: «Улучшить текст» через DeepSeek — запрос уходит из редактора, ответ показываем
     // в отдельной панели, чтобы «Применить» не теряло исходный текст.
     var aiOpen by remember { mutableStateOf(false) }
@@ -513,7 +519,7 @@ fun NotesScreen(
                                 .border(1.dp, Design.border, RoundedCornerShape(14.dp))
                                 .clickable {
                                     Haptics.tick(screenView)
-                                    Contacts.dial(context, c.number)
+                                    contactPickOpen = true
                                 }.padding(horizontal = 8.dp, vertical = 6.dp),
                     ) {
                         ContactAvatar(c, 30.dp, accent)
@@ -539,6 +545,30 @@ fun NotesScreen(
                                     editContactDropped = true
                                     Log.i("GlasNotesDev", "контакт снят в редакторе заметки #%d".format(note.id))
                                 }.padding(8.dp),
+                        )
+                    }
+                }
+                if (editContact == null) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Design.glassRgb.copy(alpha = 0.35f))
+                                .border(1.dp, Design.border, RoundedCornerShape(14.dp))
+                                .clickable {
+                                    Haptics.tick(screenView)
+                                    contactPickOpen = true
+                                }.padding(horizontal = 10.dp, vertical = 9.dp),
+                    ) {
+                        Text("👤", fontSize = 14.sp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "Прикрепить контакт из книги",
+                            color = Design.textSecondary,
+                            fontSize = 13.5.sp,
                         )
                     }
                 }
@@ -1123,6 +1153,146 @@ fun NotesScreen(
                     Log.i("GlasNotesDev", "заметка #%d удалена из листа просмотра".format(note.id))
                 },
             )
+        }
+
+
+        if (contactPickOpen) {
+            ContactPickOverlay(
+                accent = accent,
+                onPick = { picked ->
+                    editContact = picked
+                    editContactDropped = false
+                    contactPickOpen = false
+                    Log.i("GlasNotesDev", "контакт выбран из книги: %s · %s".format(picked.name, picked.number))
+                },
+                onClose = { contactPickOpen = false },
+            )
+        }
+    }
+}
+
+/**
+ * #84: своя книга контактов — список с поиском по имени, фамилии и номеру.
+ * Системный ACTION_PICK показывал диалог «чем открыть» при каждом выборе, поэтому выбор свой.
+ */
+@Composable
+private fun ContactPickOverlay(
+    accent: Color,
+    onPick: (NoteContact) -> Unit,
+    onClose: () -> Unit,
+) {
+    val context = LocalContext.current
+    val view = LocalView.current
+    var query by remember { mutableStateOf("") }
+    // Книгу читаем один раз при открытии: 390 контактов, перечитывать на каждый символ незачем.
+    val people = remember { Contacts.people(context) }
+    val shown =
+        remember(people, query) {
+            val q = Contacts.normalizeText(query.trim())
+            val list =
+                if (q.isEmpty()) {
+                    people
+                } else {
+                    people.filter {
+                        Contacts.normalizeText(it.name).contains(q) || it.number.replace(" ", "").contains(q)
+                    }
+                }
+            list.sortedBy { it.name }.take(80)
+        }
+    Box(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f))
+                .clickable { onClose() },
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.82f)
+                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .background(Design.glassRgb.copy(alpha = 0.98f))
+                    .border(1.dp, Design.border, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .clickable { }
+                    .padding(horizontal = 14.dp, vertical = 14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("Контакты", color = Design.textPrimary, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                Text(
+                    text = "Х",
+                    color = Design.textSecondary,
+                    fontSize = 16.sp,
+                    modifier =
+                        Modifier.clickable {
+                            Haptics.tick(view)
+                            onClose()
+                        }.padding(6.dp),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            BasicTextField(
+                value = query,
+                onValueChange = { query = it },
+                singleLine = true,
+                textStyle = TextStyle(color = Design.textPrimary, fontSize = 15.sp),
+                decorationBox = { inner ->
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(42.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Design.glassRgb.copy(alpha = 0.5f))
+                                .border(1.dp, Design.border, RoundedCornerShape(12.dp))
+                                .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (query.isEmpty()) {
+                            Text(
+                                text = "Поиск по имени или номеру",
+                                color = Design.textSecondary.copy(alpha = 0.7f),
+                                fontSize = 14.sp,
+                            )
+                        }
+                        inner()
+                    }
+                },
+            )
+            Spacer(Modifier.height(8.dp))
+            if (people.isEmpty()) {
+                Text(
+                    text = "Нет доступа к контактам — разрешите его в настройках",
+                    color = Design.textSecondary,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items(shown) { person ->
+                        val contact = NoteContact(person.id, person.name, person.number)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        Haptics.tick(view)
+                                        onPick(contact)
+                                    }.padding(horizontal = 6.dp, vertical = 6.dp),
+                        ) {
+                            ContactAvatar(contact, 34.dp, accent)
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(person.name, color = Design.textPrimary, fontSize = 14.5.sp, maxLines = 1)
+                                Text(person.number, color = Design.textSecondary, fontSize = 11.5.sp, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

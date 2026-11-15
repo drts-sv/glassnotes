@@ -105,28 +105,169 @@ object Contacts {
         return list
     }
 
-    /** Найти в тексте упоминание контакта. Возвращает самое длинное совпадение (или null). */
+    /**
+     * Найти в тексте упоминание контакта. Возвращает самое длинное совпадение (или null).
+     * Оставлено для редактора, где нужен один контакт.
+     */
     fun findMention(
         context: Context,
         text: String,
-    ): Person? {
-        if (text.isBlank() || !hasAccess(context)) return null
+    ): Person? = findMentions(context, text).firstOrNull()?.person
+
+    /**
+     * Все контакты, чья фамилия (корень слова) есть в тексте.
+     *
+     * Если фамилия одна, а людей несколько («Шиденко» — три человека в книге), сужаем по имени
+     * и отчеству: считаем, сколько ещё слов из имени встречается в тексте, и оставляем тех,
+     * у кого совпало больше. Окончательный выбор остаётся за человеком — окно показывает список.
+     */
+    /**
+     * Скелет слова: только согласные, парные оглушены, удвоения схлопнуты.
+     * «Павлу» и «Павел» → «пвл», «Ольге» и «Ольга» → «лк», а «позвонить» → «псв» —
+     * поэтому имя в падеже находится, а «поздняков» к «позвонить» не цепляется.
+     */
+    private fun skeleton(word: String): String {
+        val sb = StringBuilder()
+        for (ch in normalize(word)) {
+            if (ch == 'ь' || ch == 'ъ') continue
+            if (ch !in 'а'..'я' && ch !in 'a'..'z') continue
+            // Первую гласную оставляем: без неё «Иванов» и «Ефанова» дают один скелет «фнф».
+            if (ch in "аеёиоуыэюя") {
+                if (sb.isEmpty()) sb.append(ch)
+                continue
+            }
+            val deg = DEAFEN[ch] ?: ch
+            if (sb.isNotEmpty() && sb.last() == deg) continue
+            sb.append(deg)
+        }
+        return sb.toString()
+    }
+
+    /** Слово текста и часть имени совпали по скелету согласных (падежи не мешают). */
+    private fun skeletonClose(
+        word: String,
+        part: String,
+    ): Boolean {
+        val sw = skeleton(word)
+        val sp = skeleton(part)
+        if (sw.length < 3 || sp.length < 3) return false
+        return sw == sp || (sw.startsWith(sp) && sw.length - sp.length <= 2)
+    }
+
+    /** Нормализация для поиска в списке контактов (нижний регистр, ё→е). */
+    fun normalizeText(value: String): String = normalize(value)
+
+    /** Части имени без скобок, дефисов и прочей пунктуации («Черная (Шиденко)» → два слова). */
+    private fun nameParts(name: String): List<String> =
+        normalize(name).split(Regex("[^а-я]+")).filter { it.length >= 4 }
+
+    /** Найденный контакт вместе со словом, по которому он совпал (по нему запоминаем выбор). */
+    data class Match(
+        val person: Person,
+        val word: String,
+    )
+
+    /** Ключ памяти: какая фамилия → кого выбрали в прошлый раз. */
+    private fun pickKey(word: String): String = "contact_pick:" + normalize(word).dropLast(1)
+
+    /** Сохранённый ранее выбор для этой фамилии (или null). */
+    fun remembered(
+        context: Context,
+        word: String,
+    ): Long? = NotesStore(context.applicationContext).getKv(pickKey(word))?.toLongOrNull()
+
+    /** Запомнить выбор: в следующий раз этот человек будет первым и закрепится без вопроса. */
+    fun rememberPick(
+        context: Context,
+        word: String,
+        id: Long,
+        name: String,
+    ) {
+        NotesStore(context.applicationContext).setKv(pickKey(word), id.toString())
+        android.util.Log.i("GlasNotesDev", "запомнен выбор контакта для «%s»: %s (#%d)".format(word, name, id))
+    }
+
+    fun findMentions(
+        context: Context,
+        text: String,
+    ): List<Match> {
+        if (text.isBlank() || !hasAccess(context)) return emptyList()
         val haystack = normalize(text)
-        var best: Person? = null
-        var bestLen = 0
+        val wordList = haystack.split(Regex("[^а-я0-9]+")).filter { it.length >= 3 }
+
+        // Собираем всех, чьи слова есть в тексте. Фамилия весит много: заметка «позвонить
+        // Шиденко» должна тянуть Шиденко, а не человека с именем Олег.
+        val hits = ArrayList<Triple<Person, String, Int>>() // контакт, фамилия, вес
         for (person in people(context)) {
-            for (part in normalize(person.name).split(' ', '.', '-')) {
-                if (part.length < 4) continue
+            val parts = nameParts(person.name)
+            if (parts.isEmpty()) continue
+            var score = 0
+            for ((index, part) in parts.withIndex()) {
                 // «Иванов» → «Ивано»: падежные окончания больше не мешают.
                 val stem = part.dropLast(1)
-                if (stem.length < 3 || stem.length <= bestLen) continue
-                if (containsWord(haystack, stem)) {
-                    best = person
-                    bestLen = stem.length
-                }
+                if (stem.length < 3) continue
+                // Совпало либо слово в косвенном падеже («шиденко»), либо начало слова
+                // («Павлу» ↔ «Павел»: три первые буквы).
+                val hit = containsWord(haystack, stem) || wordList.any { w -> skeletonClose(w, part) }
+                if (!hit) continue
+                score +=
+                    when {
+                        index == parts.lastIndex -> 10 // фамилия
+                        index == 0 -> 4 // имя
+                        else -> 2 // отчество и прочее
+                    }
             }
+            if (score > 0) hits.add(Triple(person, parts.last(), score))
         }
-        return best
+        if (hits.isEmpty()) return emptyList()
+        val best = hits.maxOf { it.third }
+        // Оставляем самых близких: «позвонить Павлу Шиденко» — это Павел Викторович,
+        // «позвонить Шиденко» без имени — все тёзки, список выберет человек.
+        val top = hits.filter { it.third == best }.distinctBy { it.first.id }
+        val word = top.first().second
+
+        // Универсальный порядок: сначала тот, кого выбирали в прошлый раз для этой фамилии,
+        // остальные — по алфавиту. Так «позвонить Шиденко» со второго раза крепит нужного.
+        val rememberedId = remembered(context, word)
+        return top
+            .sortedWith(compareBy({ if (it.first.id == rememberedId) 0 else 1 }, { it.first.name }))
+            .take(8)
+            .map { Match(it.first, word) }
+    }
+
+    /** Диагностика: все, кто набрал очки по тексту, с расшифровкой (только для тестовых запусков). */
+    fun debugScores(
+        context: Context,
+        text: String,
+    ): String {
+        if (!hasAccess(context)) return "нет доступа"
+        val haystack = normalize(text)
+        val wordList = haystack.split(Regex("[^а-я0-9]+")).filter { it.length >= 3 }
+        val out = StringBuilder()
+        for (person in people(context)) {
+            val parts = nameParts(person.name)
+            if (parts.isEmpty()) continue
+            var score = 0
+            val why = StringBuilder()
+            for ((index, part) in parts.withIndex()) {
+                val stem = part.dropLast(1)
+                if (stem.length < 3) continue
+                val byStem = containsWord(haystack, stem)
+                val word = wordList.firstOrNull { w -> skeletonClose(w, part) }
+                if (!byStem && word == null) continue
+                val w =
+                    when {
+                        index == parts.lastIndex -> 10
+                        index == 0 -> 4
+                        else -> 2
+                    }
+                score += w
+                why.append(" ").append(part).append(":").append(w)
+                if (word != null) why.append("~").append(word).append("→").append(skeleton(word))
+            }
+            if (score > 0) out.append("\n  ").append(person.name).append(" = ").append(score).append(" [").append(why).append(" ]")
+        }
+        return out.toString()
     }
 
     /** Итог автоподстановки: исправленный текст и список замен для тоста/лога. */
@@ -269,6 +410,43 @@ object Contacts {
         }
         if (differ <= 0 || differ >= a.length - 1) return false
         return (a[differ] == 'а' && b[differ] == 'е') || (a[differ] == 'е' && b[differ] == 'а')
+    }
+
+    /** Системный выбор телефона из книги контактов (в редакторе заметки). */
+    fun pickIntent(): android.content.Intent =
+        android.content.Intent(
+            android.content.Intent.ACTION_PICK,
+            android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+        )
+
+    /** Разобрать результат выбора: id, имя, номер. */
+    fun fromPicker(
+        context: Context,
+        data: android.content.Intent?,
+    ): NoteContact? {
+        val uri = data?.data ?: return null
+        val projection =
+            arrayOf(
+                android.provider.ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
+                android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER,
+            )
+        return try {
+            context.contentResolver.query(uri, projection, null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    NoteContact(
+                        c.getLong(0),
+                        c.getString(1) ?: "",
+                        c.getString(2) ?: "",
+                    )
+                } else {
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("GlasNotesDev", "выбор контакта из книги не удался: " + e.message)
+            null
+        }
     }
 
     /** Открыть клавиатуру набора с номером — звонок человек подтверждает сам. */
