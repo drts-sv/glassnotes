@@ -278,6 +278,37 @@ class MainActivity : ComponentActivity() {
             dateSelfTest().lines().forEach { line -> Log.i(TAG, "date_test: $line") }
         }
 
+        if (intent?.getBooleanExtra("contact_demo", false) == true) {
+            // Временная заметка с контактом: без диктовки иначе не проверить, как рисуется
+            // контакт в листе просмотра и в редакторе. Удаляется через contact_demo_clean.
+            val store = NotesStore(applicationContext)
+            val p = Contacts.people(this).firstOrNull { it.name.contains("Шиденко") }
+            val id =
+                store.add(
+                    "ПРОВЕРКА КОНТАКТА: позвонить Шиденко завтра",
+                    "personal",
+                    null,
+                    false,
+                    p?.let { NoteContact(it.id, it.name, it.number) },
+                )
+            Log.i(TAG, "contact_demo: заметка #%d, контакт %s".format(id, p?.name ?: "нет"))
+        }
+
+        if (intent?.getBooleanExtra("contact_demo_clean", false) == true) {
+            val store = NotesStore(applicationContext)
+            var removed = 0
+            for (line in store.recent(200)) {
+                val row = org.json.JSONObject(line)
+                if (row.optString("text").startsWith("ПРОВЕРКА КОНТАКТА")) {
+                    val id = row.optLong("id")
+                    store.remove(id)
+                    removed++
+                    Log.i(TAG, "contact_demo_clean: удалена заметка #%d".format(id))
+                }
+            }
+            Log.i(TAG, "contact_demo_clean: убрано %d".format(removed))
+        }
+
         if (intent?.getBooleanExtra("fix_test", false) == true) {
             // #148: автоподстановка фамилий — проверяем на реальной книге: берём настоящую
             // фамилию, портим одну букву (как слышит ASR) и смотрим, вернётся ли написание.
