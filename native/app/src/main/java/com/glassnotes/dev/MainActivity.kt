@@ -278,6 +278,21 @@ class MainActivity : ComponentActivity() {
             dateSelfTest().lines().forEach { line -> Log.i(TAG, "date_test: $line") }
         }
 
+        if (intent?.getBooleanExtra("contacts_test", false) == true) {
+            // #84: проверка доступа к телефонной книге и поиска фамилии в тексте.
+            val people = Contacts.people(this)
+            Log.i(TAG, "contacts_test: доступ %s, контактов с номером %d".format(Contacts.hasAccess(this), people.size))
+            Log.i(TAG, "contacts_test: имена — %s".format(people.take(12).joinToString(", ") { it.name }))
+            listOf(
+                "позвонить Иванову",
+                "набрать Петровой после обеда",
+                "встретиться с Сидоровым",
+            ).forEach { line ->
+                val hit = Contacts.findMention(this, line)
+                Log.i(TAG, "contacts_test: «%s» -> %s".format(line, hit?.let { it.name + " · " + it.number } ?: "нет"))
+            }
+        }
+
         if (intent?.getBooleanExtra("cat_test", false) == true) {
             // Автоопределение категории по ключевым словам: что и куда попадёт.
             CategoryHints.selfTest().lines().forEach { line -> Log.i(TAG, "cat_test: $line") }

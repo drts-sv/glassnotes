@@ -3,6 +3,23 @@ package com.glassnotes.dev
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** Контакт, прикреплённый к заметке (#84): id в телефонной книге, имя и номер. */
+data class NoteContact(
+    val id: Long,
+    val name: String,
+    val number: String,
+) {
+    /** «Иван Иванов» → «ИИ» — для кружка, если нет фото. */
+    val initials: String
+        get() =
+            name.split(' ')
+                .filter { it.isNotBlank() }
+                .take(2)
+                .map { it.first().uppercaseChar() }
+                .joinToString("")
+                .ifEmpty { "?" }
+}
+
 /** Одна заметка для списка: то, что нужно показать, а не весь JSON. */
 data class NoteRow(
     val id: Long,
@@ -13,6 +30,8 @@ data class NoteRow(
     /** Время напоминания (мс) — нужно отборам по дате. */
     val datetime: Long? = null,
     val allDay: Boolean = false,
+    /** Прикреплённый контакт — рисуется кружком в правом нижнем углу карточки. */
+    val contact: NoteContact? = null,
 ) {
     val done: Boolean get() = status == "done"
 }
@@ -77,7 +96,17 @@ fun parseNote(json: String): NoteRow? =
             categoryIds = categories,
             datetime = jsonDatetime(o),
             allDay = o.optBoolean("allDay"),
+            contact = parseContact(o),
         )
     } catch (_: Throwable) {
         null
     }
+
+/** Контакт из JSON заметки. Нет поля — нет кружка: заметка живёт как раньше. */
+fun parseContact(o: JSONObject): NoteContact? {
+    val raw = o.optJSONObject("contact") ?: return null
+    val name = raw.optString("name").trim()
+    val number = raw.optString("number").trim()
+    if (name.isEmpty() || number.isEmpty()) return null
+    return NoteContact(id = raw.optLong("id"), name = name, number = number)
+}

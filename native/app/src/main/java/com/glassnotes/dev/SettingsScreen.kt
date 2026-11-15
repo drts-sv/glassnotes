@@ -134,6 +134,19 @@ fun SettingsScreen(
     var dsOpen by remember { mutableStateOf(false) }
     var dsShow by remember { mutableStateOf(false) }
 
+    // #84: доступ к контактам — только по кнопке. Без него кружок контакта на заметке
+    // не появится и фамилия из текста не подставится.
+    var contactsOpen by remember { mutableStateOf(false) }
+    var contactsGranted by remember { mutableStateOf(Contacts.hasAccess(context)) }
+    val contactsLauncher =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+        ) { ok ->
+            contactsGranted = ok
+            Contacts.invalidate()
+            android.util.Log.i("GlasNotesDev", "доступ к контактам: %s".format(if (ok) "разрешён" else "отклонён"))
+        }
+
     var reviewOn by remember { mutableStateOf(AppSettings.flag(store, AppSettings.REVIEW_ENABLED, true)) }
     var reviewTime by remember { mutableStateOf(store.getKv(Reminders.REVIEW_TIME_KEY) ?: Reminders.DEFAULT_REVIEW_TIME) }
 
@@ -649,6 +662,29 @@ fun SettingsScreen(
                             Tile("Справа ⇥", fabPos == "right", accent, Modifier.weight(1f)) {
                                 fabPos = "right"
                                 store.setKv("fabPos", "right")
+                            }
+                        }
+                    }
+
+                    // ---------- 👤 Контакты (#84) ----------
+                    SettingsGroup(
+                        "👤 Контакты",
+                        if (contactsGranted) "доступ есть" else "доступа нет",
+                        contactsOpen,
+                        { contactsOpen = !contactsOpen },
+                    ) {
+                        Text(
+                            text = "С доступом к телефонной книге приложение ищет фамилию из текста заметки " +
+                                "и прикрепляет контакт: в заметке кружок, тап — набор номера. " +
+                                "Если в тексте есть «позвонить», контакт крепится сразу; в остальных случаях " +
+                                "спрашиваем кнопкой. Список контактов никуда не отправляется.",
+                            color = Design.textSecondary.copy(alpha = 0.75f),
+                            fontSize = 12.5.sp,
+                            lineHeight = 16.sp,
+                        )
+                        if (!contactsGranted) {
+                            Tile("👤 Разрешить доступ", false, accent, Modifier.fillMaxWidth()) {
+                                contactsLauncher.launch(android.Manifest.permission.READ_CONTACTS)
                             }
                         }
                     }

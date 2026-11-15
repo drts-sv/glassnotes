@@ -170,6 +170,15 @@ fun RecordingScreen(
     var askCatId by remember { mutableStateOf<Long?>(null) }
     // #115: что подсказал разбор текста — эта категория показывается в окне первой.
     var askCatHint by remember { mutableStateOf<String?>(null) }
+
+    /** #84: контакт, найденный в тексте, — предлагаем прикрепить к заметке. */
+    var askContact by remember { mutableStateOf<NoteContact?>(null) }
+
+    /** Заметка, к которой предлагается контакт. */
+    var askContactFor by remember { mutableStateOf<Long?>(null) }
+
+    /** Сколько секунд осталось у окна контакта. */
+    var askContactLeft by remember { mutableIntStateOf(4) }
     var askCatLeft by remember { mutableIntStateOf(0) }
 
     /** Распознанные фразы: новые снизу, старые бледнее — тикер под развёрткой. */
@@ -229,13 +238,30 @@ fun RecordingScreen(
             } else {
                 null
             }
+        // #84: ищем в тексте фамилию из телефонной книги. Если в заметке есть «позвонить» —
+        // контакт крепится сразу, иначе предлагаем кнопкой (окно появляется после записи).
+        val person = Contacts.findMention(context, parsed.text)
+        val contact = person?.let { NoteContact(it.id, it.name, it.number) }
+        val attachNow = contact != null && Contacts.wantsCall(parsed.text)
+        if (contact != null) {
+            Log.i(
+                TAG,
+                "контакт в тексте: %s, прикрепляем %s".format(contact.name, if (attachNow) "сразу" else "по вопросу"),
+            )
+        }
         val id =
             store.add(
                 text = parsed.text,
                 categoryId = selectedCategory ?: hint,
                 datetime = parsed.datetime,
                 allDay = parsed.allDay,
+                contact = if (attachNow) contact else null,
             )
+        if (contact != null && !attachNow) {
+            askContact = contact
+            askContactFor = id
+            askContactLeft = 4
+        }
         // Счётчик берём напрямую: notesCount объявлен ниже по коду, из локальной функции он не виден.
         val total = store.count()
         Log.i(
@@ -255,11 +281,15 @@ fun RecordingScreen(
             askCatHint = hint
             Log.i(TAG, "категория не выбрана — окно выбора для заметки #%d".format(id))
         }
-        return id
+        // БАГ (найден 15.11.2026): планирование стояло ПОСЛЕ `return id` и никогда не выполнялось —
+        // голосовые заметки с датой не будили. Теперь напоминание ставится до выхода.
         val due = parsed.datetime
         if (due != null && due > System.currentTimeMillis()) {
-            Reminders.schedule(context, id, due, parsed.text, parsed.categoryId ?: selectedCategory, parsed.allDay)
+            Reminders.schedule(context, id, due, parsed.text, selectedCategory ?: hint, parsed.allDay)
+            Log.i(TAG, "напоминание запланировано на %s (заметка #%d)".format(
+                CLOCK_TEXT.format(java.util.Date(due)), id))
         }
+        return id
     }
     var notesCount by remember { mutableIntStateOf(0) }
 
@@ -270,7 +300,7 @@ fun RecordingScreen(
     /** Сохранить сеанс и уйти со экрана; если категорию надо спросить — остаёмся на окне. */
     fun finishSession() {
         saveSession()
-        if (askCatId == null) onClose()
+        if (askCatId == null && askContact == null) onClose()
     }
 
     /** Остановить запись и сохранить заметку: путь общий для кнопки и авто-остановки. */
@@ -546,6 +576,21 @@ fun RecordingScreen(
         if (askCatId == id) {
             Log.i(TAG, "окно категории закрылось по таймеру (%d с)".format(sec))
             askCatId = null
+            onClose()
+        }
+    }
+
+    // Окно «прикрепить контакт?» живёт недолго: не мешаем закрыть запись.
+    LaunchedEffect(askContact) {
+        val person = askContact ?: return@LaunchedEffect
+        while (askContactLeft > 0) {
+            delay(1000)
+            askContactLeft -= 1
+        }
+        if (askContact == person) {
+            Log.i(TAG, "контакт %s не прикреплён — окно закрылось".format(person.name))
+            askContact = null
+            askContactFor = null
             onClose()
         }
     }
@@ -932,6 +977,25 @@ fun RecordingScreen(
 
             // Окно выбора категории (заметка #74): появляется после записи, если категорию
             // не назвали и не выбрали. Голосом категорию не определяем — только этим окном.
+            if (askCatId == null && askContact != null) {
+                AskContactOverlay(
+                    contact = askContact!!,
+                    secondsLeft = askContactLeft,
+                    accent = accent,
+                    onAttach = { attach ->
+                        val target = askContactFor
+                        val person = askContact
+                        if (target != null && person != null && attach) {
+                            store.setContact(target, person)
+                            Log.i(TAG, "контакт %s прикреплён к заметке #%d".format(person.name, target))
+                        }
+                        askContact = null
+                        askContactFor = null
+                        onClose()
+                    },
+                )
+            }
+
             if (askCatId != null) {
                 AskCategoryOverlay(
                     accent = accent,
@@ -945,7 +1009,7 @@ fun RecordingScreen(
                         }
                         askCatId = null
                         askCatHint = null
-                        onClose()
+                        if (askContact == null) onClose()
                     },
                 )
             }
@@ -989,6 +1053,90 @@ private fun ParamSlider(
  * карточка по центру, плитки категорий и «Без категории». Таймер (если задан) закрывает окно
  * само, тогда заметка остаётся без категории.
  */
+@OptIn(ExperimentalLayoutApi::class)
+/**
+ * #84: «Прикрепить контакт?» — короткое окно после записи, если фамилия из телефонной книги
+ * нашлась в тексте, а слова «позвонить» не было (тогда контакт крепится молча).
+ */
+@Composable
+private fun AskContactOverlay(
+    contact: NoteContact,
+    secondsLeft: Int,
+    accent: Color,
+    onAttach: (Boolean) -> Unit,
+) {
+    Box(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth(0.86f)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Design.glassRgb.copy(alpha = 0.96f))
+                    .border(1.dp, Design.border, RoundedCornerShape(24.dp))
+                    .padding(horizontal = 16.dp, vertical = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            ContactAvatar(contact = contact, size = 58.dp, accent = accent)
+            Text(
+                text = "Прикрепить контакт?",
+                color = Design.textPrimary,
+                fontSize = 17.sp,
+                modifier = Modifier.padding(top = 10.dp),
+            )
+            Text(
+                text = "%s · %s".format(contact.name, contact.number),
+                color = Design.textSecondary,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            if (secondsLeft > 0) {
+                Text(
+                    text = "закроется через %d с".format(secondsLeft),
+                    color = Design.textSecondary.copy(alpha = 0.7f),
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Design.glassRgb.copy(alpha = 0.55f))
+                            .border(1.dp, Design.border, RoundedCornerShape(14.dp))
+                            .clickable { onAttach(false) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("Не надо", color = Design.textPrimary, fontSize = 14.sp)
+                }
+                Box(
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(accent.copy(alpha = 0.92f))
+                            .clickable { onAttach(true) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("Прикрепить", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AskCategoryOverlay(

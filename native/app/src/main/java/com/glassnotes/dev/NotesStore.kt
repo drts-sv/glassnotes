@@ -44,6 +44,7 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
         categoryId: String? = null,
         datetime: Long? = null,
         allDay: Boolean = false,
+        contact: NoteContact? = null,
     ): Long {
         val now = System.currentTimeMillis()
         val created = ISO.format(Date(now))
@@ -62,6 +63,7 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
                 put("color", "color-1")
                 put("categoryIds", JSONArray().apply { categoryId?.let { put(it) } })
                 put("notified", false)
+                contact?.let { put("contact", contactJson(it)) }
             }
 
         val values =
@@ -109,6 +111,23 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
             json.put("color", categoryIds.firstOrNull() ?: "")
         }
     }
+
+    /** Прикрепить контакт к заметке или снять его (null). */
+    fun setContact(
+        id: Long,
+        contact: NoteContact?,
+    ) {
+        patch(id) { json ->
+            if (contact == null) json.remove("contact") else json.put("contact", contactJson(contact))
+        }
+    }
+
+    private fun contactJson(contact: NoteContact): JSONObject =
+        JSONObject().apply {
+            put("id", contact.id)
+            put("name", contact.name)
+            put("number", contact.number)
+        }
 
     /** Сменить дату и время заметки (null — «без даты»). */
     fun setDatetime(

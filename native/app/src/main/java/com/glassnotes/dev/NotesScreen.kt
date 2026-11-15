@@ -1849,6 +1849,25 @@ private fun NoteCard(
                     bg = Design.tint(0.07f),
                 )
             }
+            note.contact?.let { person ->
+                // #84: прикреплённый контакт — кружок в правом нижнем углу карточки.
+                // Тап открывает набор номера (звонок подтверждает сам человек).
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ContactAvatar(
+                        contact = person,
+                        size = 32.dp,
+                        accent = categoryColor ?: accent,
+                        onClick = {
+                            Haptics.tick(view)
+                            Contacts.dial(context, person.number)
+                        },
+                    )
+                }
+            }
         }
     }
 }
