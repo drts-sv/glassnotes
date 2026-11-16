@@ -3,6 +3,7 @@ package com.glassnotes.dev
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
@@ -55,8 +56,27 @@ object Updater {
 
     fun currentVersion(): String = BuildConfig.VERSION_NAME
 
-    /** Последний релиз репозитория. Бросает исключение при сетевой ошибке — вызывающий ловит. */
+    /**
+     * Последний релиз репозитория.
+     *
+     * Три попытки: на мобильной сети DNS иногда отвечает не сразу (UnknownHostException на первом
+     * запросе после выхода из сна). Пауза между попытками 900 мс. Ошибку отдаём наверх — ловит UI.
+     */
     fun check(): Release {
+        var last: Throwable? = null
+        for (attempt in 1..3) {
+            try {
+                return checkOnce()
+            } catch (error: Exception) {
+                last = error
+                Log.w(TAG, "проверка обновления: попытка $attempt не удалась — $error")
+                if (attempt < 3) Thread.sleep(900L)
+            }
+        }
+        throw last ?: IllegalStateException("проверка обновления не удалась")
+    }
+
+    private fun checkOnce(): Release {
         val connection = URL(API).openConnection() as HttpURLConnection
         connection.connectTimeout = 12_000
         connection.readTimeout = 15_000
