@@ -27,6 +27,7 @@ object Updater {
 
     private const val API = "https://api.github.com/repos/drts-sv/glassnotes/releases/latest"
     const val PAGE = "https://github.com/drts-sv/glassnotes/releases"
+    private const val PAGE_LATEST = "https://github.com/drts-sv/glassnotes/releases/latest"
 
     data class Release(
         val version: String,
@@ -73,7 +74,38 @@ object Updater {
                 if (attempt < 3) Thread.sleep(900L)
             }
         }
+        // API недоступен (например, DNS не резолвит api.github.com) — пробуем страницу релизов.
+        runCatching { return checkViaRedirect() }
+            .onFailure { Log.w(TAG, "проверка обновления: releases/latest тоже не ответил — $it") }
         throw last ?: IllegalStateException("проверка обновления не удалась")
+    }
+
+    /**
+     * Проверка без API: `releases/latest` отвечает редиректом на `/releases/tag/vX.Y.Z` — тег берём
+     * из заголовка Location. Нужен потому, что `api.github.com` на части мобильных сетей не
+     * резолвится, а `github.com` доступен (с него же качается модель распознавания).
+     */
+    private fun checkViaRedirect(): Release {
+        val connection = URL(PAGE_LATEST).openConnection() as HttpURLConnection
+        connection.instanceFollowRedirects = false
+        connection.connectTimeout = 12_000
+        connection.readTimeout = 15_000
+        connection.setRequestProperty("User-Agent", "GlasNote")
+        try {
+            val code = connection.responseCode
+            val location = connection.getHeaderField("Location")
+            if (code !in 300..399 || location.isNullOrBlank()) {
+                throw IllegalStateException("GitHub ответил кодом $code без адреса релиза")
+            }
+            val tag = location.substringAfterLast("/tag/", "").takeIf { it.isNotBlank() }
+                ?: throw IllegalStateException("В адресе релиза нет тега: $location")
+            val version = tag.removePrefix("v")
+            val apk = "https://github.com/drts-sv/glassnotes/releases/download/$tag/glasnote-$version.apk"
+            Log.i(TAG, "проверка обновления: через releases/latest → $tag")
+            return Release(version = version, notes = "", apkUrl = apk)
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun checkOnce(): Release {
