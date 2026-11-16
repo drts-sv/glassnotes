@@ -159,10 +159,16 @@ object Updater {
         // Старые загрузки не нужны: имя файла содержит версию, но кэш чистим от прочих.
         dir.listFiles()?.forEach { if (it.name != "glasnote-${release.version}.apk") it.delete() }
         val target = File(dir, "glasnote-${release.version}.apk")
-        if (target.exists() && target.length() > 1024 * 1024) {
-            // Раньше уже скачали — второй раз сеть не трогаем.
-            onProgress(100)
-            return target
+        if (target.exists()) {
+            // Кэш принимаем только целым APK: оборванная загрузка раньше давала «не удалось
+            // установить приложение», потому что проверялся только размер файла.
+            if (validApk(target)) {
+                onProgress(100)
+                Log.i(TAG, "обновление: берём готовый APK из кэша, ${target.length()} б")
+                return target
+            }
+            Log.w(TAG, "обновление: кэш битый (${target.length()} б), качаем заново")
+            target.delete()
         }
 
         val connection = URL(url).openConnection() as HttpURLConnection
@@ -185,13 +191,32 @@ object Updater {
                         done += read
                         onProgress(if (total > 0) ((done * 100) / total).toInt() else -1)
                     }
+                    if (total > 0 && done != total) {
+                        throw IllegalStateException("Скачано $done из $total б — соединение оборвалось")
+                    }
                 }
             }
         } finally {
             connection.disconnect()
         }
-        if (target.length() < 1024 * 1024) throw IllegalStateException("Файл обновления слишком мал")
+        if (!validApk(target)) {
+            val size = target.length()
+            target.delete()
+            throw IllegalStateException("APK скачался не полностью ($size б) — нажмите ещё раз")
+        }
+        Log.i(TAG, "обновление: APK скачан целиком, ${target.length()} б")
         return target
+    }
+
+    /**
+     * Целый ли файл: открывается как ZIP и содержит AndroidManifest.xml. Обрыв загрузки и подмена
+     * содержимого отсекаются — установщик такой файл всё равно не примет.
+     */
+    private fun validApk(file: File): Boolean {
+        if (!file.exists() || file.length() < 1024 * 1024) return false
+        return runCatching {
+            java.util.zip.ZipFile(file).use { zip -> zip.getEntry("AndroidManifest.xml") != null }
+        }.getOrDefault(false)
     }
 
     /** Разрешена ли установка APK из этого приложения (Android 8+ требует отдельного согласия). */

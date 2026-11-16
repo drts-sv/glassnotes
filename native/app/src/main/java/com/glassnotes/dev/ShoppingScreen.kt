@@ -45,7 +45,7 @@ private const val SHOPPING_TAG = "GlasNotesDev"
 private const val SHOPPING_DONE_KV = "shopping_done"
 
 /** Один пункт объединённого списка покупок. */
-private data class ShoppingItem(
+internal data class ShoppingItem(
     val key: String,
     val text: String,
 )
@@ -57,13 +57,14 @@ private data class ShoppingItem(
  * заметки объединяются в один список. Порядок — как в базе: свежие заметки сверху, внутри заметки
  * порядок слов сохраняется. Дубли (одно и то же название в разных заметках) показываем один раз.
  */
-private fun readShoppingItems(store: NotesStore): List<ShoppingItem> {
+internal fun readShoppingItems(store: NotesStore): List<ShoppingItem> {
     val separators = charArrayOf(',', ';', '·', '•', '\n', '\r')
     val result = ArrayList<ShoppingItem>()
     val seen = HashSet<String>()
     for (line in store.recent(1000)) {
         val json = runCatching { JSONObject(line) }.getOrNull() ?: continue
-        if (json.optString("status") == "done") continue
+        // Статус заметки здесь не важен: покупка отмечается чекбоксом на этом экране, а заметку
+        // владелец может закрыть как выполненную — пункты из неё всё равно нужны в магазине.
         val cats = json.optJSONArray("categoryIds") ?: continue
         var isShopping = false
         for (i in 0 until cats.length()) {
@@ -81,7 +82,7 @@ private fun readShoppingItems(store: NotesStore): List<ShoppingItem> {
     return result
 }
 
-private fun readDone(store: NotesStore): Set<String> {
+internal fun readDone(store: NotesStore): Set<String> {
     val raw = store.getKv(SHOPPING_DONE_KV)
     if (raw.isNullOrBlank()) return emptySet()
     val array = runCatching { JSONArray(raw) }.getOrNull() ?: return emptySet()

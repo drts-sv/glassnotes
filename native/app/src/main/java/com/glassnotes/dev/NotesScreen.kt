@@ -2279,29 +2279,43 @@ private fun WeekdayStrip(
             val dow = index + 1 // DayOfWeek.MONDAY.value == 1
             val target = today.plusDays(((dow - today.dayOfWeek.value + 7) % 7).toLong())
             val on = selected == target
+            // Выходные подкрашены тоном: в магазине/на неделе взгляд должен цепляться за субботу
+            // и воскресенье без чтения подписей (просьба владельца 16.11.2026).
+            val weekend = dow >= 6
             Box(
                 modifier =
                     Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .background(if (on) accent.copy(alpha = 0.92f) else Color.Transparent)
+                        .background(
+                            when {
+                                on -> accent.copy(alpha = 0.92f)
+                                weekend -> accent.copy(alpha = 0.14f)
+                                else -> Color.Transparent
+                            },
+                        )
                         .clickable { onPick(target) },
                 contentAlignment = Alignment.Center,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = label,
-                        color = if (on) Color.White else Design.textPrimary.copy(alpha = 0.9f),
+                        color =
+                            when {
+                                on -> Color.White
+                                weekend -> accent.copy(alpha = 0.95f)
+                                else -> Design.textPrimary.copy(alpha = 0.9f)
+                            },
                         fontSize = 11.sp,
-                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
+                        fontWeight = if (on || weekend) FontWeight.SemiBold else FontWeight.Medium,
                     )
                     Text(
                         text = target.dayOfMonth.toString(),
                         color =
-                            if (on) {
-                                Color.White.copy(alpha = 0.85f)
-                            } else {
-                                Design.textSecondary.copy(alpha = 0.75f)
+                            when {
+                                on -> Color.White.copy(alpha = 0.85f)
+                                weekend -> accent.copy(alpha = 0.8f)
+                                else -> Design.textSecondary.copy(alpha = 0.75f)
                             },
                         fontSize = 9.sp,
                     )

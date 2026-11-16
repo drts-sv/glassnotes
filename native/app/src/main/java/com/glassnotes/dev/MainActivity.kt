@@ -335,6 +335,16 @@ class MainActivity : ComponentActivity() {
                 }
             }.start()
         }
+        if (intent?.getBooleanExtra("shopping_test", false) == true) {
+            // Проверка экрана «Покупки» без тапа: те же функции, что видит пользователь.
+            Thread {
+                val store = NotesStore(this)
+                val items = readShoppingItems(store)
+                val done = readDone(store)
+                Log.i(TAG, "shopping_test: пунктов %d, отмечено %d".format(items.size, done.size))
+                items.take(5).forEach { Log.i(TAG, "shopping_test: «" + it.text + "»") }
+            }.start()
+        }
         val dumpCat = intent?.getStringExtra("dump_cat")
         if (!dumpCat.isNullOrBlank()) {
             // Диагностика: печатает в лог все заметки категории. Данные только читаются.
