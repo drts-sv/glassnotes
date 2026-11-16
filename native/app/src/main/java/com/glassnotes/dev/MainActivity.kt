@@ -3,6 +3,7 @@ package com.glassnotes.dev
 import android.content.Context
 import android.os.Bundle
 import android.util.Log
+import org.json.JSONObject
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -332,6 +333,32 @@ class MainActivity : ComponentActivity() {
                         ),
                     )
                 }
+            }.start()
+        }
+        val dumpCat = intent?.getStringExtra("dump_cat")
+        if (!dumpCat.isNullOrBlank()) {
+            // Диагностика: печатает в лог все заметки категории. Данные только читаются.
+            Thread {
+                val notes = NotesStore(this).recent(1000)
+                var count = 0
+                for (line in notes) {
+                    val o = runCatching { JSONObject(line) }.getOrNull() ?: continue
+                    val cats = o.optJSONArray("categoryIds")
+                    var has = false
+                    if (cats != null) {
+                        for (i in 0 until cats.length()) if (cats.optString(i) == dumpCat) has = true
+                    }
+                    if (!has) continue
+                    count++
+                    val text = o.optString("text").replace(10.toChar(), ' ').replace(13.toChar(), ' ').trim()
+                    Log.i(TAG, "dump_cat|%s|%s|%s|%s|%s".format(
+                        dumpCat,
+                        o.optLong("id"),
+                        o.optString("status").ifBlank { "active" },
+                        o.optString("created"),
+                        text))
+                }
+                Log.i(TAG, "dump_cat|%s|ИТОГО|%d".format(dumpCat, count))
             }.start()
         }
         if (intent?.getBooleanExtra("update_test", false) == true) {

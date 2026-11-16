@@ -147,6 +147,7 @@ fun NotesScreen(
     var searchOpen by remember { mutableStateOf(false) }
     var filtersOpen by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
+    var shoppingOpen by remember { mutableStateOf(false) }
     var dateFilter by remember { mutableStateOf<String?>(null) }
     var categoryFilter by remember { mutableStateOf<String?>(null) }
     var revision by remember { mutableIntStateOf(0) }
@@ -254,6 +255,15 @@ fun NotesScreen(
                 notes.size,
             ),
         )
+    }
+
+    if (shoppingOpen) {
+        ShoppingScreen(
+            store = store,
+            accent = accent,
+            onClose = { shoppingOpen = false },
+        )
+        return
     }
 
     if (settingsOpen) {
@@ -985,6 +995,7 @@ fun NotesScreen(
             tab = tab,
             onToggleFilters = { filtersOpen = !filtersOpen },
             onToggleSearch = { searchOpen = !searchOpen },
+            onOpenShopping = { shoppingOpen = true },
             onOpenSettings = { settingsOpen = true },
             onDateFilter = {
                 dateFilter = if (dateFilter == it) null else it
@@ -1370,6 +1381,7 @@ private fun HeaderCard(
     tab: String,
     onToggleFilters: () -> Unit,
     onToggleSearch: () -> Unit,
+    onOpenShopping: () -> Unit,
     onOpenSettings: () -> Unit,
     onDateFilter: (String) -> Unit,
     onCategoryFilter: (String) -> Unit,
@@ -1433,6 +1445,7 @@ private fun HeaderCard(
             // Порядок кнопок боевого: фильтр → поиск → настройки.
             HeaderButton(R.drawable.ic_filter, filtersOpen || filterLabel != null, onToggleFilters)
             HeaderButton(R.drawable.ic_search, searchOpen, onToggleSearch)
+            HeaderButton(R.drawable.ic_basket, false, onOpenShopping)
             HeaderButton(R.drawable.ic_settings, false, onOpenSettings)
         }
 
