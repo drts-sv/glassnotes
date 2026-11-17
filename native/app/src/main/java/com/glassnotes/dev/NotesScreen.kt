@@ -2429,7 +2429,10 @@ private fun HoldDeleteButton(
         contentAlignment = Alignment.Center,
         modifier =
             modifier
-                .heightIn(min = 52.dp)
+                // Высота фиксированная, а не heightIn(min): пока палец на кнопке, в боксе
+                // появляется полоска прогресса, и fillMaxSize/heightIn давали ей право занять
+                // всю доступную высоту — кнопка раздувалась на пол-экрана (жалоба владельца).
+                .height(52.dp)
                 .clip(RoundedCornerShape(18.dp))
                 .background(Design.stopRed.copy(alpha = 0.12f))
                 .border(1.dp, Design.stopRed.copy(alpha = 0.40f), RoundedCornerShape(18.dp))
@@ -2450,7 +2453,8 @@ private fun HoldDeleteButton(
             fontWeight = FontWeight.Medium,
         )
         if (progress.value > 0f) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
+            // matchParentSize, а не fillMaxSize: полоска не должна участвовать в измерении кнопки.
+            Canvas(modifier = Modifier.matchParentSize()) {
                 val stroke = 3.dp.toPx()
                 drawLine(
                     color = Design.stopRed.copy(alpha = 0.75f),
@@ -2613,7 +2617,11 @@ private fun NoteSheet(
 
         // #104: «Изменить», «Удалить» и «Отмена» — в одном ряду, одной высоты.
         // #114: пока держишь «Удалить», на кнопке идёт обратный отсчёт — видно, когда сработает.
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             PanelButton("✏️ Изменить", accent, Modifier.weight(1f)) {
                 Haptics.tick(view)
                 onEdit()
