@@ -187,6 +187,14 @@ object Contacts {
         android.util.Log.i("GlasNotesDev", "запомнен выбор контакта для «%s»: %s (#%d)".format(word, name, id))
     }
 
+    /** Кандидат вместе с позицией первого совпадения в тексте (#144). */
+    private data class Hit(
+        val person: Person,
+        val word: String,
+        val score: Int,
+        val pos: Int,
+    )
+
     fun findMentions(
         context: Context,
         text: String,
@@ -197,42 +205,55 @@ object Contacts {
 
         // Собираем всех, чьи слова есть в тексте. Фамилия весит много: заметка «позвонить
         // Шиденко» должна тянуть Шиденко, а не человека с именем Олег.
-        val hits = ArrayList<Triple<Person, String, Int>>() // контакт, фамилия, вес
+        val hits = ArrayList<Hit>()
         for (person in people(context)) {
             val parts = nameParts(person.name)
             if (parts.isEmpty()) continue
             var score = 0
+            var pos = Int.MAX_VALUE
             for ((index, part) in parts.withIndex()) {
                 // «Иванов» → «Ивано»: падежные окончания больше не мешают.
                 val stem = part.dropLast(1)
                 if (stem.length < 3) continue
                 // Совпало либо слово в косвенном падеже («шиденко»), либо начало слова
                 // («Павлу» ↔ «Павел»: три первые буквы).
-                val hit = containsWord(haystack, stem) || wordList.any { w -> skeletonClose(w, part) }
-                if (!hit) continue
+                val byStem = containsWord(haystack, stem) && haystack.indexOf(stem) >= 0
+                val bySkeleton =
+                    wordList.firstOrNull { w -> skeletonClose(w, part) }?.let { w -> haystack.indexOf(w) } ?: -1
+                if (!byStem && bySkeleton < 0) continue
                 score +=
                     when {
                         index == parts.lastIndex -> 10 // фамилия
                         index == 0 -> 4 // имя
                         else -> 2 // отчество и прочее
                     }
+                // #144: где контакт упомянут. «позвонить Тане по поводу математики Саши» —
+                // Таня раньше Саши, значит и в списке она первая.
+                if (byStem) pos = minOf(pos, haystack.indexOf(stem))
+                if (bySkeleton >= 0) pos = minOf(pos, bySkeleton)
             }
-            if (score > 0) hits.add(Triple(person, parts.last(), score))
+            if (score > 0) hits.add(Hit(person, parts.last(), score, pos))
         }
         if (hits.isEmpty()) return emptyList()
-        val best = hits.maxOf { it.third }
+        val best = hits.maxOf { it.score }
         // Оставляем самых близких: «позвонить Павлу Шиденко» — это Павел Викторович,
         // «позвонить Шиденко» без имени — все тёзки, список выберет человек.
-        val top = hits.filter { it.third == best }.distinctBy { it.first.id }
-        val word = top.first().second
+        val top = hits.filter { it.score == best }.distinctBy { it.person.id }
+        val word = top.first().word
 
         // Универсальный порядок: сначала тот, кого выбирали в прошлый раз для этой фамилии,
-        // остальные — по алфавиту. Так «позвонить Шиденко» со второго раза крепит нужного.
+        // дальше — по месту в тексте, затем по алфавиту.
         val rememberedId = remembered(context, word)
         return top
-            .sortedWith(compareBy({ if (it.first.id == rememberedId) 0 else 1 }, { it.first.name }))
+            .sortedWith(
+                compareBy(
+                    { if (it.person.id == rememberedId) 0 else 1 },
+                    { it.pos },
+                    { it.person.name },
+                ),
+            )
             .take(8)
-            .map { Match(it.first, word) }
+            .map { Match(it.person, word) }
     }
 
     /** Диагностика: все, кто набрал очки по тексту, с расшифровкой (только для тестовых запусков). */

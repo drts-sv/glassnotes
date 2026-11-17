@@ -1212,6 +1212,12 @@ private fun ContactPickOverlay(
                 }
             list.sortedBy { it.name }.take(80)
         }
+    // #142: пикер рисуется отдельным окном. Раньше это был обычный Box в главном окне, а редактор —
+    // Dialog (GlassPanel), поэтому из редактора список контактов оказывался ПОД панелью заметки.
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
     Box(
         modifier =
             Modifier
@@ -1307,6 +1313,7 @@ private fun ContactPickOverlay(
                 }
             }
         }
+    }
     }
 }
 

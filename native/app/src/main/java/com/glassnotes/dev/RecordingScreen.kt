@@ -278,7 +278,7 @@ fun RecordingScreen(
                     when {
                         attachNow -> "сразу"
                         contacts.size > 1 -> "по выбору"
-                        else -> "по вопросу"
+                        else -> "не предлагаем (#139)"
                     },
                 ),
             )

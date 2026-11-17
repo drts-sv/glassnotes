@@ -22,8 +22,8 @@ android {
         targetSdk = 35
         // Версии держим честные: прошлые правки версии молча не применились (файл стоял на 0.42-dev),
         // поэтому все отчёты «0.4x-dev» были неверны — сборка на телефоне была одной и той же.
-        versionCode = 1007
-        versionName = "1.0.7"
+        versionCode = 1008
+        versionName = "1.0.8"
 
         // Телефону нужна одна архитектура: библиотека распознавания тянет четыре (arm64, arm32, x86,
         // x86_64) и это ~50 МБ лишнего веса в APK. arm64-v8a хватает для нашего телефона.
@@ -87,6 +87,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
 
     // Распознавание речи: тот же движок, что в боевом приложении (GigaAM v3 через onnxruntime).
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
+    // 1.22.0 — первая версия, где libonnxruntime4j_jni.so выровнена на 16 КБ страницы памяти.
+    // В 1.20.0/1.21.0 сегменты были на 4 КБ: Android 15+ при установке ругается
+    // «приложение не поддерживает страницы 16 КБ» (проверено разбором ELF p_align).
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }
