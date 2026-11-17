@@ -335,6 +335,25 @@ class MainActivity : ComponentActivity() {
                 }
             }.start()
         }
+        // Проверка произвольной фразы: какие контакты находятся и в каком порядке (#144).
+        val pickPhrase = intent?.getStringExtra("pick_phrase")
+        if (!pickPhrase.isNullOrBlank()) {
+            Thread {
+                Log.i(TAG, "pick_phrase «$pickPhrase» очки: " + Contacts.debugScores(this, pickPhrase))
+                val got = Contacts.findMentions(this, pickPhrase)
+                got.forEachIndexed { i, m ->
+                    Log.i(TAG, "pick_phrase[$i] ${m.person.name} · ${m.person.number} · слово «${m.word}»")
+                }
+                Log.i(TAG, "pick_phrase: кандидатов ${got.size}")
+            }.start()
+        }
+        // Полный список телефонной книги: нужен, чтобы понимать, почему имя не находится.
+        if (intent?.getBooleanExtra("contacts_dump", false) == true) {
+            Thread {
+                Contacts.people(this).forEach { p -> Log.i(TAG, "contacts_dump|${p.name}|${p.number}") }
+                Log.i(TAG, "contacts_dump|ИТОГО|${Contacts.people(this).size}")
+            }.start()
+        }
         if (intent?.getBooleanExtra("shopping_test", false) == true) {
             // Проверка экрана «Покупки» без тапа: те же функции, что видит пользователь.
             Thread {

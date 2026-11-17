@@ -187,6 +187,45 @@ object Contacts {
         android.util.Log.i("GlasNotesDev", "запомнен выбор контакта для «%s»: %s (#%d)".format(word, name, id))
     }
 
+    /**
+     * Уменьшительные имена → полная форма (#144). Без этого «позвонить Тане» не находило контакт
+     * «Танюшка»: «тане» и «танюшка» не совпадают ни по корню, ни по скелету согласных,
+     * и единственным кандидатом оставался чужой контакт.
+     *
+     * Основы от длинных к коротким: срабатывает первая подходящая, поэтому «танюш» проверяется
+     * раньше «тан». Короткие основы («кол» → Николай, «пет» → Пётр, «вит» → Виктор) сознательно
+     * не добавлены: они ловят «коллега», «петрушка», «витамин».
+     */
+    private val DIMINUTIVES: List<Pair<String, String>> =
+        listOf(
+            "александр" to "александр", "татьян" to "татьяна", "танюш" to "татьяна", "тан" to "татьяна",
+            "саш" to "александр", "алекс" to "александр",
+            "павел" to "павел", "паш" to "павел",
+            "михаил" to "михаил", "миш" to "михаил",
+            "натал" to "наталья", "наташ" to "наталья",
+            "дмитр" to "дмитрий", "дим" to "дмитрий",
+            "екатерин" to "екатерина", "катерин" to "екатерина",
+            "анастас" to "анастасия", "настас" to "анастасия",
+            "людмил" to "людмила", "светлан" to "светлана",
+            "владимир" to "владимир", "евген" to "евгений", "жен" to "евгений",
+            "сергей" to "сергей", "серег" to "сергей", "серёж" to "сергей",
+            "васил" to "василий", "никол" to "николай", "роман" to "роман",
+            "алексе" to "алексей", "лёш" to "алексей", "леш" to "алексей",
+            "ольг" to "ольга", "оля" to "ольга", "ирин" to "ирина", "ира" to "ирина",
+            "юли" to "юлия", "юля" to "юлия", "мария" to "мария", "марь" to "мария", "маш" to "мария",
+            "софия" to "софия", "соф" to "софия", "дарья" to "дария", "даш" to "дария",
+            "георг" to "георгий", "гош" to "георгий", "борис" to "борис", "бор" to "борис",
+            "иван" to "иван", "вань" to "иван", "анна" to "анна", "анн" to "анна", "аня" to "анна",
+            "елен" to "елена", "лена" to "елена",
+        ).sortedByDescending { it.first.length }
+
+    /** Полная форма имени по уменьшительной основе; null, если слово не похоже на имя. */
+    private fun canonical(word: String): String? {
+        val w = normalize(word)
+        if (w.length < 3) return null
+        return DIMINUTIVES.firstOrNull { w.startsWith(it.first) }?.second
+    }
+
     /** Кандидат вместе с позицией первого совпадения в тексте (#144). */
     private data class Hit(
         val person: Person,
@@ -220,10 +259,28 @@ object Contacts {
                 val byStem = containsWord(haystack, stem) && haystack.indexOf(stem) >= 0
                 val bySkeleton =
                     wordList.firstOrNull { w -> skeletonClose(w, part) }?.let { w -> haystack.indexOf(w) } ?: -1
-                if (!byStem && bySkeleton < 0) continue
+                // #144: «Тане» ↔ контакт «Танюшка» — через полную форму имени. Только для имени:
+                // уменьшительных фамилий не бывает.
+                val aliasPos =
+                    if (index == 0) {
+                        val full = canonical(part)
+                        if (full == null) {
+                            -1
+                        } else {
+                            wordList.firstOrNull { w -> canonical(w) == full }
+                                ?.let { w -> haystack.indexOf(w) } ?: -1
+                        }
+                    } else {
+                        -1
+                    }
+                if (!byStem && bySkeleton < 0 && aliasPos < 0) continue
                 score +=
                     when {
                         index == parts.lastIndex -> 10 // фамилия
+                        // Имя, найденное через уменьшительную форму («Танюшка» по слову «Тане»),
+                        // весит чуть больше полной формы: иначе «Саша» тянет за собой ещё
+                        // и «Александра», и в окне выбора появляется лишний человек.
+                        index == 0 && aliasPos >= 0 && canonical(part) != normalize(part) -> 5
                         index == 0 -> 4 // имя
                         else -> 2 // отчество и прочее
                     }
@@ -231,14 +288,18 @@ object Contacts {
                 // Таня раньше Саши, значит и в списке она первая.
                 if (byStem) pos = minOf(pos, haystack.indexOf(stem))
                 if (bySkeleton >= 0) pos = minOf(pos, bySkeleton)
+                if (aliasPos >= 0) pos = minOf(pos, aliasPos)
             }
             if (score > 0) hits.add(Hit(person, parts.last(), score, pos))
         }
         if (hits.isEmpty()) return emptyList()
         val best = hits.maxOf { it.score }
-        // Оставляем самых близких: «позвонить Павлу Шиденко» — это Павел Викторович,
-        // «позвонить Шиденко» без имени — все тёзки, список выберет человек.
-        val top = hits.filter { it.score == best }.distinctBy { it.person.id }
+        // #144: при равных очках берём только тех, кто упомянут в САМОМ РАННЕМ месте текста.
+        // «позвонить Тане по поводу математики Саши»: Танюшка (позиция «Тане») и все однословные
+        // Александры имели одинаковый вес 10, и в список попадали чужие люди. Тёзки, упомянутые
+        // одним и тем же словом («позвонить Шиденко»), остаются все — им позиция одинаковая.
+        val bestPos = hits.filter { it.score == best }.minOf { it.pos }
+        val top = hits.filter { it.score == best && it.pos == bestPos }.distinctBy { it.person.id }
         val word = top.first().word
 
         // Универсальный порядок: сначала тот, кого выбирали в прошлый раз для этой фамилии,
