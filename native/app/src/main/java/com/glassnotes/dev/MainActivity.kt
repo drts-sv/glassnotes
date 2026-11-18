@@ -74,6 +74,10 @@ class MainActivity : ComponentActivity() {
     private fun handleReviewIntent(intent: android.content.Intent?) {
         if (intent?.getBooleanExtra("review_open", false) != true) return
         reviewSignal.intValue++
+        // #153: флаг снимаем сразу. Иначе тот же intent лежит в Activity, и при её пересоздании
+        // (возврат с экрана записи, поворот, выгрузка из памяти) onCreate снова видит review_open
+        // и ревью всплывает бесконечно.
+        intent.removeExtra("review_open")
         androidx.core.app.NotificationManagerCompat.from(this)
             .cancel(Reminders.REVIEW_NOTIFICATION_ID)
         Log.i(TAG, "уведомление ревью: открываем экран по тапу")
@@ -696,6 +700,10 @@ class MainActivity : ComponentActivity() {
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
                         openOnStart = intent?.getStringExtra("open"),
                         reviewSignal = reviewSignal.intValue,
+                        // #153: сигнал одноразовый — гасим его после показа. Иначе при возврате
+                        // к списку (после записи заметки) NotesScreen создаётся заново, видит
+                        // сигнал и снова открывает ревью.
+                        onReviewHandled = { reviewSignal.intValue = 0 },
                     )
                     }
                 }

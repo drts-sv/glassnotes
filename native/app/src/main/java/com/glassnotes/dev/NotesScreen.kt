@@ -129,6 +129,8 @@ fun NotesScreen(
     openOnStart: String? = null,
     /** Счётчик тапов по уведомлению ревью: >0 — показать ревью, не глядя на reviewShownFor. */
     reviewSignal: Int = 0,
+    /** Сообщить наверх, что сигнал обработан: сигнал после этого гаснет (#153). */
+    onReviewHandled: () -> Unit = {},
 ) {
     var notes by remember { mutableStateOf<List<NoteRow>>(emptyList()) }
     var tab by remember { mutableStateOf("active") }
@@ -306,6 +308,11 @@ fun NotesScreen(
                 Log.i("GlasNotesDev", "утреннее ревью: показываем список дел")
             }
         }
+    }
+    // #153: сигнал из уведомления одноразовый — сразу гасим наверху, иначе он ждёт в Activity
+    // и открывает ревью заново при каждом возврате к списку.
+    LaunchedEffect(reviewSignal) {
+        if (reviewSignal > 0) onReviewHandled()
     }
     if (reviewOpen) {
         MorningReviewScreen(notes = notes, accent = accent, onClose = {
@@ -590,7 +597,9 @@ fun NotesScreen(
                         Modifier
                             .fillMaxWidth()
                             // Без weight: панель измеряется по содержимому, вес её распирал.
-                            .heightIn(max = 320.dp)
+                            // #152: было 320 — при открытой дате блок времени уходил за край,
+                            // и его чипы не показывались (владелец: «нет возможности изменить время»).
+                            .heightIn(max = 380.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .background(Design.glassRgb.copy(alpha = 0.35f))
                             .border(1.dp, Design.border, RoundedCornerShape(16.dp))
@@ -629,6 +638,9 @@ fun NotesScreen(
                     onClick = {
                         Haptics.tick(screenView)
                         dateOpen = !dateOpen
+                        // #152: разделы взаимоисключающие — открытая дата занимала всю зону,
+                        // и до времени было не доскроллить.
+                        if (dateOpen) timeOpen = false
                         if (dateOpen) editScope.launch { dateRequester.bringIntoView() }
                     },
                 )
@@ -692,6 +704,7 @@ fun NotesScreen(
                     onClick = {
                         Haptics.tick(screenView)
                         timeOpen = !timeOpen
+                        if (timeOpen) dateOpen = false
                         if (timeOpen) editScope.launch { timeRequester.bringIntoView() }
                     },
                 )
