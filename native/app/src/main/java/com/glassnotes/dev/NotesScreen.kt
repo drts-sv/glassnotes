@@ -2123,10 +2123,21 @@ private fun NoteCard(
                     // .important-chip боевого — плотнее остальных.
                     Badge(text = "🔥 важное", fg = Color.White, bg = Color(0xFFFF6B4A).copy(alpha = 0.72f), bold = true)
                 }
+                val status = statusLabel(note)
                 Badge(
-                    text = statusLabel(note),
+                    text = status,
                     fg = if (note.done) Design.done else Design.textSecondary.copy(alpha = 0.9f),
                     bg = Design.tint(0.07f),
+                    // #138: тап по «просрочено» — сразу редактор, там дата и время для переноса.
+                    onClick =
+                        if (!note.done && status.contains("просрочено")) {
+                            {
+                                Haptics.tick(view)
+                                onEdit()
+                            }
+                        } else {
+                            null
+                        },
                 )
             }
             note.contact?.let { person ->
@@ -2194,12 +2205,15 @@ private fun Badge(
     fg: Color,
     bg: Color,
     bold: Boolean = false,
+    /** #138: чип может быть кнопкой — «просрочено» открывает перенос на новую дату. */
+    onClick: (() -> Unit)? = null,
 ) {
     Box(
         modifier =
             Modifier
                 .clip(RoundedCornerShape(7.dp))
                 .background(bg)
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
                 .padding(horizontal = 7.dp, vertical = 1.dp),
     ) {
         Text(

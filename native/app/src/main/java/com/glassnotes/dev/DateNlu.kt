@@ -466,6 +466,58 @@ fun parseDateNlu(
         }
     }
 
+    // 2.55 Неделя (#136): «до конца недели», «начало/конец следующей недели», «на этой неделе».
+    // Порядок важен: сначала фразы со «следующей», потом общие — иначе «конец следующей недели»
+    // съедался бы правилом «конец недели».
+    if (result == null) {
+        val mNext =
+            Regex(
+                "(?:до|в|к|на)?\\s*(начал[а-яё]*|конц[а-яё]*|середин[а-яё]*)\\s+следующ[а-яё]*\\s+недел[а-яё]*",
+            ).find(lower)
+        if (mNext != null) {
+            val word = mNext.groupValues[1]
+            result =
+                when {
+                    word.startsWith("начал") -> startOfWeek(nowCal, 1)
+                    word.startsWith("середин") -> midOfWeek(nowCal, 1)
+                    else -> endOfWeek(nowCal, 1)
+                }
+            dateNamed = true
+            working = cutOut(working, mNext.range.first, mNext.value.length)
+            lower = working.lowercase(RU)
+        }
+    }
+    if (result == null) {
+        val phrase =
+            when {
+                lower.contains("до конца недели") -> "до конца недели"
+                lower.contains("к концу недели") -> "к концу недели"
+                lower.contains("в конце недели") -> "в конце недели"
+                lower.contains("на этой неделе") -> "на этой неделе"
+                lower.contains("на текущей неделе") -> "на текущей неделе"
+                lower.contains("в начале недели") -> "в начале недели"
+                lower.contains("начало недели") -> "начало недели"
+                lower.contains("на следующей неделе") -> "на следующей неделе"
+                lower.contains("на будущей неделе") -> "на будущей неделе"
+                else -> null
+            }
+        if (phrase != null) {
+            result =
+                when {
+                    phrase.startsWith("в начале") || phrase.startsWith("начало") -> {
+                        // «начало недели», сказанное во вторник, — это уже следующий понедельник.
+                        val start = startOfWeek(nowCal, 0)
+                        if (start.timeInMillis < nowCal.timeInMillis) startOfWeek(nowCal, 1) else start
+                    }
+                    phrase.contains("следующ") || phrase.contains("будущ") -> startOfWeek(nowCal, 1)
+                    else -> endOfWeek(nowCal, 0)
+                }
+            dateNamed = true
+            working = cutOut(working, lower.indexOf(phrase), phrase.length)
+            lower = working.lowercase(RU)
+        }
+    }
+
     // 2.6 «в конце месяца» — последний день, а если он уже прошёл, то следующего месяца.
     if (result == null && lower.contains("в конце месяца")) {
         var date = endOfMonth(nowCal, 0)
@@ -689,6 +741,45 @@ private fun nthWeekdayOfMonth(
     return c
 }
 
+/** Понедельник нужной недели (0 — текущей, 1 — следующей), 00:00. */
+private fun startOfWeek(
+    base: Calendar,
+    weeksAhead: Int,
+): Calendar {
+    val c = base.clone() as Calendar
+    val idx = weekdayIndex(c) // 1 — понедельник … 7 — воскресенье
+    c.add(Calendar.DAY_OF_MONTH, -(idx - 1) + 7 * weeksAhead)
+    c.set(Calendar.HOUR_OF_DAY, 0)
+    c.set(Calendar.MINUTE, 0)
+    c.set(Calendar.SECOND, 0)
+    c.set(Calendar.MILLISECOND, 0)
+    return c
+}
+
+/** Воскресенье нужной недели, 23:59 — «до конца недели» должно жить до последнего часа. */
+private fun endOfWeek(
+    base: Calendar,
+    weeksAhead: Int,
+): Calendar {
+    val c = startOfWeek(base, weeksAhead)
+    c.add(Calendar.DAY_OF_MONTH, 6)
+    c.set(Calendar.HOUR_OF_DAY, 23)
+    c.set(Calendar.MINUTE, 59)
+    return c
+}
+
+/** Середина недели (четверг, 12:00) — «в середине следующей недели». */
+private fun midOfWeek(
+    base: Calendar,
+    weeksAhead: Int,
+): Calendar {
+    val c = startOfWeek(base, weeksAhead)
+    c.add(Calendar.DAY_OF_MONTH, 3)
+    c.set(Calendar.HOUR_OF_DAY, 12)
+    c.set(Calendar.MINUTE, 0)
+    return c
+}
+
 /** Последний день месяца: 0 — текущего, 1 — следующего. */
 private fun endOfMonth(
     base: Calendar,
@@ -737,6 +828,12 @@ fun dateSelfTest(): String {
             "в первую пятницу следующего месяца зарплата",
             "в последнюю пятницу месяца отчёт",
             "в конце месяца оплатить счета",
+            // #136: неделя как срок
+            "до конца недели сдать отчёт",
+            "начало следующей недели позвонить в банк",
+            "в конце следующей недели проверить счёт",
+            "в начале недели заказать деталь",
+            "на следующей неделе разобрать почту",
             // чистка диктовки не должна съедать смысл: «Это» и «Слушай» обязаны остаться
             "Это проверка. Слушай музыку",
             // а слова-паразиты из списка по-прежнему выкидываются: «короче говоря» → в тексте его нет

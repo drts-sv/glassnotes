@@ -90,6 +90,12 @@ fun MorningReviewScreen(
 
     val view = LocalView.current
     val context = LocalContext.current
+    // #134: пока идёт утреннее ревью, экран не гаснет сам — утром его читают, не трогая телефон.
+    // Флаг снимаем при закрытии: дальше действуют обычные системные правила.
+    DisposableEffect(Unit) {
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = false }
+    }
     // Озвучка ревью (заметка #82): читаем те же группы, что на экране.
     val speaker = remember { Speaker(context) }
     DisposableEffect(Unit) { onDispose { speaker.shutdown() } }
