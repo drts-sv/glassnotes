@@ -606,7 +606,17 @@ fun NotesScreen(
                             .verticalScroll(settingsScroll)
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                 ) {
-                Text("🏷 Категории", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
+                // #137: у категорий тоже есть очистка — и она тоже в заголовке, а не внизу.
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("🏷 Категории", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
+                    Spacer(Modifier.weight(1f))
+                    if (editCats.isNotEmpty()) {
+                        ClearIconTile {
+                            Haptics.tick(screenView)
+                            editCats = emptySet()
+                        }
+                    }
+                }
                 Spacer(Modifier.height(4.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -635,6 +645,17 @@ fun NotesScreen(
                     value = dateText(),
                     open = dateOpen,
                     modifier = Modifier.bringIntoViewRequester(dateRequester),
+                    // #137: очистка — в заголовке раздела; сбрасывает и дату, и время.
+                    onClear =
+                        if (editDate == null && editTime == null) {
+                            null
+                        } else {
+                            {
+                                Haptics.tick(screenView)
+                                editDate = null
+                                editTime = null
+                            }
+                        },
                     onClick = {
                         Haptics.tick(screenView)
                         dateOpen = !dateOpen
@@ -686,11 +707,6 @@ fun NotesScreen(
                             Haptics.tick(screenView)
                             datePickerOpen = true
                         }
-                        ClearIconTile {
-                            Haptics.tick(screenView)
-                            editDate = null
-                            editTime = null
-                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -701,6 +717,15 @@ fun NotesScreen(
                     value = timeText(),
                     open = timeOpen,
                     modifier = Modifier.bringIntoViewRequester(timeRequester),
+                    onClear =
+                        if (editTime == null) {
+                            null
+                        } else {
+                            {
+                                Haptics.tick(screenView)
+                                editTime = null
+                            }
+                        },
                     onClick = {
                         Haptics.tick(screenView)
                         timeOpen = !timeOpen
@@ -732,10 +757,6 @@ fun NotesScreen(
                         ) {
                             Haptics.tick(screenView)
                             timePickerOpen = true
-                        }
-                        ClearIconTile {
-                            Haptics.tick(screenView)
-                            editTime = null
                         }
                     }
                 }
@@ -2219,6 +2240,8 @@ private fun EditSectionHeader(
     value: String,
     open: Boolean,
     modifier: Modifier = Modifier,
+    /** #137: очистка живёт в заголовке раздела, а не среди чипов внизу. null — чистить нечего. */
+    onClear: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     Row(
@@ -2238,6 +2261,10 @@ private fun EditSectionHeader(
             fontSize = 13.sp,
             modifier = Modifier.weight(1f),
         )
+        if (onClear != null) {
+            ClearIconTile(onClear)
+            Spacer(Modifier.width(8.dp))
+        }
         Text(text = if (open) "▾" else "▸", color = Design.textSecondary, fontSize = 13.sp)
     }
 }
