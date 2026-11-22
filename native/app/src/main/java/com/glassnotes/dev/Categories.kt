@@ -17,6 +17,16 @@ object Categories {
             Triple("shopping", "Покупки", Color(0xFFFF9F43)),
             Triple("other", "Другое", Color(0xFF888EA8)),
             Triple("dev", "Разработка", Color(0xFF4D6BFE)),
+            // Теги проектов: заметка-баг по конкретному проекту попадает в свой список,
+            // а «сбор багов» раскладывает их по проектам, а не в одну кучу.
+            Triple("p_glasnote", "GlasNote", Color(0xFF3D7BFF)),
+            Triple("p_callscribe", "CallScribe", Color(0xFF00B894)),
+            Triple("p_analytics", "Аналитика", Color(0xFFF0932B)),
+            Triple("p_airalert", "AirAlert", Color(0xFFEB4D4B)),
+            Triple("p_usbterm", "USB-терминал", Color(0xFF6C5CE7)),
+            Triple("p_pricetag", "Ценник", Color(0xFFE84393)),
+            Triple("p_routerapi", "Баланс AI", Color(0xFF00CEC9)),
+            Triple("p_homeassistant", "Умный дом", Color(0xFFF9CA24)),
         )
 
     val colors: Map<String, Color> = palette.associate { it.first to it.third }
@@ -45,6 +55,14 @@ object Categories {
             "shopping" -> "🛒"
             "dev" -> "💻"
             "other" -> "📌"
+            "p_glasnote" -> "📝"
+            "p_callscribe" -> "📞"
+            "p_analytics" -> "📊"
+            "p_airalert" -> "🚨"
+            "p_usbterm" -> "🔌"
+            "p_pricetag" -> "🏷"
+            "p_routerapi" -> "💳"
+            "p_homeassistant" -> "🏠"
             else -> "🔔"
         }
 

@@ -21,6 +21,43 @@ object CategoryHints {
     /** Нужно набрать не меньше этого, чтобы категория поставилась автоматически. */
     private const val THRESHOLD = 2
 
+    /**
+     * Теги проектов. Проверяются ДО обычных категорий и при 2+ баллах побеждают:
+     * заметка про конкретный проект важнее общего «Разработка», иначе баги всех проектов
+     * сваливаются в один список. Названия проектов узнаются и на слух («глэснот», «колскрайб»).
+     */
+    private val PROJECTS: Map<String, List<Pair<String, Int>>> =
+        mapOf(
+            "p_glasnote" to listOf("гласнот" to 2, "глэснот" to 2, "glasnote" to 2, "glassnote" to 2),
+            "p_callscribe" to
+                listOf(
+                    "колскрайб" to 2, "калскрайб" to 2, "callscribe" to 2, "call scribe" to 2,
+                    "кол скрайб" to 2, "скрайб" to 2, "лекал" to 1, "скрэпм" to 1,
+                ),
+            "p_analytics" to
+                listOf(
+                    "аналитик" to 2, "радиан" to 2, "табел" to 1, "путев" to 2, "путевой" to 2,
+                ),
+            "p_airalert" to
+                listOf("аираларм" to 2, "эйраларм" to 2, "airalert" to 2, "аир алерт" to 2, "алярм" to 1),
+            "p_usbterm" to
+                listOf(
+                    "юсб" to 2, "usbterminal" to 2, "юсб-терминал" to 2, "алеврит" to 2,
+                    "nmea" to 2, "терминал" to 1,
+                ),
+            "p_pricetag" to listOf("ценник" to 2, "прайстаг" to 2, "pricetag" to 2, "price tag" to 2),
+            "p_routerapi" to
+                listOf(
+                    "роутерапи" to 2, "routerapi" to 2, "router api" to 2,
+                    "баланс аи" to 2, "баланс ai" to 2, "виджет баланс" to 2,
+                ),
+            "p_homeassistant" to
+                listOf(
+                    "хоум ассистент" to 2, "home assistant" to 2, "homeassistant" to 2,
+                    "хасс" to 2, "умный дом" to 2,
+                ),
+        )
+
     /** Корни слов и вес: 2 — слово само по себе говорит о категории, 1 — только в компании. */
     private val rules: Map<String, List<Pair<String, Int>>> =
         mapOf(
@@ -120,6 +157,14 @@ object CategoryHints {
         val lower = text.lowercase(Locale("ru")).replace('ё', 'е')
         val words = lower.split(Regex("[^\\p{L}\\p{N}-]+")).filter { it.isNotBlank() }
 
+        // Сначала проекты: заметка «в колскрайбе абонент распределяется неверно» должна
+        // получить тег проекта, а не общий «Разработка».
+        for ((project, list) in PROJECTS) {
+            var s = 0
+            for ((root, weight) in list) if (hits(root, words, lower)) s += weight
+            if (s >= THRESHOLD) return project
+        }
+
         val score = HashMap<String, Int>()
         for ((category, list) in rules) {
             for ((root, weight) in list) {
@@ -174,6 +219,15 @@ object CategoryHints {
                 "не забыть продлить пропуск",
                 "согласовать техакт по объекту",
                 "крайний срок сдать отчёт",
+                // Теги проектов: имя проекта узнаётся и в искажённой речи.
+                "в гласноте контакты подставляются сами",
+                "колскрайб не распределяет абонентов",
+                "аналитика не грузит табель",
+                "аираларм ложная тревога",
+                "юсб терминал не видит плату",
+                "ценник не обновляет цену",
+                "виджет баланс не обновился",
+                "home assistant не отвечает",
             )
         return cases.joinToString(separator = "\n") { text ->
             "${text} -> ${detect(text) ?: "нет"}"
