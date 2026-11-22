@@ -262,11 +262,15 @@ fun RecordingScreen(
             found.firstOrNull { it.person.id == rememberedId }?.let {
                 NoteContact(it.person.id, it.person.name, it.person.number)
             }
+        // #168/#169: контакт подставляется только при явном «позвонить <кому>». Без этого слова
+        // заметка сохраняется молча и без контакта — раньше окно выбора всплывало почти всегда,
+        // владелец назвал это «хаотично добавляющиеся контакты».
+        val callWord = Contacts.wantsCall(parsed.text)
         val attachNow =
             when {
                 contacts.isEmpty() -> false
-                contacts.size == 1 -> Contacts.wantsCall(parsed.text)
-                else -> remembered != null && Contacts.wantsCall(parsed.text)
+                contacts.size == 1 -> callWord
+                else -> callWord && remembered != null
             }
         val contact = remembered ?: contacts.firstOrNull()
         if (contacts.isNotEmpty()) {
@@ -291,7 +295,7 @@ fun RecordingScreen(
                 allDay = parsed.allDay,
                 contact = if (attachNow) contact else null,
             )
-        if (contacts.isNotEmpty() && !attachNow) {
+        if (contacts.isNotEmpty() && callWord && !attachNow) {
             askContacts = contacts
             askContactWord = found.firstOrNull()?.word
             askContactFor = id
