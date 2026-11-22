@@ -448,47 +448,6 @@ fun NotesScreen(
                                     }
                                 }.padding(6.dp),
                     )
-                    // #141: сохранение — иконка дискеты в шапке редактора (просьба владельца 14.11).
-                    Canvas(
-                        modifier =
-                            Modifier
-                                .size(42.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable {
-                                    Haptics.tick(screenView)
-                                    saveEdit()
-                                }.padding(9.dp),
-                    ) {
-                        val w = size.width
-                        val h = size.height
-                        val stroke = (w * 0.10f).coerceAtLeast(1.6.dp.toPx())
-                        // Корпус дискеты со срезанным правым верхним углом.
-                        val cut = w * 0.28f
-                        val body =
-                            Path().apply {
-                                moveTo(0f, 0f)
-                                lineTo(w - cut, 0f)
-                                lineTo(w, cut)
-                                lineTo(w, h)
-                                lineTo(0f, h)
-                                close()
-                            }
-                        drawPath(body, accent, style = Stroke(stroke, join = StrokeJoin.Round))
-                        // Металлическая шторка сверху.
-                        drawRect(
-                            color = accent,
-                            topLeft = Offset(w * 0.30f, h * 0.08f),
-                            size = Size(w * 0.40f, h * 0.30f),
-                            style = Stroke(stroke * 0.8f),
-                        )
-                        // Наклейка с подписью снизу.
-                        drawRect(
-                            color = accent,
-                            topLeft = Offset(w * 0.18f, h * 0.52f),
-                            size = Size(w * 0.64f, h * 0.40f),
-                            style = Stroke(stroke * 0.8f),
-                        )
-                    }
                     Text(
                         text = "✕",
                         color = Design.textSecondary,
@@ -498,11 +457,20 @@ fun NotesScreen(
                 }
                 Spacer(Modifier.height(14.dp))
 
+                // #163: середина прокручивается, а нижний ряд кнопок закреплён. Раньше при длинной
+                // заметке (и особенно при открытой клавиатуре) «Сохранить» уезжала за край экрана.
+                Column(
+                    modifier =
+                        Modifier
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState()),
+                ) {
                 Text("📝 Текст", color = Design.textSecondary.copy(alpha = 0.85f), fontSize = 12.sp)
                 Spacer(Modifier.height(4.dp))
                 // Поле тянется на всё свободное место: раньше оно было min 64 dp и текст не влезал.
                 var textLines by remember { mutableStateOf(1) }
-                val fieldHeight = (textLines * 26 + 34).dp.coerceIn(150.dp, 430.dp)
+                // Потолок ниже: длинный текст листается вместе с разделом, а не двумя прокрутками сразу.
+                val fieldHeight = (textLines * 26 + 34).dp.coerceIn(150.dp, 300.dp)
                 Box(
                     modifier =
                         Modifier
@@ -761,14 +729,37 @@ fun NotesScreen(
                     }
                 }
                 }
+                }
 
                 Spacer(Modifier.height(10.dp))
 
-                // #141: «Сохранить» переехала в заголовок редактора, здесь осталась одна «Отмена» на всю ширину.
+                // #163: «Сохранить» вернулась вниз — крупная, с подписью, закреплена вне прокрутки.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    // «Сохранить» — главное действие: акцентная, шире и с подписью, чтобы не искать.
+                    Box(
+                        modifier =
+                            Modifier
+                                .weight(2f)
+                                .height(50.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(accent.copy(alpha = 0.92f))
+                                .border(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = 0.20f), RoundedCornerShape(16.dp))
+                                .clickable {
+                                    Haptics.tick(screenView)
+                                    saveEdit()
+                                },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "Сохранить",
+                            color = androidx.compose.ui.graphics.Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                     Box(
                         modifier =
                             Modifier
