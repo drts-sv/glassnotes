@@ -349,6 +349,11 @@ class MainActivity : ComponentActivity() {
                     Log.i(TAG, "pick_phrase[$i] ${m.person.name} · ${m.person.number} · слово «${m.word}»")
                 }
                 Log.i(TAG, "pick_phrase: кандидатов ${got.size}")
+                Log.i(
+                    TAG,
+                    "pick_phrase: контрольное слово " +
+                        if (Contacts.wantsCall(pickPhrase)) "есть → контакт предлагаем/крепим" else "нет → контакт только вручную",
+                )
             }.start()
         }
         // Полный список телефонной книги: нужен, чтобы понимать, почему имя не находится.

@@ -33,6 +33,9 @@ object Categories {
 
     val names: List<Pair<String, String>> = palette.map { it.first to it.second }
 
+    /** Теги приложений: показываются только после выбора «Разработка». */
+    fun isProject(id: String?): Boolean = id != null && id.startsWith("p_")
+
     /** Цвет категории для уведомления (обычный int, без Compose). */
     fun androidColor(categoryId: String?): Int =
         colors[categoryId]?.toArgb() ?: Color(0xFF888EA8).toArgb()

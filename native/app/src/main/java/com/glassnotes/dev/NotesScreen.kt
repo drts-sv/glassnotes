@@ -213,12 +213,11 @@ fun NotesScreen(
             editDate = null
             editTime = null
         }
-        // Контакт показываем сразу: сохранённый, а если его нет — ищем фамилию в тексте.
+        // Контакт показываем только сохранённый. Автопоиск по тексту убран: заметка «…кнопки
+        // сохранения в карточке…» подтягивала «Анастасию Кари» (стем «кар»), и редактор
+        // открывался с чужим контактом. Прикрепить вручную можно кнопкой ниже.
         editContactDropped = false
-        editContact =
-            n.contact ?: Contacts.findMention(context, n.text)?.let { p ->
-                NoteContact(p.id, p.name, p.number)
-            }
+        editContact = n.contact
         editNote = n
     }
     /** «Сегодня»/«Завтра» — дата без часа: показывает так же, как «весь день» в поле. */
@@ -590,8 +589,12 @@ fun NotesScreen(
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
+                    // Теги приложений не мешают в общем списке: они появляются, когда выбран
+                    // «💻 Разработка» — заметка-баг уже разложена по проекту.
+                    val devChosen = "dev" in editCats
                     Categories.names.forEach { pair ->
                         val id = pair.first
+                        if (Categories.isProject(id) && !devChosen) return@forEach
                         val on = id in editCats
                         EditTile(
                             text = pair.second,
@@ -2040,7 +2043,10 @@ private fun NoteCard(
                     fontSize = 12.sp,
                     modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 2.dp),
                 )
+                val devHere = "dev" in note.categoryIds
                 Categories.names.forEach { (id, name) ->
+                    // Теги приложений — только там, где уже выбрана «Разработка».
+                    if (Categories.isProject(id) && !devHere) return@forEach
                     DropdownMenuItem(
                         text = { Text(name, fontSize = 15.sp) },
                         onClick = {
