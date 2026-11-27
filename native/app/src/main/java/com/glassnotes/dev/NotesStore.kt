@@ -79,6 +79,7 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
         datetime: Long? = null,
         allDay: Boolean = false,
         contact: NoteContact? = null,
+        categoryIdExtra: String? = null,
     ): Long {
         val now = System.currentTimeMillis()
         val created = ISO.format(Date(now))
@@ -95,7 +96,15 @@ class NotesStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, nu
                 put("allDay", allDay)
                 put("status", "active")
                 put("color", "color-1")
-                put("categoryIds", JSONArray().apply { categoryId?.let { put(it) } })
+                // Два тега: «Разработка» + тег приложения — заметка-баг видна и в общем
+                // списке разработки, и в списке проекта.
+                put(
+                    "categoryIds",
+                    JSONArray().apply {
+                        categoryId?.let { put(it) }
+                        categoryIdExtra?.let { if (it != categoryId) put(it) }
+                    },
+                )
                 put("notified", false)
                 contact?.let { put("contact", contactJson(it)) }
             }

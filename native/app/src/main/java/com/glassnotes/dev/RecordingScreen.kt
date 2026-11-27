@@ -111,18 +111,21 @@ private val LAYERS =
         TraceLayer(12, 0.84f, 0.08f, 1.1f),
     )
 
-/** Категории с их цветами (DEFAULT_CATEGORIES боевого приложения). */
+/** Категория в облаке выбора на экране записи. */
 private data class Category(val id: String, val name: String, val color: Color)
 
-private val CATEGORIES =
-    listOf(
-        Category("important", "Важно", Color(0xFFFF3B30)),
-        Category("work", "Работа", Color(0xFF54A0FF)),
-        Category("personal", "Личное", Color(0xFFFF6B81)),
-        Category("shopping", "Покупки", Color(0xFFFF9F43)),
-        Category("other", "Другое", Color(0xFF888EA8)),
-        Category("dev", "Разработка", Color(0xFF4D6BFE)),
-    )
+/**
+ * #193: список берём из общего `Categories`, а не из своей пятёрки — иначе теги приложений
+ * (`p_*`) на экране записи не появлялись вовсе. Проектные показываются после «Разработки»
+ * (или когда уже выбран проект — чтобы выбранный чип не исчезал из облака).
+ */
+private fun recordingCategories(selected: String?): List<Category> {
+    val devChosen = selected == "dev" || Categories.isProject(selected)
+    return Categories.names.mapNotNull { (id, name) ->
+        if (Categories.isProject(id) && !devChosen) return@mapNotNull null
+        Category(id, name, Categories.colors[id] ?: Color(0xFF888EA8))
+    }
+}
 
 /** Развёртка в зелёно-синих тонах (просьба владельца). */
 private val TraceGreen = Color(0xFF34C759)
@@ -287,10 +290,14 @@ fun RecordingScreen(
                 ),
             )
         }
+        // Проектный тег не заменяет «Разработку»: заметка-баг должна остаться в общем
+        // списке разработки, а проект — уточнение.
+        val chosen = selectedCategory ?: hint
         val id =
             store.add(
                 text = parsed.text,
-                categoryId = selectedCategory ?: hint,
+                categoryId = if (Categories.isProject(chosen)) "dev" else chosen,
+                categoryIdExtra = if (Categories.isProject(chosen)) chosen else null,
                 datetime = parsed.datetime,
                 allDay = parsed.allDay,
                 contact = if (attachNow) contact else null,
@@ -935,7 +942,7 @@ fun RecordingScreen(
                 horizontalArrangement = Arrangement.spacedBy(Design.chipGap, Alignment.CenterHorizontally),
                 verticalArrangement = Arrangement.spacedBy(Design.chipGap),
             ) {
-                for (category in CATEGORIES) {
+                for (category in recordingCategories(selectedCategory)) {
                     val selected = selectedCategory == category.id
                     Box(
                         modifier =
@@ -1255,7 +1262,7 @@ private fun AskCategoryOverlay(
 ) {
     // #115: подсказанную категорию показываем первой и подписываем — так её видно сразу,
     // а остальные остаются под рукой, если разбор ошибся.
-    val ordered = CATEGORIES.sortedBy { if (it.id == hint) 0 else 1 }
+    val ordered = recordingCategories(null).sortedBy { if (it.id == hint) 0 else 1 }
     Box(
         modifier =
             Modifier
@@ -1278,7 +1285,7 @@ private fun AskCategoryOverlay(
             Text(
                 text =
                     if (hint != null) {
-                        val name = CATEGORIES.firstOrNull { it.id == hint }?.name ?: ""
+                        val name = Categories.names.firstOrNull { it.first == hint }?.second ?: ""
                         "Похоже на «%s». Куда отнести?".format(name)
                     } else {
                         "Куда отнести заметку?"
